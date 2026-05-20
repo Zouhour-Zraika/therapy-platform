@@ -1,8 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function PaymentPage() {
+function PaymentContent() {
   const searchParams = useSearchParams();
 
   const therapist = searchParams.get("therapist");
@@ -64,5 +65,13 @@ export default function PaymentPage() {
         </button>
       </section>
     </main>
+  );
+}
+
+export default function PaymentPage() {
+  return (
+    <Suspense fallback={<p className="p-10">Loading payment...</p>}>
+      <PaymentContent />
+    </Suspense>
   );
 }
