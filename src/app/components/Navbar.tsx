@@ -25,9 +25,9 @@ export default function Navbar() {
       </Link>
 
       <div className="flex gap-6 text-slate-900">
-        <Link href="/">Accueil</Link>
+        <Link href="/">Home</Link>
 
-        <Link href="/therapists">Thérapeutes</Link>
+        <Link href="/therapists">Therapists</Link>
 
         <Link href="/session">Session</Link>
 
