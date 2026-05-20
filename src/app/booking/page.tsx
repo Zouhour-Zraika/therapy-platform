@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -19,7 +19,7 @@ type Slot = {
   is_booked: boolean;
 };
 
-export default function BookingPage() {
+function BookingContent() {
   const searchParams = useSearchParams();
   const therapistId = searchParams.get("therapistId");
 
@@ -94,18 +94,10 @@ export default function BookingPage() {
       return;
     }
 
-    const { error: slotError } = await supabase
+    await supabase
       .from("availability_slots")
       .update({ is_booked: true })
       .eq("id", selectedSlot.id);
-
-    if (slotError) {
-      alert("Booking created, but slot update failed");
-      console.log(slotError);
-      return;
-    }
-
-    alert("Booking confirmed");
 
     window.location.href = `/payment?therapist=${therapist.full_name}&price=${therapist.price}&slot=${selectedSlot.day} ${selectedSlot.time}`;
   };
@@ -183,5 +175,13 @@ export default function BookingPage() {
         </button>
       </section>
     </main>
+  );
+}
+
+export default function BookingPage() {
+  return (
+    <Suspense fallback={<p className="p-10">Loading booking...</p>}>
+      <BookingContent />
+    </Suspense>
   );
 }
