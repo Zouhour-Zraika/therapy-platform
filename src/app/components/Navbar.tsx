@@ -2,10 +2,35 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { translations, Language } from "../lib/translations";
 
 export default function Navbar() {
   const router = useRouter();
+
+  const [language, setLanguage] = useState<Language>("en");
+
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem("language") as Language;
+
+    if (savedLanguage) {
+      setLanguage(savedLanguage);
+    }
+  }, []);
+
+  const changeLanguage = (lang: Language) => {
+    localStorage.setItem("language", lang);
+    setLanguage(lang);
+
+    if (lang === "ar") {
+      document.documentElement.dir = "rtl";
+    } else {
+      document.documentElement.dir = "ltr";
+    }
+  };
+
+  const t = translations[language];
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -17,25 +42,36 @@ export default function Navbar() {
 
   return (
     <nav className="flex items-center justify-between px-10 py-6">
-      <Link
-        href="/"
-        className="text-3xl font-bold text-slate-900"
-      >
+      <Link href="/" className="text-3xl font-bold text-slate-900">
         TheraCare
       </Link>
 
-      <div className="flex gap-6 text-slate-900">
-        <Link href="/">Home</Link>
+      <div className="flex items-center gap-6 text-slate-900">
+        <button
+          onClick={() => changeLanguage("en")}
+          className="text-sm font-semibold"
+        >
+          EN
+        </button>
 
-        <Link href="/therapists">Therapists</Link>
+        <button
+          onClick={() => changeLanguage("ar")}
+          className="text-sm font-semibold"
+        >
+          العربية
+        </button>
 
-        <Link href="/session">Session</Link>
+        <Link href="/">{t.home}</Link>
+
+        <Link href="/therapists">{t.therapists}</Link>
+
+        <Link href="/session">{t.session}</Link>
 
         <button
           onClick={handleLogout}
           className="rounded-xl bg-black px-4 py-2 text-white"
         >
-          Logout
+          {t.logout}
         </button>
       </div>
     </nav>

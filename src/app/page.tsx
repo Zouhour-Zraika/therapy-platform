@@ -1,8 +1,24 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
 import FeatureCard from "./components/FeatureCard";
+import { translations, Language } from "./lib/translations";
 
 export default function Home() {
+  const [language, setLanguage] = useState<Language>("en");
+
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem("language") as Language;
+
+    if (savedLanguage) {
+      setLanguage(savedLanguage);
+    }
+  }, []);
+
+  const t = translations[language];
+
   return (
     <main className="min-h-screen bg-slate-100">
       <Navbar />
@@ -10,20 +26,11 @@ export default function Home() {
       <Hero />
 
       <section className="mt-24 grid gap-6 px-10 pb-20 md:grid-cols-3">
-        <FeatureCard
-          title="Video Sessions"
-          description="Consult with your therapist directly online."
-        />
+        <FeatureCard title={t.videoSessions} description={t.videoText} />
 
-        <FeatureCard
-          title="Secure Payments"
-          description="Book and pay for your sessions easily."
-        />
+        <FeatureCard title={t.securePayments} description={t.paymentText} />
 
-        <FeatureCard
-          title="Therapy Tracking"
-          description="Homework, notes, and session history."
-        />
+        <FeatureCard title={t.tracking} description={t.trackingText} />
       </section>
     </main>
   );
