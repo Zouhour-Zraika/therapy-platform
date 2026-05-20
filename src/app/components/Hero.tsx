@@ -9,8 +9,8 @@ export default function Hero() {
         </h1>
 
         <p className="mb-10 text-xl text-slate-600">
-          Réservez des séances avec des thérapeutes qualifiés
-          directement en ligne via une plateforme sécurisée et moderne.
+          Book sessions with qualified therapists online through a secure
+          and modern platform.
         </p>
 
         <div className="flex items-center justify-center gap-4">
@@ -18,11 +18,11 @@ export default function Hero() {
             href="/therapists"
             className="rounded-2xl bg-black px-8 py-4 text-lg font-medium text-white"
           >
-            Trouver un thérapeute
+            Find a Therapist
           </Link>
 
           <button className="rounded-2xl border border-black px-8 py-4 text-lg font-medium text-black">
-            En savoir plus
+            Learn More
           </button>
         </div>
       </div>
