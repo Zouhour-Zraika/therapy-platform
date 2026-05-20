@@ -11,18 +11,18 @@ export default function Home() {
 
       <section className="mt-24 grid gap-6 px-10 pb-20 md:grid-cols-3">
         <FeatureCard
-          title="Sessions Vidéo"
-          description="Consultez votre thérapeute directement en ligne."
+          title="Video Sessions"
+          description="Consult with your therapist directly online."
         />
 
         <FeatureCard
-          title="Paiement Sécurisé"
-          description="Réservez et payez vos séances facilement."
+          title="Secure Payments"
+          description="Book and pay for your sessions easily."
         />
 
         <FeatureCard
-          title="Suivi Thérapeutique"
-          description="Homework, notes et historique des sessions."
+          title="Therapy Tracking"
+          description="Homework, notes, and session history."
         />
       </section>
     </main>
