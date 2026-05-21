@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "../components/Navbar";
 import { Language } from "../lib/translations";
 
-export default function PaymentPage() {
+function PaymentContent() {
   const searchParams = useSearchParams();
 
   const therapist = searchParams.get("therapist");
@@ -71,5 +71,13 @@ export default function PaymentPage() {
         </section>
       </main>
     </>
+  );
+}
+
+export default function PaymentPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PaymentContent />
+    </Suspense>
   );
 }
