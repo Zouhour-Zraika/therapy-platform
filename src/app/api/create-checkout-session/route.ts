@@ -11,39 +11,57 @@ export async function POST(req: Request) {
 
     const { therapist, price, slot, language } = body;
 
-    const origin = req.headers.get("origin") || "http://localhost:3000";
+    const stripeLocale = language === "ar" ? "ar" : "en";
+
+    const origin =
+      req.headers.get("origin") || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      locale: language === "ar" ? "ar" : "en",
+
+      locale: stripeLocale as any,
+
       line_items: [
         {
           price_data: {
             currency: "usd",
+
             product_data: {
               name:
                 language === "ar"
                   ? `جلسة علاج مع ${therapist}`
                   : `Therapy Session with ${therapist}`,
+
               description: slot,
             },
+
             unit_amount: Number(price) * 100,
           },
+
           quantity: 1,
         },
       ],
+
       mode: "payment",
+
       success_url: `${origin}/session`,
+
       cancel_url: `${origin}/payment`,
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({
+      url: session.url,
+    });
   } catch (error) {
     console.log(error);
 
     return NextResponse.json(
-      { error: "Stripe session error" },
-      { status: 500 }
+      {
+        error: "Stripe session error",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
