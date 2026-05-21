@@ -39,6 +39,22 @@ export default function TherapistsPage() {
 
   const isArabic = language === "ar";
 
+  const translateDay = (day: string) => {
+    if (!isArabic) return day;
+
+    const days: Record<string, string> = {
+      Monday: "الاثنين",
+      Tuesday: "الثلاثاء",
+      Wednesday: "الأربعاء",
+      Thursday: "الخميس",
+      Friday: "الجمعة",
+      Saturday: "السبت",
+      Sunday: "الأحد",
+    };
+
+    return days[day] || day;
+  };
+
   const fetchTherapists = async () => {
     const { data } = await supabase.from("therapists").select("*");
 
@@ -85,7 +101,9 @@ export default function TherapistsPage() {
                   {therapist.specialty}
                 </p>
 
-                <p className="mb-6 text-slate-700">{therapist.bio}</p>
+                <p className="mb-6 text-slate-700">
+                  {therapist.bio}
+                </p>
 
                 <p className="mb-6 text-3xl font-bold text-slate-900">
                   ${therapist.price}/{isArabic ? "جلسة" : "session"}
@@ -103,7 +121,7 @@ export default function TherapistsPage() {
                           key={slot.id}
                           className="rounded-xl bg-slate-200 px-4 py-2 text-sm"
                         >
-                          {slot.day} - {slot.time}
+                          {translateDay(slot.day)} - {slot.time}
                         </div>
                       ))
                     ) : (
