@@ -9,8 +9,11 @@ import { Language } from "../lib/translations";
 interface Therapist {
   id: string;
   full_name: string;
+  full_name_ar: string | null;
   specialty: string;
+  specialty_ar: string | null;
   bio: string;
+  bio_ar: string | null;
   price: number;
 }
 
@@ -55,6 +58,21 @@ export default function TherapistsPage() {
     return days[day] || day;
   };
 
+  const getTherapistName = (therapist: Therapist) => {
+    if (isArabic && therapist.full_name_ar) return therapist.full_name_ar;
+    return therapist.full_name;
+  };
+
+  const getTherapistSpecialty = (therapist: Therapist) => {
+    if (isArabic && therapist.specialty_ar) return therapist.specialty_ar;
+    return therapist.specialty;
+  };
+
+  const getTherapistBio = (therapist: Therapist) => {
+    if (isArabic && therapist.bio_ar) return therapist.bio_ar;
+    return therapist.bio;
+  };
+
   const fetchTherapists = async () => {
     const { data } = await supabase.from("therapists").select("*");
 
@@ -94,15 +112,15 @@ export default function TherapistsPage() {
                 <div className="mb-6 h-56 rounded-3xl bg-slate-200" />
 
                 <h2 className="mb-2 text-4xl font-bold text-slate-900">
-                  {therapist.full_name}
+                  {getTherapistName(therapist)}
                 </h2>
 
                 <p className="mb-4 text-lg text-slate-600">
-                  {therapist.specialty}
+                  {getTherapistSpecialty(therapist)}
                 </p>
 
                 <p className="mb-6 text-slate-700">
-                  {therapist.bio}
+                  {getTherapistBio(therapist)}
                 </p>
 
                 <p className="mb-6 text-3xl font-bold text-slate-900">
