@@ -171,7 +171,7 @@ function BookingContent() {
               </p>
 
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                ${therapist.price}/{isArabic ? "جلسة" : "session"}
+                {isArabic ? `${therapist.price}$ / جلسة` : `$${therapist.price}/session`}
               </p>
             </div>
           )}
