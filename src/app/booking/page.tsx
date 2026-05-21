@@ -1,13 +1,17 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Navbar from "../components/Navbar";
+import { Language } from "../lib/translations";
 
 type Therapist = {
   id: string;
   full_name: string;
+  full_name_ar: string | null;
   specialty: string;
+  specialty_ar: string | null;
   price: number;
 };
 
@@ -19,20 +23,66 @@ type Slot = {
   is_booked: boolean;
 };
 
-function BookingContent() {
+export default function BookingPage() {
   const searchParams = useSearchParams();
   const therapistId = searchParams.get("therapistId");
+
+  const [language, setLanguage] = useState<Language>("en");
 
   const [therapist, setTherapist] = useState<Therapist | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
 
   useEffect(() => {
+    const savedLanguage = localStorage.getItem("language") as Language;
+
+    if (savedLanguage) {
+      setLanguage(savedLanguage);
+    }
+
     if (therapistId) {
       getTherapist();
       getSlots();
     }
   }, [therapistId]);
+
+  const isArabic = language === "ar";
+
+  const translateDay = (day: string) => {
+    if (!isArabic) return day;
+
+    const days: Record<string, string> = {
+      Monday: "الاثنين",
+      Tuesday: "الثلاثاء",
+      Wednesday: "الأربعاء",
+      Thursday: "الخميس",
+      Friday: "الجمعة",
+      Saturday: "السبت",
+      Sunday: "الأحد",
+    };
+
+    return days[day] || day;
+  };
+
+  const getTherapistName = () => {
+    if (!therapist) return "";
+
+    if (isArabic && therapist.full_name_ar) {
+      return therapist.full_name_ar;
+    }
+
+    return therapist.full_name;
+  };
+
+  const getTherapistSpecialty = () => {
+    if (!therapist) return "";
+
+    if (isArabic && therapist.specialty_ar) {
+      return therapist.specialty_ar;
+    }
+
+    return therapist.specialty;
+  };
 
   const getTherapist = async () => {
     const { data, error } = await supabase
@@ -54,8 +104,7 @@ function BookingContent() {
       .from("availability_slots")
       .select("*")
       .eq("therapist_id", therapistId)
-      .eq("is_booked", false)
-      .order("created_at", { ascending: true });
+      .eq("is_booked", false);
 
     if (error) {
       console.log(error);
@@ -73,7 +122,7 @@ function BookingContent() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      alert("You must be logged in");
+      alert(isArabic ? "يجب تسجيل الدخول" : "You must be logged in");
       return;
     }
 
@@ -81,7 +130,7 @@ function BookingContent() {
       patient_id: user.id,
       therapist_id: therapist.id,
       slot_id: selectedSlot.id,
-      therapist_name: therapist.full_name,
+      therapist_name: getTherapistName(),
       slot_day: selectedSlot.day,
       slot_time: selectedSlot.time,
       price: therapist.price,
@@ -89,8 +138,7 @@ function BookingContent() {
     });
 
     if (bookingError) {
-      alert("Error creating booking");
-      console.log(bookingError);
+      alert(isArabic ? "خطأ في الحجز" : "Error creating booking");
       return;
     }
 
@@ -99,89 +147,86 @@ function BookingContent() {
       .update({ is_booked: true })
       .eq("id", selectedSlot.id);
 
-    window.location.href = `/payment?therapist=${therapist.full_name}&price=${therapist.price}&slot=${selectedSlot.day} ${selectedSlot.time}`;
+    alert(isArabic ? "تم تأكيد الحجز" : "Booking confirmed");
+
+    window.location.href = "/dashboard";
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-10">
-      <h1 className="mb-4 text-center text-5xl font-bold text-slate-900">
-        Book a Session
-      </h1>
+    <>
+      <Navbar />
 
-      <p className="mb-10 text-center text-xl text-slate-600">
-        Choose an available time slot for your therapy session.
-      </p>
+      <main className="min-h-screen bg-slate-100 p-10">
+        <h1 className="mb-4 text-center text-5xl font-bold text-slate-900">
+          {isArabic ? "احجز جلسة" : "Book a Session"}
+        </h1>
 
-      <section className="mx-auto max-w-3xl rounded-3xl bg-white p-8 shadow-lg">
-        {therapist && (
-          <div className="mb-8 rounded-2xl bg-slate-100 p-6">
-            <h2 className="text-3xl font-bold text-slate-900">
-              {therapist.full_name}
-            </h2>
+        <p className="mb-10 text-center text-xl text-slate-600">
+          {isArabic
+            ? "اختر موعداً متاحاً لجلسة العلاج الخاصة بك."
+            : "Choose an available time slot for your therapy session."}
+        </p>
 
-            <p className="mt-2 text-slate-600">{therapist.specialty}</p>
+        <section className="mx-auto max-w-5xl rounded-3xl bg-white p-8 shadow-lg">
+          {therapist && (
+            <div className="mb-8 rounded-2xl bg-slate-100 p-6">
+              <div className="mb-6 h-56 rounded-3xl bg-slate-200" />
 
-            <p className="mt-4 text-2xl font-bold text-slate-900">
-              ${therapist.price}/session
+              <h2 className="text-4xl font-bold text-slate-900">
+                {getTherapistName()}
+              </h2>
+
+              <p className="mt-3 text-slate-600">
+                {getTherapistSpecialty()}
+              </p>
+
+              <p className="mt-4 text-3xl font-bold text-slate-900">
+                ${therapist.price}/{isArabic ? "جلسة" : "session"}
+              </p>
+            </div>
+          )}
+
+          <h2 className="mb-6 text-4xl font-bold text-slate-900">
+            {isArabic ? "المواعيد المتاحة" : "Available Slots"}
+          </h2>
+
+          {slots.length === 0 ? (
+            <p className="text-slate-600">
+              {isArabic
+                ? "لا توجد مواعيد متاحة."
+                : "No available slots."}
             </p>
-          </div>
-        )}
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {slots.map((slot) => (
+                <button
+                  key={slot.id}
+                  onClick={() => setSelectedSlot(slot)}
+                  className={`rounded-2xl border px-6 py-4 text-lg font-semibold ${
+                    selectedSlot?.id === slot.id
+                      ? "border-black bg-black text-white"
+                      : "border-slate-300 text-slate-900 hover:bg-black hover:text-white"
+                  }`}
+                >
+                  {translateDay(slot.day)} - {slot.time}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <h2 className="mb-6 text-3xl font-bold text-slate-900">
-          Available Slots
-        </h2>
-
-        {slots.length === 0 ? (
-          <p className="text-slate-600">
-            No available slots for this therapist.
-          </p>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {slots.map((slot) => (
-              <button
-                key={slot.id}
-                onClick={() => setSelectedSlot(slot)}
-                className={`rounded-2xl border px-6 py-4 text-lg font-semibold ${
-                  selectedSlot?.id === slot.id
-                    ? "border-black bg-black text-white"
-                    : "border-slate-300 text-slate-900 hover:bg-black hover:text-white"
-                }`}
-              >
-                {slot.day} - {slot.time}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {selectedSlot && (
-          <p className="mt-6 text-center text-slate-700">
-            Selected slot:{" "}
-            <strong>
-              {selectedSlot.day} - {selectedSlot.time}
-            </strong>
-          </p>
-        )}
-
-        <button
-          onClick={confirmBooking}
-          disabled={!selectedSlot}
-          className={`mt-10 w-full rounded-2xl py-4 text-center text-lg font-semibold ${
-            selectedSlot
-              ? "bg-black text-white"
-              : "pointer-events-none cursor-not-allowed bg-slate-300 text-slate-500"
-          }`}
-        >
-          Confirm Booking
-        </button>
-      </section>
-    </main>
-  );
-}
-
-export default function BookingPage() {
-  return (
-    <Suspense fallback={<p className="p-10">Loading booking...</p>}>
-      <BookingContent />
-    </Suspense>
+          <button
+            onClick={confirmBooking}
+            disabled={!selectedSlot}
+            className={`mt-10 w-full rounded-2xl py-4 text-lg font-semibold ${
+              selectedSlot
+                ? "bg-black text-white"
+                : "cursor-not-allowed bg-slate-300 text-slate-500"
+            }`}
+          >
+            {isArabic ? "تأكيد الحجز" : "Confirm Booking"}
+          </button>
+        </section>
+      </main>
+    </>
   );
 }
