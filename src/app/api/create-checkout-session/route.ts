@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { therapist, price, slot, language } = body;
+    const { therapist, price, slot, language, email } = body;
 
     const stripeLocale = language === "ar" ? "ar" : "en";
 
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
       payment_method_types: ["card"],
 
       locale: "en",
+      customer_email: email,
 
       line_items: [
         {
@@ -48,7 +49,20 @@ export async function POST(req: Request) {
 
       cancel_url: `${origin}/payment`,
     });
-
+    
+    await fetch(`${origin}/api/send-booking-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            email,
+            therapist,
+            slot,
+            price,
+            language,
+        }),
+    });
     return NextResponse.json({
       url: session.url,
     });

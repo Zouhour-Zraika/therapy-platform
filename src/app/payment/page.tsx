@@ -57,6 +57,7 @@ function PaymentContent() {
             price,
             slot,
             language,
+            email: "patient@example.com",
           }),
         }
       );
