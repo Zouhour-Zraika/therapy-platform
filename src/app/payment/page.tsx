@@ -37,6 +37,10 @@ function PaymentContent() {
       .replace("Sunday", "الأحد");
   };
 
+  const toArabicNumbers = (value: string) => {
+    return value.replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[parseInt(d)]);
+  };
+
   return (
     <>
       <Navbar />
@@ -55,12 +59,20 @@ function PaymentContent() {
 
             <p className="mb-6 text-4xl text-slate-900">
               {isArabic ? "الموعد:" : "Slot:"}{" "}
-              <strong>{translateDay(slot)}</strong>
+              <strong>
+                {isArabic
+                  ? toArabicNumbers(
+                      translateDay(slot || "") || ""
+                    )
+                  : slot}
+              </strong>
             </p>
 
             <p className="text-5xl font-bold text-slate-900">
               {isArabic
-                ? `الإجمالي: ${Number(price).toLocaleString("ar-EG")} دولار`
+                ? `الإجمالي: ${toArabicNumbers(
+                    price || "0"
+                  )} دولار`
                 : `Total: $${price}`}
             </p>
           </div>
