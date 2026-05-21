@@ -16,18 +16,25 @@ export default function Navbar() {
 
     if (savedLanguage) {
       setLanguage(savedLanguage);
+
+      if (savedLanguage === "ar") {
+        document.documentElement.dir = "rtl";
+      } else {
+        document.documentElement.dir = "ltr";
+      }
     }
   }, []);
 
   const changeLanguage = (lang: Language) => {
     localStorage.setItem("language", lang);
-    setLanguage(lang);
 
     if (lang === "ar") {
       document.documentElement.dir = "rtl";
     } else {
       document.documentElement.dir = "ltr";
     }
+
+    window.location.reload();
   };
 
   const t = translations[language];
@@ -35,7 +42,7 @@ export default function Navbar() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
 
-    alert("Logged out");
+    alert(language === "ar" ? "تم تسجيل الخروج" : "Logged out");
 
     router.push("/login");
   };
