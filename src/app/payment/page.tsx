@@ -51,6 +51,7 @@ function PaymentContent() {
         therapist,
         price,
         slot,
+        language,
       }),
     });
 
@@ -80,7 +81,9 @@ function PaymentContent() {
             <p className="mb-6 text-4xl text-slate-900">
               {isArabic ? "الموعد:" : "Slot:"}{" "}
               <strong>
-                {isArabic ? toArabicNumbers(translateDay(slot || "") || "") : slot}
+                {isArabic
+                  ? toArabicNumbers(translateDay(slot || "") || "")
+                  : slot}
               </strong>
             </p>
 

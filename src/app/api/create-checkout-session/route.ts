@@ -9,17 +9,22 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { therapist, price, slot } = body;
+    const { therapist, price, slot, language } = body;
+
+    const origin = req.headers.get("origin") || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
-      locale: "auto",
+      locale: language === "ar" ? "ar" : "en",
       line_items: [
         {
           price_data: {
             currency: "usd",
             product_data: {
-              name: `Therapy Session with ${therapist}`,
+              name:
+                language === "ar"
+                  ? `جلسة علاج مع ${therapist}`
+                  : `Therapy Session with ${therapist}`,
               description: slot,
             },
             unit_amount: Number(price) * 100,
@@ -27,11 +32,9 @@ export async function POST(req: Request) {
           quantity: 1,
         },
       ],
-
       mode: "payment",
-
-      success_url: "http://localhost:3000/session",
-      cancel_url: "http://localhost:3000/payment",
+      success_url: `${origin}/session`,
+      cancel_url: `${origin}/payment`,
     });
 
     return NextResponse.json({ url: session.url });
