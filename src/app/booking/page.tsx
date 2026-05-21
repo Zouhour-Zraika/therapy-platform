@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Navbar from "../components/Navbar";
@@ -23,12 +23,11 @@ type Slot = {
   is_booked: boolean;
 };
 
-export default function BookingPage() {
+function BookingContent() {
   const searchParams = useSearchParams();
   const therapistId = searchParams.get("therapistId");
 
   const [language, setLanguage] = useState<Language>("en");
-
   const [therapist, setTherapist] = useState<Therapist | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -66,21 +65,13 @@ export default function BookingPage() {
 
   const getTherapistName = () => {
     if (!therapist) return "";
-
-    if (isArabic && therapist.full_name_ar) {
-      return therapist.full_name_ar;
-    }
-
+    if (isArabic && therapist.full_name_ar) return therapist.full_name_ar;
     return therapist.full_name;
   };
 
   const getTherapistSpecialty = () => {
     if (!therapist) return "";
-
-    if (isArabic && therapist.specialty_ar) {
-      return therapist.specialty_ar;
-    }
-
+    if (isArabic && therapist.specialty_ar) return therapist.specialty_ar;
     return therapist.specialty;
   };
 
@@ -139,6 +130,7 @@ export default function BookingPage() {
 
     if (bookingError) {
       alert(isArabic ? "خطأ في الحجز" : "Error creating booking");
+      console.log(bookingError);
       return;
     }
 
@@ -147,9 +139,9 @@ export default function BookingPage() {
       .update({ is_booked: true })
       .eq("id", selectedSlot.id);
 
-    alert(isArabic ? "تم تأكيد الحجز" : "Booking confirmed");
-
-    window.location.href = "/dashboard";
+    window.location.href = `/payment?therapist=${getTherapistName()}&price=${
+      therapist.price
+    }&slot=${translateDay(selectedSlot.day)} ${selectedSlot.time}`;
   };
 
   return (
@@ -170,8 +162,6 @@ export default function BookingPage() {
         <section className="mx-auto max-w-5xl rounded-3xl bg-white p-8 shadow-lg">
           {therapist && (
             <div className="mb-8 rounded-2xl bg-slate-100 p-6">
-              <div className="mb-6 h-56 rounded-3xl bg-slate-200" />
-
               <h2 className="text-4xl font-bold text-slate-900">
                 {getTherapistName()}
               </h2>
@@ -192,9 +182,7 @@ export default function BookingPage() {
 
           {slots.length === 0 ? (
             <p className="text-slate-600">
-              {isArabic
-                ? "لا توجد مواعيد متاحة."
-                : "No available slots."}
+              {isArabic ? "لا توجد مواعيد متاحة." : "No available slots."}
             </p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
@@ -228,5 +216,13 @@ export default function BookingPage() {
         </section>
       </main>
     </>
+  );
+}
+
+export default function BookingPage() {
+  return (
+    <Suspense fallback={<p className="p-10">Loading booking...</p>}>
+      <BookingContent />
+    </Suspense>
   );
 }
