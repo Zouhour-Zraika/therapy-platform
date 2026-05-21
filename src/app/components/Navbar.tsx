@@ -50,7 +50,7 @@ export default function Navbar() {
   return (
     <nav className="flex items-center justify-between px-10 py-6">
       <Link href="/" className="text-3xl font-bold text-slate-900">
-        TheraCare
+        {language === "ar" ? "ثيراكير" : "TheraCare"}
       </Link>
 
       <div className="flex items-center gap-6 text-slate-900">
