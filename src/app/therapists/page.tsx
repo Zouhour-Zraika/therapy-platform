@@ -124,7 +124,7 @@ export default function TherapistsPage() {
                 </p>
 
                 <p className="mb-6 text-3xl font-bold text-slate-900">
-                  {isArabic ? `${therapist.price}$ / جلسة` : `$${therapist.price}/session`}
+                  {isArabic ? `٢٠ دولار / جلسة` : `$${therapist.price}/session`}
                 </p>
 
                 <div className="mb-6">
