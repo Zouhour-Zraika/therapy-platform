@@ -41,6 +41,26 @@ function PaymentContent() {
     return value.replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[parseInt(d)]);
   };
 
+  const handlePayment = async () => {
+    const response = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        therapist,
+        price,
+        slot,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.url) {
+      window.location.href = data.url;
+    }
+  };
+
   return (
     <>
       <Navbar />
@@ -60,24 +80,21 @@ function PaymentContent() {
             <p className="mb-6 text-4xl text-slate-900">
               {isArabic ? "الموعد:" : "Slot:"}{" "}
               <strong>
-                {isArabic
-                  ? toArabicNumbers(
-                      translateDay(slot || "") || ""
-                    )
-                  : slot}
+                {isArabic ? toArabicNumbers(translateDay(slot || "") || "") : slot}
               </strong>
             </p>
 
             <p className="text-5xl font-bold text-slate-900">
               {isArabic
-                ? `الإجمالي: ${toArabicNumbers(
-                    price || "0"
-                  )} دولار`
+                ? `الإجمالي: ${toArabicNumbers(price || "0")} دولار`
                 : `Total: $${price}`}
             </p>
           </div>
 
-          <button className="mt-10 w-full rounded-3xl bg-black py-6 text-3xl font-bold text-white">
+          <button
+            onClick={handlePayment}
+            className="mt-10 w-full rounded-3xl bg-black py-6 text-3xl font-bold text-white"
+          >
             {isArabic ? "الدفع عبر Stripe" : "Pay with Stripe"}
           </button>
         </section>
