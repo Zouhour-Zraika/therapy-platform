@@ -42,23 +42,46 @@ function PaymentContent() {
   };
 
   const handlePayment = async () => {
-    const response = await fetch("/api/create-checkout-session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        therapist,
-        price,
-        slot,
-        language,
-      }),
-    });
+    try {
+      const response = await fetch(
+        "/api/create-checkout-session",
+        {
+          method: "POST",
 
-    const data = await response.json();
+          headers: {
+            "Content-Type": "application/json",
+          },
 
-    if (data.url) {
-      window.location.href = data.url;
+          body: JSON.stringify({
+            therapist,
+            price,
+            slot,
+            language,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      console.log("Stripe response:", data);
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(
+          isArabic
+            ? "حدث خطأ في الدفع"
+            : "Payment error"
+        );
+      }
+    } catch (error) {
+      console.log("Payment error:", error);
+
+      alert(
+        isArabic
+          ? "فشل الدفع"
+          : "Payment failed"
+      );
     }
   };
 
@@ -82,14 +105,18 @@ function PaymentContent() {
               {isArabic ? "الموعد:" : "Slot:"}{" "}
               <strong>
                 {isArabic
-                  ? toArabicNumbers(translateDay(slot || "") || "")
+                  ? toArabicNumbers(
+                      translateDay(slot || "") || ""
+                    )
                   : slot}
               </strong>
             </p>
 
             <p className="text-5xl font-bold text-slate-900">
               {isArabic
-                ? `الإجمالي: ${toArabicNumbers(price || "0")} دولار`
+                ? `الإجمالي: ${toArabicNumbers(
+                    price || "0"
+                  )} دولار`
                 : `Total: $${price}`}
             </p>
           </div>
@@ -98,7 +125,9 @@ function PaymentContent() {
             onClick={handlePayment}
             className="mt-10 w-full rounded-3xl bg-black py-6 text-3xl font-bold text-white"
           >
-            {isArabic ? "الدفع عبر Stripe" : "Pay with Stripe"}
+            {isArabic
+              ? "الدفع عبر Stripe"
+              : "Pay with Stripe"}
           </button>
         </section>
       </main>
