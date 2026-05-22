@@ -10,6 +10,16 @@ type AvailabilitySlot = {
   time: string;
 };
 
+type Booking = {
+  id: string;
+  therapist_name: string;
+  slot_day: string;
+  slot_time: string;
+  price: number;
+  status: string;
+  created_at: string;
+};
+
 export default function TherapistDashboard() {
   const [fullName, setFullName] = useState("");
   const [specialty, setSpecialty] = useState("");
@@ -19,12 +29,14 @@ export default function TherapistDashboard() {
   const [day, setDay] = useState("");
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     getProfile();
     getSlots();
+    getBookings();
   }, []);
 
   const getProfile = async () => {
@@ -55,7 +67,10 @@ export default function TherapistDashboard() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     const { error } = await supabase.from("therapists").upsert({
       id: user.id,
@@ -112,6 +127,7 @@ export default function TherapistDashboard() {
       therapist_id: user.id,
       day,
       time,
+      is_booked: false,
     });
 
     if (error) {
@@ -140,12 +156,33 @@ export default function TherapistDashboard() {
     getSlots();
   };
 
+  const getBookings = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("therapist_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.log("Bookings error:", error);
+      return;
+    }
+
+    setBookings(data || []);
+  };
+
   return (
     <>
       <Navbar />
 
       <main className="min-h-screen bg-slate-100 p-10">
-        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
           <section className="rounded-3xl bg-white p-10 shadow-xl">
             <h1 className="mb-8 text-5xl font-bold text-slate-900">
               Therapist Profile
@@ -252,6 +289,51 @@ export default function TherapistDashboard() {
                 ))
               )}
             </div>
+          </section>
+
+          <section className="rounded-3xl bg-white p-10 shadow-xl lg:col-span-2">
+            <h2 className="mb-8 text-4xl font-bold text-slate-900">
+              Booked Sessions
+            </h2>
+
+            {bookings.length === 0 ? (
+              <p className="text-slate-600">No bookings yet.</p>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2">
+                {bookings.map((booking) => (
+                  <div
+                    key={booking.id}
+                    className="rounded-2xl bg-slate-100 p-6"
+                  >
+                    <p className="text-xl font-bold text-slate-900">
+                      {booking.slot_day} at {booking.slot_time}
+                    </p>
+
+                    <p className="mt-2 text-slate-700">
+                      Price: ${booking.price}
+                    </p>
+
+                    <p className="mt-2 text-slate-700">
+                      Status:{" "}
+                      <span
+                        className={
+                          booking.status === "paid"
+                            ? "font-bold text-green-700"
+                            : "font-bold text-orange-600"
+                        }
+                      >
+                        {booking.status}
+                      </span>
+                    </p>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                      Created:{" "}
+                      {new Date(booking.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </main>
