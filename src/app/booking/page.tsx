@@ -117,16 +117,20 @@ function BookingContent() {
       return;
     }
 
-    const { error: bookingError } = await supabase.from("bookings").insert({
-      patient_id: user.id,
-      therapist_id: therapist.id,
-      slot_id: selectedSlot.id,
-      therapist_name: getTherapistName(),
-      slot_day: selectedSlot.day,
-      slot_time: selectedSlot.time,
-      price: therapist.price,
-      status: "pending",
-    });
+    const { data: bookingData, error: bookingError } = await supabase
+      .from("bookings")
+      .insert({
+        patient_id: user.id,
+        therapist_id: therapist.id,
+        slot_id: selectedSlot.id,
+        therapist_name: getTherapistName(),
+        slot_day: selectedSlot.day,
+        slot_time: selectedSlot.time,
+        price: therapist.price,
+        status: "pending",
+      })
+      .select()
+      .single();
 
     if (bookingError) {
       alert(isArabic ? "خطأ في الحجز" : "Error creating booking");
@@ -139,9 +143,13 @@ function BookingContent() {
       .update({ is_booked: true })
       .eq("id", selectedSlot.id);
 
-    window.location.href = `/payment?therapist=${getTherapistName()}&price=${
-      therapist.price
-    }&slot=${translateDay(selectedSlot.day)} ${selectedSlot.time}`;
+    window.location.href =
+      `/payment?bookingId=${bookingData.id}` +
+      `&therapist=${encodeURIComponent(getTherapistName())}` +
+      `&price=${therapist.price}` +
+      `&slot=${encodeURIComponent(
+        `${translateDay(selectedSlot.day)} ${selectedSlot.time}`
+      )}`;
   };
 
   return (
@@ -171,7 +179,9 @@ function BookingContent() {
               </p>
 
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                {isArabic ? `٢٠ دولار / جلسة` : `$${therapist.price}/session`}
+                {isArabic
+                  ? `${therapist.price.toLocaleString("ar-EG")} دولار / جلسة`
+                  : `$${therapist.price}/session`}
               </p>
             </div>
           )}
