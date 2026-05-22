@@ -120,14 +120,15 @@ function BookingContent() {
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .insert({
-        patient_id: user.id,
-        therapist_id: therapist.id,
-        slot_id: selectedSlot.id,
-        therapist_name: getTherapistName(),
-        slot_day: selectedSlot.day,
-        slot_time: selectedSlot.time,
-        price: therapist.price,
-        status: "pending",
+          patient_id: user.id,
+          patient_email: user.email,
+          therapist_id: therapist.id,
+          slot_id: selectedSlot.id,
+          therapist_name: getTherapistName(),
+          slot_day: selectedSlot.day,
+          slot_time: selectedSlot.time,
+          price: therapist.price,
+          status: "pending",
       })
       .select()
       .single();
