@@ -9,7 +9,14 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { therapist, price, slot, language, email } = body;
+    const {
+      therapist,
+      price,
+      slot,
+      language,
+      email,
+      bookingId,
+    } = body;
 
     const origin = req.headers.get("origin") || "http://localhost:3000";
 
@@ -36,7 +43,7 @@ export async function POST(req: Request) {
       ],
 
       mode: "payment",
-      success_url: `${origin}/session`,
+      success_url: `${origin}/success?bookingId=${bookingId}`,
       cancel_url: `${origin}/payment`,
     });
 

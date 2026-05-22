@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 function PaymentContent() {
   const searchParams = useSearchParams();
 
+  const bookingId = searchParams.get("bookingId");
   const therapist = searchParams.get("therapist");
   const price = searchParams.get("price");
   const slot = searchParams.get("slot");
@@ -59,6 +60,7 @@ function PaymentContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          bookingId,
           therapist,
           price,
           slot,
