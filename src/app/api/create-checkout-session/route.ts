@@ -11,8 +11,6 @@ export async function POST(req: Request) {
 
     const { therapist, price, slot, language, email } = body;
 
-    const stripeLocale = language === "ar" ? "ar" : "en";
-
     const origin =
       req.headers.get("origin") || "http://localhost:3000";
 
@@ -49,20 +47,27 @@ export async function POST(req: Request) {
 
       cancel_url: `${origin}/payment`,
     });
-    
-    await fetch(`${origin}/api/send-booking-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            email,
-            therapist,
-            slot,
-            price,
-            language,
-        }),
-      });
+
+    console.log("Sending booking email to:", email);
+
+    const emailResponse = await fetch(`${origin}/api/send-booking-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        therapist,
+        slot,
+        price,
+        language,
+      }),
+    });
+
+    const emailResult = await emailResponse.json();
+
+    console.log("Email API response:", emailResult);
+
     return NextResponse.json({
       url: session.url,
     });
