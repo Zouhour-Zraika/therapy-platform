@@ -18,6 +18,7 @@ type Booking = {
   price: number;
   status: string;
   created_at: string;
+  patient_email: string | null;
 };
 
 export default function TherapistDashboard() {
@@ -167,6 +168,7 @@ export default function TherapistDashboard() {
       .from("bookings")
       .select("*")
       .eq("therapist_id", user.id)
+      .eq("status", "paid")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -297,7 +299,7 @@ export default function TherapistDashboard() {
             </h2>
 
             {bookings.length === 0 ? (
-              <p className="text-slate-600">No bookings yet.</p>
+              <p className="text-slate-600">No paid bookings yet.</p>
             ) : (
               <div className="grid gap-6 md:grid-cols-2">
                 {bookings.map((booking) => (
@@ -305,31 +307,35 @@ export default function TherapistDashboard() {
                     key={booking.id}
                     className="rounded-2xl bg-slate-100 p-6"
                   >
-                    <p className="text-xl font-bold text-slate-900">
+                    <p className="text-2xl font-bold text-slate-900">
                       {booking.slot_day} at {booking.slot_time}
                     </p>
 
-                    <p className="mt-2 text-slate-700">
+                    <p className="mt-3 text-slate-700">
                       Price: ${booking.price}
                     </p>
 
                     <p className="mt-2 text-slate-700">
+                      Patient Email:{" "}
+                      <span className="font-semibold">
+                        {booking.patient_email || "Unknown"}
+                      </span>
+                    </p>
+
+                    <p className="mt-2 text-slate-700">
                       Status:{" "}
-                      <span
-                        className={
-                          booking.status === "paid"
-                            ? "font-bold text-green-700"
-                            : "font-bold text-orange-600"
-                        }
-                      >
+                      <span className="font-bold text-green-700">
                         {booking.status}
                       </span>
                     </p>
 
                     <p className="mt-2 text-sm text-slate-500">
-                      Created:{" "}
-                      {new Date(booking.created_at).toLocaleString()}
+                      Created: {new Date(booking.created_at).toLocaleString()}
                     </p>
+
+                    <button className="mt-5 w-full rounded-2xl bg-black py-3 text-white">
+                      Join Session
+                    </button>
                   </div>
                 ))}
               </div>
