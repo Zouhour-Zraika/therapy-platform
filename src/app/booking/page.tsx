@@ -139,11 +139,7 @@ function BookingContent() {
       return;
     }
 
-    await supabase
-      .from("availability_slots")
-      .update({ is_booked: true })
-      .eq("id", selectedSlot.id);
-
+  
     window.location.href =
       `/payment?bookingId=${bookingData.id}` +
       `&therapist=${encodeURIComponent(getTherapistName())}` +
