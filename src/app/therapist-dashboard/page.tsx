@@ -19,6 +19,8 @@ type Booking = {
   status: string;
   created_at: string;
   patient_email: string | null;
+  zoom_join_url: string | null;
+  zoom_start_url: string | null;
 };
 
 export default function TherapistDashboard() {
@@ -333,9 +335,20 @@ export default function TherapistDashboard() {
                       Created: {new Date(booking.created_at).toLocaleString()}
                     </p>
 
-                    <button className="mt-5 w-full rounded-2xl bg-black py-3 text-white">
-                      Join Session
-                    </button>
+                    {booking.zoom_start_url ? (
+                      <a
+                        href={booking.zoom_start_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-5 block w-full rounded-2xl bg-black py-3 text-center text-white"
+                      >
+                        Start Zoom Session
+                      </a>
+                    ) : (
+                      <button className="mt-5 w-full rounded-2xl bg-slate-400 py-3 text-white">
+                        Zoom Not Ready
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
