@@ -21,7 +21,7 @@ function SuccessContent() {
 
       const { data: booking, error: getBookingError } = await supabase
         .from("bookings")
-        .select("id, slot_id")
+        .select("id, slot_id, therapist_name, slot_day, slot_time")
         .eq("id", bookingId)
         .single();
 
@@ -31,10 +31,33 @@ function SuccessContent() {
         return;
       }
 
+      setMessage("Creating your Zoom meeting...");
+
+      const zoomResponse = await fetch("/api/create-zoom-meeting", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          therapist: booking.therapist_name,
+          slot: `${booking.slot_day} ${booking.slot_time}`,
+        }),
+      });
+
+      const zoomData = await zoomResponse.json();
+
+      if (!zoomData.join_url || !zoomData.start_url) {
+        console.log("Zoom error:", zoomData);
+        setMessage("Payment successful, but Zoom meeting creation failed.");
+        return;
+      }
+
       const { error: updateBookingError } = await supabase
         .from("bookings")
         .update({
           status: "paid",
+          zoom_join_url: zoomData.join_url,
+          zoom_start_url: zoomData.start_url,
         })
         .eq("id", bookingId);
 
@@ -57,7 +80,7 @@ function SuccessContent() {
         return;
       }
 
-      setMessage("Payment successful! Your session is confirmed.");
+      setMessage("Payment successful! Your Zoom session is confirmed.");
 
       setTimeout(() => {
         router.push("/dashboard");

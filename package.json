@@ -11,6 +11,7 @@
   "dependencies": {
     "@stripe/stripe-js": "^9.6.0",
     "@supabase/supabase-js": "^2.105.4",
+    "axios": "^1.16.1",
     "emoji-picker-react": "^4.19.1",
     "next": "16.2.6",
     "react": "19.2.4",
