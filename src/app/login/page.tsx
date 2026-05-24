@@ -24,15 +24,23 @@ export default function LoginPage() {
 
     const user = data.user;
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
+    if (profileError) {
+      console.log(profileError);
+      alert("Profile not found.");
+      return;
+    }
+
     alert("Login successful!");
 
-    if (profile?.role === "therapist") {
+    if (profile?.role === "admin") {
+      router.push("/admin-podcasts");
+    } else if (profile?.role === "therapist") {
       router.push("/therapist-dashboard");
     } else {
       router.push("/dashboard");
