@@ -20,11 +20,23 @@ export default function SignupPage() {
     }
 
     if (data.user) {
-      await supabase.from("profiles").insert({
-        id: data.user.id,
-        email,
-        role,
-      });
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert({
+          id: data.user.id,
+          email,
+          role,
+        });
+
+      if (profileError) {
+        console.log(profileError);
+
+        alert(
+          "Account created, but profile role was not saved."
+        );
+
+        return;
+      }
     }
 
     alert("Account created. Check your email to confirm.");
@@ -53,11 +65,18 @@ export default function SignupPage() {
 
         <select
           value={role}
-          onChange={(e) => setRole(e.target.value as "patient" | "therapist")}
+          onChange={(e) =>
+            setRole(
+              e.target.value as "patient" | "therapist"
+            )
+          }
           className="mb-6 w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900"
         >
           <option value="patient">Patient</option>
-          <option value="therapist">Therapist</option>
+
+          <option value="therapist">
+            Therapist
+          </option>
         </select>
 
         <button
