@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { translations, Language } from "../lib/translations";
 
 export default function Navbar() {
-  const router = useRouter();
-
   const [language, setLanguage] = useState<Language>("en");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem("language") as Language;
@@ -23,7 +21,17 @@ export default function Navbar() {
         document.documentElement.dir = "ltr";
       }
     }
+
+    checkUser();
   }, []);
+
+  const checkUser = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setIsLoggedIn(!!user);
+  };
 
   const changeLanguage = (lang: Language) => {
     localStorage.setItem("language", lang);
@@ -44,7 +52,7 @@ export default function Navbar() {
 
     alert(language === "ar" ? "تم تسجيل الخروج" : "Logged out");
 
-    router.push("/login");
+    window.location.href = "/";
   };
 
   return (
@@ -72,14 +80,34 @@ export default function Navbar() {
 
         <Link href="/therapists">{t.therapists}</Link>
 
+        <Link href="/podcasts">Podcasts</Link>
+
         <Link href="/session">{t.session}</Link>
 
-        <button
-          onClick={handleLogout}
-          className="rounded-xl bg-black px-4 py-2 text-white"
-        >
-          {t.logout}
-        </button>
+        {isLoggedIn ? (
+          <button
+            onClick={handleLogout}
+            className="rounded-xl bg-black px-4 py-2 text-white"
+          >
+            {t.logout}
+          </button>
+        ) : (
+          <div className="flex items-center gap-4">
+            <Link
+              href="/login"
+              className="rounded-xl border border-black px-4 py-2"
+            >
+              Login
+            </Link>
+
+            <Link
+              href="/signup"
+              className="rounded-xl bg-black px-4 py-2 text-white"
+            >
+              Sign Up
+            </Link>
+          </div>
+        )}
       </div>
     </nav>
   );
