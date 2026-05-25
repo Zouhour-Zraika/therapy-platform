@@ -113,22 +113,25 @@ function BookingContent() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      alert(isArabic ? "يجب تسجيل الدخول" : "You must be logged in");
+      alert(isArabic ? "يرجى تسجيل الدخول لحجز جلسة" : "Please log in to book a session");
+      window.location.href = `/login?redirect=${encodeURIComponent(
+        window.location.pathname + window.location.search
+      )}`;
       return;
     }
 
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .insert({
-          patient_id: user.id,
-          patient_email: user.email,
-          therapist_id: therapist.id,
-          slot_id: selectedSlot.id,
-          therapist_name: getTherapistName(),
-          slot_day: selectedSlot.day,
-          slot_time: selectedSlot.time,
-          price: therapist.price,
-          status: "pending",
+        patient_id: user.id,
+        patient_email: user.email,
+        therapist_id: therapist.id,
+        slot_id: selectedSlot.id,
+        therapist_name: getTherapistName(),
+        slot_day: selectedSlot.day,
+        slot_time: selectedSlot.time,
+        price: therapist.price,
+        status: "pending",
       })
       .select()
       .single();
@@ -139,7 +142,6 @@ function BookingContent() {
       return;
     }
 
-  
     window.location.href =
       `/payment?bookingId=${bookingData.id}` +
       `&therapist=${encodeURIComponent(getTherapistName())}` +
@@ -160,8 +162,8 @@ function BookingContent() {
 
         <p className="mb-10 text-center text-xl text-slate-600">
           {isArabic
-            ? "اختر موعداً متاحاً لجلسة العلاج الخاصة بك."
-            : "Choose an available time slot for your therapy session."}
+            ? "يمكنك مشاهدة المواعيد المتاحة، وتسجيل الدخول مطلوب فقط عند تأكيد الحجز."
+            : "You can view available slots. Login is only required when confirming a booking."}
         </p>
 
         <section className="mx-auto max-w-5xl rounded-3xl bg-white p-8 shadow-lg">
@@ -171,9 +173,7 @@ function BookingContent() {
                 {getTherapistName()}
               </h2>
 
-              <p className="mt-3 text-slate-600">
-                {getTherapistSpecialty()}
-              </p>
+              <p className="mt-3 text-slate-600">{getTherapistSpecialty()}</p>
 
               <p className="mt-4 text-3xl font-bold text-slate-900">
                 {isArabic
