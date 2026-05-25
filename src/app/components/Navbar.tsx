@@ -85,28 +85,28 @@ export default function Navbar() {
         <Link href="/session">{t.session}</Link>
 
         {isLoggedIn ? (
-          <button
-            onClick={handleLogout}
-            className="rounded-xl bg-black px-4 py-2 text-white"
-          >
-            {t.logout}
-          </button>
-        ) : (
-          <div className="flex items-center gap-4">
+          <>
             <Link
-              href="/login"
+              href="/dashboard"
               className="rounded-xl border border-black px-4 py-2"
             >
-              Login
+              Dashboard
             </Link>
 
-            <Link
-              href="/signup"
+            <button
+              onClick={handleLogout}
               className="rounded-xl bg-black px-4 py-2 text-white"
             >
-              Sign Up
-            </Link>
-          </div>
+              {t.logout}
+            </button>
+          </>
+        ) : (
+          <Link
+            href="/login"
+            className="rounded-xl border border-black px-4 py-2"
+          >
+            Login
+          </Link>
         )}
       </div>
     </nav>
