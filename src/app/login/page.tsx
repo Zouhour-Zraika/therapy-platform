@@ -39,7 +39,7 @@ export default function LoginPage() {
     alert("Login successful!");
 
     if (profile?.role === "admin") {
-      router.push("/admin-podcasts");
+      router.push("/admin");
     } else if (profile?.role === "therapist") {
       router.push("/therapist-dashboard");
     } else {
@@ -50,9 +50,14 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100">
       <div className="w-full max-w-md rounded-3xl bg-white p-10 shadow-lg">
-        <h1 className="mb-8 text-center text-5xl font-bold text-slate-900">
-          Login
+        <h1 className="mb-4 text-center text-5xl font-bold text-slate-900">
+          Platform Access
         </h1>
+
+        <p className="mb-6 text-center text-slate-600">
+          Patients can sign in to manage their therapy sessions. Clinicians and
+          administrators can access their professional dashboard.
+        </p>
 
         <div className="space-y-4">
           <input
@@ -75,11 +80,11 @@ export default function LoginPage() {
             onClick={handleLogin}
             className="w-full rounded-2xl bg-black py-4 text-lg font-semibold text-white"
           >
-            Login
+            Continue
           </button>
 
           <p className="text-center text-slate-600">
-            Don&apos;t have an account?{" "}
+            New patient?{" "}
             <Link href="/signup" className="font-semibold text-black underline">
               Sign up
             </Link>
