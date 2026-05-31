@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"patient" | "therapist">("patient");
 
   async function handleSignup() {
     const { data, error } = await supabase.auth.signUp({
@@ -25,16 +24,12 @@ export default function SignupPage() {
         .upsert({
           id: data.user.id,
           email,
-          role,
+          role: "patient",
         });
 
       if (profileError) {
         console.log(profileError);
-
-        alert(
-          "Account created, but profile role was not saved."
-        );
-
+        alert("Account created, but profile was not saved.");
         return;
       }
     }
@@ -45,9 +40,13 @@ export default function SignupPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
       <section className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg">
-        <h1 className="mb-6 text-center text-4xl font-bold text-slate-900">
-          Create Account
+        <h1 className="mb-3 text-center text-4xl font-bold text-slate-900">
+          Create Patient Account
         </h1>
+
+        <p className="mb-6 text-center text-slate-600">
+          Create an account to book and manage therapy sessions.
+        </p>
 
         <input
           className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900"
@@ -57,27 +56,11 @@ export default function SignupPage() {
         />
 
         <input
-          className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900"
+          className="mb-6 w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900"
           placeholder="Password"
           type="password"
           onChange={(e) => setPassword(e.target.value)}
         />
-
-        <select
-          value={role}
-          onChange={(e) =>
-            setRole(
-              e.target.value as "patient" | "therapist"
-            )
-          }
-          className="mb-6 w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900"
-        >
-          <option value="patient">Patient</option>
-
-          <option value="therapist">
-            Therapist
-          </option>
-        </select>
 
         <button
           onClick={handleSignup}
@@ -85,6 +68,10 @@ export default function SignupPage() {
         >
           Sign Up
         </button>
+
+        <p className="mt-5 text-center text-sm text-slate-500">
+          Therapists are added by platform admins only.
+        </p>
       </section>
     </main>
   );
