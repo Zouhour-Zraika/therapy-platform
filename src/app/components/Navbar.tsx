@@ -105,7 +105,7 @@ export default function Navbar() {
             href="/login"
             className="rounded-xl border border-black px-4 py-2"
           >
-            Login
+            Clinician Login
           </Link>
         )}
       </div>
