@@ -38,7 +38,7 @@ export default function SessionPage() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      router.push("/login");
+      router.replace("/login?redirect=/session");
       return;
     }
 
