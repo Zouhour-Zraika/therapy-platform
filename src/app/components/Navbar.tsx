@@ -102,10 +102,10 @@ export default function Navbar() {
           </>
         ) : (
           <Link
-            href="/login"
+            href="/clinician"
             className="rounded-xl border border-black px-4 py-2"
           >
-            Clinician Login
+            Clinician Portal
           </Link>
         )}
       </div>
