@@ -50,14 +50,9 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100">
       <div className="w-full max-w-md rounded-3xl bg-white p-10 shadow-lg">
-        <h1 className="mb-4 text-center text-5xl font-bold text-slate-900">
+        <h1 className="mb-8 text-center text-5xl font-bold text-slate-900">
           Platform Access
         </h1>
-
-        <p className="mb-6 text-center text-slate-600">
-          Patients can sign in to manage their therapy sessions. Clinicians and
-          administrators can access their professional dashboard.
-        </p>
 
         <div className="space-y-4">
           <input
@@ -76,6 +71,15 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
 
+          <div className="text-right">
+            <Link
+              href="/forgot-password"
+              className="text-sm font-semibold text-slate-600 hover:text-black"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
           <button
             onClick={handleLogin}
             className="w-full rounded-2xl bg-black py-4 text-lg font-semibold text-white"
@@ -85,7 +89,10 @@ export default function LoginPage() {
 
           <p className="text-center text-slate-600">
             New patient?{" "}
-            <Link href="/signup" className="font-semibold text-black underline">
+            <Link
+              href="/signup"
+              className="font-semibold text-black underline"
+            >
               Sign up
             </Link>
           </p>

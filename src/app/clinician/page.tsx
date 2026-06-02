@@ -118,8 +118,17 @@ export default function ClinicianPage() {
               placeholder="Password"
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
-              className="mb-6 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
+              className="mb-3 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
             />
+
+            <div className="mb-6 text-right">
+              <Link
+                href="/forgot-password"
+                className="text-sm font-semibold text-slate-600 hover:text-black"
+              >
+                Forgot password?
+              </Link>
+            </div>
 
             <button
               onClick={handleClinicianLogin}
