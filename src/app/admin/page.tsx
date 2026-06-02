@@ -14,6 +14,7 @@ export default function AdminPage() {
           <Link href="/">Home</Link>
           <Link href="/therapists">Therapists</Link>
           <Link href="/podcasts">Podcasts</Link>
+          <Link href="/clinician">Clinician Portal</Link>
         </div>
       </nav>
 
@@ -24,11 +25,38 @@ export default function AdminPage() {
           </h2>
 
           <p className="text-2xl text-slate-600">
-            Manage therapists, podcasts, bookings and platform settings.
+            Manage therapist applications, therapists, podcasts, bookings and
+            platform settings.
           </p>
         </div>
 
         <div className="grid gap-8 md:grid-cols-2">
+          <Link
+            href="/admin-applications"
+            className="rounded-3xl bg-white p-10 shadow-lg transition hover:scale-[1.02]"
+          >
+            <h3 className="mb-4 text-4xl font-bold text-slate-900">
+              Therapist Applications
+            </h3>
+
+            <p className="text-xl text-slate-600">
+              Review, approve or reject new therapist requests.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin-therapists"
+            className="rounded-3xl bg-white p-10 shadow-lg transition hover:scale-[1.02]"
+          >
+            <h3 className="mb-4 text-4xl font-bold text-slate-900">
+              Manage Therapists
+            </h3>
+
+            <p className="text-xl text-slate-600">
+              Manage approved therapist profiles on the platform.
+            </p>
+          </Link>
+
           <Link
             href="/admin-podcasts"
             className="rounded-3xl bg-white p-10 shadow-lg transition hover:scale-[1.02]"
@@ -44,16 +72,6 @@ export default function AdminPage() {
 
           <div className="rounded-3xl bg-white p-10 shadow-lg">
             <h3 className="mb-4 text-4xl font-bold text-slate-900">
-              Manage Therapists
-            </h3>
-
-            <p className="text-xl text-slate-600">
-              Approve therapist accounts and manage therapist profiles.
-            </p>
-          </div>
-
-          <div className="rounded-3xl bg-white p-10 shadow-lg">
-            <h3 className="mb-4 text-4xl font-bold text-slate-900">
               View Bookings
             </h3>
 
@@ -62,7 +80,7 @@ export default function AdminPage() {
             </p>
           </div>
 
-          <div className="rounded-3xl bg-white p-10 shadow-lg">
+          <div className="rounded-3xl bg-white p-10 shadow-lg md:col-span-2">
             <h3 className="mb-4 text-4xl font-bold text-slate-900">
               Platform Settings
             </h3>
