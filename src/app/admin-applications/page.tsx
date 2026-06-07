@@ -17,6 +17,7 @@ type TherapistApplication = {
 export default function AdminApplicationsPage() {
   const [applications, setApplications] = useState<TherapistApplication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     getApplications();
@@ -39,25 +40,40 @@ export default function AdminApplicationsPage() {
   };
 
   const approveApplication = async (application: TherapistApplication) => {
-    const { error } = await supabase
-      .from("therapist_applications")
-      .update({ status: "approved" })
-      .eq("id", application.id);
+    setProcessingId(application.id);
 
-    if (error) {
-      alert("Error approving application");
+    try {
+      const response = await fetch("/api/approve-therapist", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: application.email,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || "Error approving application");
+        setProcessingId(null);
+        return;
+      }
+
+      alert("Therapist approved successfully.");
+      getApplications();
+    } catch (error) {
       console.log(error);
-      return;
+      alert("Error approving application");
     }
 
-    alert(
-      "Application approved. Ask this therapist to create an account, then change their role to therapist from Supabase or Admin Therapists."
-    );
-
-    getApplications();
+    setProcessingId(null);
   };
 
   const rejectApplication = async (id: string) => {
+    setProcessingId(id);
+
     const { error } = await supabase
       .from("therapist_applications")
       .update({ status: "rejected" })
@@ -66,10 +82,12 @@ export default function AdminApplicationsPage() {
     if (error) {
       alert("Error rejecting application");
       console.log(error);
+      setProcessingId(null);
       return;
     }
 
     getApplications();
+    setProcessingId(null);
   };
 
   return (
@@ -132,18 +150,28 @@ export default function AdminApplicationsPage() {
                     <div className="flex min-w-48 flex-col gap-3">
                       <button
                         onClick={() => approveApplication(application)}
-                        disabled={application.status === "approved"}
+                        disabled={
+                          application.status === "approved" ||
+                          processingId === application.id
+                        }
                         className="rounded-xl bg-green-700 px-5 py-3 text-white disabled:bg-slate-400"
                       >
-                        Approve
+                        {processingId === application.id
+                          ? "Processing..."
+                          : "Approve"}
                       </button>
 
                       <button
                         onClick={() => rejectApplication(application.id)}
-                        disabled={application.status === "rejected"}
+                        disabled={
+                          application.status === "rejected" ||
+                          processingId === application.id
+                        }
                         className="rounded-xl bg-red-600 px-5 py-3 text-white disabled:bg-slate-400"
                       >
-                        Reject
+                        {processingId === application.id
+                          ? "Processing..."
+                          : "Reject"}
                       </button>
                     </div>
                   </div>
