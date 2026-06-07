@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { email } = body;
+    const { email, fullName, specialty } = body;
 
     if (!email) {
       return NextResponse.json(
@@ -19,34 +19,66 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("email", email)
-      .single();
+    const origin = req.headers.get("origin") || "http://localhost:3000";
 
-    if (profileError || !profile) {
+    const { data: invitedUser, error: inviteError } =
+      await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${origin}/reset-password`,
+      });
+
+    if (inviteError && !inviteError.message.includes("already registered")) {
       return NextResponse.json(
-        {
-          error:
-            "This therapist must first create an account on the platform.",
-        },
-        { status: 400 }
+        { error: inviteError.message },
+        { status: 500 }
       );
     }
 
-    const { error: updateError } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        role: "therapist",
-      })
-      .eq("email", email);
+    const userId = invitedUser?.user?.id;
 
-    if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 }
-      );
+    if (userId) {
+      const { error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .upsert({
+          id: userId,
+          email,
+          role: "therapist",
+        });
+
+      if (profileError) {
+        return NextResponse.json(
+          { error: profileError.message },
+          { status: 500 }
+        );
+      }
+
+      await supabaseAdmin.from("therapists").upsert({
+        id: userId,
+        full_name: fullName || "",
+        specialty: specialty || "",
+        bio: "",
+        price: 0,
+      });
+    } else {
+      const { data: existingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("email", email)
+        .single();
+
+      if (existingProfile?.id) {
+        await supabaseAdmin
+          .from("profiles")
+          .update({ role: "therapist" })
+          .eq("email", email);
+
+        await supabaseAdmin.from("therapists").upsert({
+          id: existingProfile.id,
+          full_name: fullName || "",
+          specialty: specialty || "",
+          bio: "",
+          price: 0,
+        });
+      }
     }
 
     const { error: applicationError } = await supabaseAdmin

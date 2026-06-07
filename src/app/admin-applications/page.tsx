@@ -50,6 +50,8 @@ export default function AdminApplicationsPage() {
         },
         body: JSON.stringify({
           email: application.email,
+          fullName: application.full_name,
+          specialty: application.specialty,
         }),
       });
 
@@ -61,7 +63,10 @@ export default function AdminApplicationsPage() {
         return;
       }
 
-      alert("Therapist approved successfully.");
+      alert(
+        "Therapist approved successfully. An invitation email has been sent."
+      );
+
       getApplications();
     } catch (error) {
       console.log(error);
