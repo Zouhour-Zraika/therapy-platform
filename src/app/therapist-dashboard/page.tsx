@@ -12,14 +12,12 @@ type AvailabilitySlot = {
 
 type Booking = {
   id: string;
-  therapist_name: string;
   slot_day: string;
   slot_time: string;
   price: number;
   status: string;
   created_at: string;
   patient_email: string | null;
-  zoom_join_url: string | null;
   zoom_start_url: string | null;
 };
 
@@ -42,18 +40,28 @@ export default function TherapistDashboard() {
     getBookings();
   }, []);
 
-  const getProfile = async () => {
+  const getCurrentUser = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
+    return user;
+  };
+
+  const getProfile = async () => {
+    const user = await getCurrentUser();
     if (!user) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("therapists")
       .select("*")
       .eq("id", user.id)
       .single();
+
+    if (error) {
+      console.log("Profile error:", error);
+      return;
+    }
 
     if (data) {
       setFullName(data.full_name || "");
@@ -66,11 +74,10 @@ export default function TherapistDashboard() {
   const saveProfile = async () => {
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
 
     if (!user) {
+      alert("You must be logged in.");
       setLoading(false);
       return;
     }
@@ -87,17 +94,15 @@ export default function TherapistDashboard() {
       alert("Error saving profile");
       console.log(error);
     } else {
-      alert("Profile saved");
+      alert("Profile saved successfully");
+      getProfile();
     }
 
     setLoading(false);
   };
 
   const getSlots = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getCurrentUser();
     if (!user) return;
 
     const { data, error } = await supabase
@@ -107,7 +112,7 @@ export default function TherapistDashboard() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.log(error);
+      console.log("Slots error:", error);
       return;
     }
 
@@ -120,10 +125,7 @@ export default function TherapistDashboard() {
       return;
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getCurrentUser();
     if (!user) return;
 
     const { error } = await supabase.from("availability_slots").insert({
@@ -134,7 +136,7 @@ export default function TherapistDashboard() {
     });
 
     if (error) {
-      alert("Error adding slot");
+      alert("Error adding availability");
       console.log(error);
       return;
     }
@@ -145,6 +147,9 @@ export default function TherapistDashboard() {
   };
 
   const deleteSlot = async (id: string) => {
+    const confirmDelete = confirm("Delete this availability?");
+    if (!confirmDelete) return;
+
     const { error } = await supabase
       .from("availability_slots")
       .delete()
@@ -160,10 +165,7 @@ export default function TherapistDashboard() {
   };
 
   const getBookings = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getCurrentUser();
     if (!user) return;
 
     const { data, error } = await supabase
@@ -226,7 +228,8 @@ export default function TherapistDashboard() {
 
               <button
                 onClick={saveProfile}
-                className="w-full rounded-2xl bg-black py-4 text-lg text-white"
+                disabled={loading}
+                className="w-full rounded-2xl bg-black py-4 text-lg text-white disabled:bg-slate-400"
               >
                 {loading ? "Saving..." : "Save Profile"}
               </button>
@@ -324,11 +327,8 @@ export default function TherapistDashboard() {
                       </span>
                     </p>
 
-                    <p className="mt-2 text-slate-700">
-                      Status:{" "}
-                      <span className="font-bold text-green-700">
-                        {booking.status}
-                      </span>
+                    <p className="mt-2 text-green-700 font-bold">
+                      Status: {booking.status}
                     </p>
 
                     <p className="mt-2 text-sm text-slate-500">
