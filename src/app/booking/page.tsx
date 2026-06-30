@@ -20,7 +20,7 @@ type Slot = {
   day: string;
   time: string;
   therapist_id: string;
-  is_booked: boolean;
+  is_booked: boolean | null;
 };
 
 function BookingContent() {
@@ -95,14 +95,17 @@ function BookingContent() {
       .from("availability_slots")
       .select("*")
       .eq("therapist_id", therapistId)
-      .eq("is_booked", false);
+      .order("day", { ascending: true })
+      .order("time", { ascending: true });
 
     if (error) {
       console.log(error);
       return;
     }
 
-    setSlots(data || []);
+    const availableSlots = (data || []).filter((slot) => slot.is_booked !== true);
+
+    setSlots(availableSlots);
   };
 
   const confirmBooking = async () => {
@@ -113,10 +116,16 @@ function BookingContent() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      alert(isArabic ? "يرجى تسجيل الدخول لحجز جلسة" : "Please log in to book a session");
+      alert(
+        isArabic
+          ? "يرجى تسجيل الدخول لحجز جلسة"
+          : "Please log in to book a session"
+      );
+
       window.location.href = `/login?redirect=${encodeURIComponent(
         window.location.pathname + window.location.search
       )}`;
+
       return;
     }
 
