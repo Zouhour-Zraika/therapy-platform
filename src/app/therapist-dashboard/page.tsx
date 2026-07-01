@@ -6,7 +6,8 @@ import Navbar from "../components/Navbar";
 
 type AvailabilitySlot = {
   id: string;
-  day: string;
+  slot_date: string | null;
+  day: string | null;
   time: string;
 };
 
@@ -27,7 +28,7 @@ export default function TherapistDashboard() {
   const [bio, setBio] = useState("");
   const [price, setPrice] = useState("");
 
-  const [day, setDay] = useState("");
+  const [slotDate, setSlotDate] = useState("");
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -46,6 +47,23 @@ export default function TherapistDashboard() {
     } = await supabase.auth.getUser();
 
     return user;
+  };
+
+  const formatDate = (date: string | null) => {
+    if (!date) return "No date";
+
+    return new Date(date).toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const getDayFromDate = (date: string) => {
+    return new Date(date).toLocaleDateString("en-US", {
+      weekday: "long",
+    });
   };
 
   const getProfile = async () => {
@@ -109,7 +127,8 @@ export default function TherapistDashboard() {
       .from("availability_slots")
       .select("*")
       .eq("therapist_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("slot_date", { ascending: true })
+      .order("time", { ascending: true });
 
     if (error) {
       console.log("Slots error:", error);
@@ -120,8 +139,8 @@ export default function TherapistDashboard() {
   };
 
   const addSlot = async () => {
-    if (!day || !time) {
-      alert("Please choose day and time");
+    if (!slotDate || !time) {
+      alert("Please choose date and time");
       return;
     }
 
@@ -130,7 +149,8 @@ export default function TherapistDashboard() {
 
     const { error } = await supabase.from("availability_slots").insert({
       therapist_id: user.id,
-      day,
+      slot_date: slotDate,
+      day: getDayFromDate(slotDate),
       time,
       is_booked: false,
     });
@@ -141,7 +161,7 @@ export default function TherapistDashboard() {
       return;
     }
 
-    setDay("");
+    setSlotDate("");
     setTime("");
     getSlots();
   };
@@ -242,20 +262,12 @@ export default function TherapistDashboard() {
             </h2>
 
             <div className="mb-8 space-y-4">
-              <select
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
+              <input
+                type="date"
+                value={slotDate}
+                onChange={(e) => setSlotDate(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
-              >
-                <option value="">Choose day</option>
-                <option value="Monday">Monday</option>
-                <option value="Tuesday">Tuesday</option>
-                <option value="Wednesday">Wednesday</option>
-                <option value="Thursday">Thursday</option>
-                <option value="Friday">Friday</option>
-                <option value="Saturday">Saturday</option>
-                <option value="Sunday">Sunday</option>
-              </select>
+              />
 
               <input
                 type="time"
@@ -282,7 +294,9 @@ export default function TherapistDashboard() {
                     className="flex items-center justify-between rounded-2xl bg-slate-100 p-4"
                   >
                     <div>
-                      <p className="font-bold text-slate-900">{slot.day}</p>
+                      <p className="font-bold text-slate-900">
+                        {formatDate(slot.slot_date)}
+                      </p>
                       <p className="text-slate-600">{slot.time}</p>
                     </div>
 
@@ -327,7 +341,7 @@ export default function TherapistDashboard() {
                       </span>
                     </p>
 
-                    <p className="mt-2 text-green-700 font-bold">
+                    <p className="mt-2 font-bold text-green-700">
                       Status: {booking.status}
                     </p>
 
