@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
+import { translations, Language } from "../lib/translations";
 
 type Podcast = {
   id: string;

@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "../components/Navbar";
-import { Language } from "../lib/translations";
 import { supabase } from "@/lib/supabase";
+import { translations, Language } from "../lib/translations";
 
 function PaymentContent() {
   const searchParams = useSearchParams();

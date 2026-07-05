@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { translations, Language } from "../lib/translations";
 
 export default function ResetPasswordPage() {
   const router = useRouter();

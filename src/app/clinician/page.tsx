@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
+import { translations, Language } from "../lib/translations";
 
 export default function ClinicianPage() {
   const router = useRouter();
