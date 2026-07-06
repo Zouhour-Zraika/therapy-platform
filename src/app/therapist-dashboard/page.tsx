@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Navbar from "../components/Navbar";
+import { translations, Language } from "../lib/translations";
 
 type AvailabilitySlot = {
   id: string;
@@ -23,6 +24,8 @@ type Booking = {
 };
 
 export default function TherapistDashboard() {
+  const [language, setLanguage] = useState<Language>("en");
+
   const [fullName, setFullName] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [bio, setBio] = useState("");
@@ -36,10 +39,18 @@ export default function TherapistDashboard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const savedLanguage = localStorage.getItem("language") as Language;
+
+    if (savedLanguage) {
+      setLanguage(savedLanguage);
+    }
+
     getProfile();
     getSlots();
     getBookings();
   }, []);
+
+  const t = translations[language];
 
   const getCurrentUser = async () => {
     const {
@@ -52,7 +63,7 @@ export default function TherapistDashboard() {
   const formatDate = (date: string | null) => {
     if (!date) return "No date";
 
-    return new Date(date).toLocaleDateString("en-US", {
+    return new Date(date).toLocaleDateString(language === "ar" ? "ar" : "en-US", {
       weekday: "long",
       year: "numeric",
       month: "short",
@@ -90,6 +101,23 @@ export default function TherapistDashboard() {
   };
 
   const saveProfile = async () => {
+    const numericPrice = Number(price);
+
+    if (!fullName.trim()) {
+      alert("Please enter your full name.");
+      return;
+    }
+
+    if (!specialty.trim()) {
+      alert("Please enter your specialty.");
+      return;
+    }
+
+    if (!numericPrice || numericPrice <= 0) {
+      alert("Please enter a valid session price greater than 0.");
+      return;
+    }
+
     setLoading(true);
 
     const user = await getCurrentUser();
@@ -105,7 +133,7 @@ export default function TherapistDashboard() {
       full_name: fullName,
       specialty,
       bio,
-      price: Number(price),
+      price: numericPrice,
     });
 
     if (error) {
@@ -211,13 +239,13 @@ export default function TherapistDashboard() {
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
           <section className="rounded-3xl bg-white p-10 shadow-xl">
             <h1 className="mb-8 text-5xl font-bold text-slate-900">
-              Therapist Profile
+              {t.therapistProfile}
             </h1>
 
             <div className="space-y-6">
               <input
                 type="text"
-                placeholder="Full name"
+                placeholder={t.fullName}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
@@ -225,14 +253,14 @@ export default function TherapistDashboard() {
 
               <input
                 type="text"
-                placeholder="Specialty"
+                placeholder={t.specialty}
                 value={specialty}
                 onChange={(e) => setSpecialty(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
               />
 
               <textarea
-                placeholder="Bio"
+                placeholder={t.bio}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 className="h-40 w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
@@ -240,6 +268,7 @@ export default function TherapistDashboard() {
 
               <input
                 type="number"
+                min="1"
                 placeholder="Session price ($)"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
@@ -251,14 +280,14 @@ export default function TherapistDashboard() {
                 disabled={loading}
                 className="w-full rounded-2xl bg-black py-4 text-lg text-white disabled:bg-slate-400"
               >
-                {loading ? "Saving..." : "Save Profile"}
+                {loading ? t.loadingText : t.saveProfile}
               </button>
             </div>
           </section>
 
           <section className="rounded-3xl bg-white p-10 shadow-xl">
             <h2 className="mb-8 text-4xl font-bold text-slate-900">
-              Availability
+              {t.availability}
             </h2>
 
             <div className="mb-8 space-y-4">
@@ -280,13 +309,13 @@ export default function TherapistDashboard() {
                 onClick={addSlot}
                 className="w-full rounded-2xl bg-black py-4 text-lg text-white"
               >
-                Add Availability
+                {t.addAvailability}
               </button>
             </div>
 
             <div className="space-y-4">
               {slots.length === 0 ? (
-                <p className="text-slate-600">No availability yet.</p>
+                <p className="text-slate-600">{t.noAvailability}</p>
               ) : (
                 slots.map((slot) => (
                   <div
@@ -304,7 +333,7 @@ export default function TherapistDashboard() {
                       onClick={() => deleteSlot(slot.id)}
                       className="rounded-xl bg-red-600 px-4 py-2 text-white"
                     >
-                      Delete
+                      {t.delete}
                     </button>
                   </div>
                 ))
