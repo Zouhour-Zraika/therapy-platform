@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Navbar from "../components/Navbar";
-import { translations, Language } from "../lib/translations";
+import { Language } from "../lib/translations";
 
 type AvailabilitySlot = {
   id: string;
@@ -50,7 +50,7 @@ export default function TherapistDashboard() {
     getBookings();
   }, []);
 
-  const t = translations[language];
+  const isArabic = language === "ar";
 
   const getCurrentUser = async () => {
     const {
@@ -61,9 +61,9 @@ export default function TherapistDashboard() {
   };
 
   const formatDate = (date: string | null) => {
-    if (!date) return "No date";
+    if (!date) return isArabic ? "لا يوجد تاريخ" : "No date";
 
-    return new Date(date).toLocaleDateString(language === "ar" ? "ar" : "en-US", {
+    return new Date(date).toLocaleDateString(isArabic ? "ar" : "en-US", {
       weekday: "long",
       year: "numeric",
       month: "short",
@@ -104,17 +104,21 @@ export default function TherapistDashboard() {
     const numericPrice = Number(price);
 
     if (!fullName.trim()) {
-      alert("Please enter your full name.");
+      alert(isArabic ? "يرجى إدخال الاسم الكامل." : "Please enter your full name.");
       return;
     }
 
     if (!specialty.trim()) {
-      alert("Please enter your specialty.");
+      alert(isArabic ? "يرجى إدخال التخصص." : "Please enter your specialty.");
       return;
     }
 
     if (!numericPrice || numericPrice <= 0) {
-      alert("Please enter a valid session price greater than 0.");
+      alert(
+        isArabic
+          ? "يرجى إدخال سعر جلسة صحيح أكبر من 0."
+          : "Please enter a valid session price greater than 0."
+      );
       return;
     }
 
@@ -123,7 +127,7 @@ export default function TherapistDashboard() {
     const user = await getCurrentUser();
 
     if (!user) {
-      alert("You must be logged in.");
+      alert(isArabic ? "يجب تسجيل الدخول." : "You must be logged in.");
       setLoading(false);
       return;
     }
@@ -137,10 +141,10 @@ export default function TherapistDashboard() {
     });
 
     if (error) {
-      alert("Error saving profile");
+      alert(isArabic ? "خطأ في حفظ الملف الشخصي" : "Error saving profile");
       console.log(error);
     } else {
-      alert("Profile saved successfully");
+      alert(isArabic ? "تم حفظ الملف الشخصي بنجاح" : "Profile saved successfully");
       getProfile();
     }
 
@@ -168,7 +172,7 @@ export default function TherapistDashboard() {
 
   const addSlot = async () => {
     if (!slotDate || !time) {
-      alert("Please choose date and time");
+      alert(isArabic ? "يرجى اختيار التاريخ والوقت" : "Please choose date and time");
       return;
     }
 
@@ -184,7 +188,7 @@ export default function TherapistDashboard() {
     });
 
     if (error) {
-      alert("Error adding availability");
+      alert(isArabic ? "خطأ في إضافة الموعد" : "Error adding availability");
       console.log(error);
       return;
     }
@@ -195,7 +199,10 @@ export default function TherapistDashboard() {
   };
 
   const deleteSlot = async (id: string) => {
-    const confirmDelete = confirm("Delete this availability?");
+    const confirmDelete = confirm(
+      isArabic ? "هل تريد حذف هذا الموعد؟" : "Delete this availability?"
+    );
+
     if (!confirmDelete) return;
 
     const { error } = await supabase
@@ -204,7 +211,7 @@ export default function TherapistDashboard() {
       .eq("id", id);
 
     if (error) {
-      alert("Error deleting slot");
+      alert(isArabic ? "خطأ في حذف الموعد" : "Error deleting slot");
       console.log(error);
       return;
     }
@@ -239,13 +246,13 @@ export default function TherapistDashboard() {
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
           <section className="rounded-3xl bg-white p-10 shadow-xl">
             <h1 className="mb-8 text-5xl font-bold text-slate-900">
-              {t.therapistProfile}
+              {isArabic ? "الملف الشخصي للمعالج" : "Therapist Profile"}
             </h1>
 
             <div className="space-y-6">
               <input
                 type="text"
-                placeholder={t.fullName}
+                placeholder={isArabic ? "الاسم الكامل" : "Full name"}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
@@ -253,14 +260,14 @@ export default function TherapistDashboard() {
 
               <input
                 type="text"
-                placeholder={t.specialty}
+                placeholder={isArabic ? "التخصص" : "Specialty"}
                 value={specialty}
                 onChange={(e) => setSpecialty(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
               />
 
               <textarea
-                placeholder={t.bio}
+                placeholder={isArabic ? "نبذة" : "Bio"}
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 className="h-40 w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
@@ -269,7 +276,7 @@ export default function TherapistDashboard() {
               <input
                 type="number"
                 min="1"
-                placeholder="Session price ($)"
+                placeholder={isArabic ? "سعر الجلسة بالدولار" : "Session price ($)"}
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
@@ -280,14 +287,20 @@ export default function TherapistDashboard() {
                 disabled={loading}
                 className="w-full rounded-2xl bg-black py-4 text-lg text-white disabled:bg-slate-400"
               >
-                {loading ? t.loadingText : t.saveProfile}
+                {loading
+                  ? isArabic
+                    ? "جاري الحفظ..."
+                    : "Saving..."
+                  : isArabic
+                  ? "حفظ الملف الشخصي"
+                  : "Save Profile"}
               </button>
             </div>
           </section>
 
           <section className="rounded-3xl bg-white p-10 shadow-xl">
             <h2 className="mb-8 text-4xl font-bold text-slate-900">
-              {t.availability}
+              {isArabic ? "المواعيد المتاحة" : "Availability"}
             </h2>
 
             <div className="mb-8 space-y-4">
@@ -309,13 +322,15 @@ export default function TherapistDashboard() {
                 onClick={addSlot}
                 className="w-full rounded-2xl bg-black py-4 text-lg text-white"
               >
-                {t.addAvailability}
+                {isArabic ? "إضافة موعد" : "Add Availability"}
               </button>
             </div>
 
             <div className="space-y-4">
               {slots.length === 0 ? (
-                <p className="text-slate-600">{t.noAvailability}</p>
+                <p className="text-slate-600">
+                  {isArabic ? "لا توجد مواعيد متاحة." : "No availability yet."}
+                </p>
               ) : (
                 slots.map((slot) => (
                   <div
@@ -333,7 +348,7 @@ export default function TherapistDashboard() {
                       onClick={() => deleteSlot(slot.id)}
                       className="rounded-xl bg-red-600 px-4 py-2 text-white"
                     >
-                      {t.delete}
+                      {isArabic ? "حذف" : "Delete"}
                     </button>
                   </div>
                 ))
@@ -343,11 +358,13 @@ export default function TherapistDashboard() {
 
           <section className="rounded-3xl bg-white p-10 shadow-xl lg:col-span-2">
             <h2 className="mb-8 text-4xl font-bold text-slate-900">
-              Booked Sessions
+              {isArabic ? "الجلسات المحجوزة" : "Booked Sessions"}
             </h2>
 
             {bookings.length === 0 ? (
-              <p className="text-slate-600">No paid bookings yet.</p>
+              <p className="text-slate-600">
+                {isArabic ? "لا توجد حجوزات مدفوعة بعد." : "No paid bookings yet."}
+              </p>
             ) : (
               <div className="grid gap-6 md:grid-cols-2">
                 {bookings.map((booking) => (
@@ -360,22 +377,23 @@ export default function TherapistDashboard() {
                     </p>
 
                     <p className="mt-3 text-slate-700">
-                      Price: ${booking.price}
+                      {isArabic ? "السعر" : "Price"}: ${booking.price}
                     </p>
 
                     <p className="mt-2 text-slate-700">
-                      Patient Email:{" "}
+                      {isArabic ? "بريد المريض" : "Patient Email"}:{" "}
                       <span className="font-semibold">
                         {booking.patient_email || "Unknown"}
                       </span>
                     </p>
 
                     <p className="mt-2 font-bold text-green-700">
-                      Status: {booking.status}
+                      {isArabic ? "الحالة" : "Status"}: {booking.status}
                     </p>
 
                     <p className="mt-2 text-sm text-slate-500">
-                      Created: {new Date(booking.created_at).toLocaleString()}
+                      {isArabic ? "تم الإنشاء" : "Created"}:{" "}
+                      {new Date(booking.created_at).toLocaleString()}
                     </p>
 
                     {booking.zoom_start_url ? (
@@ -385,11 +403,11 @@ export default function TherapistDashboard() {
                         rel="noopener noreferrer"
                         className="mt-5 block w-full rounded-2xl bg-black py-3 text-center text-white"
                       >
-                        Start Zoom Session
+                        {isArabic ? "بدء جلسة زووم" : "Start Zoom Session"}
                       </a>
                     ) : (
                       <button className="mt-5 w-full rounded-2xl bg-slate-400 py-3 text-white">
-                        Zoom Not Ready
+                        {isArabic ? "زووم غير جاهز" : "Zoom Not Ready"}
                       </button>
                     )}
                   </div>
