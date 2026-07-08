@@ -40,10 +40,7 @@ export default function TherapistDashboard() {
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem("language") as Language;
-
-    if (savedLanguage) {
-      setLanguage(savedLanguage);
-    }
+    if (savedLanguage) setLanguage(savedLanguage);
 
     getProfile();
     getSlots();
@@ -96,13 +93,11 @@ export default function TherapistDashboard() {
       setFullName(data.full_name || "");
       setSpecialty(data.specialty || "");
       setBio(data.bio || "");
-      setPrice(data.price?.toString() || "");
+      setPrice(data.price?.toString() || "0");
     }
   };
 
   const saveProfile = async () => {
-    const numericPrice = Number(price);
-
     if (!fullName.trim()) {
       alert(isArabic ? "يرجى إدخال الاسم الكامل." : "Please enter your full name.");
       return;
@@ -110,15 +105,6 @@ export default function TherapistDashboard() {
 
     if (!specialty.trim()) {
       alert(isArabic ? "يرجى إدخال التخصص." : "Please enter your specialty.");
-      return;
-    }
-
-    if (!numericPrice || numericPrice <= 0) {
-      alert(
-        isArabic
-          ? "يرجى إدخال سعر جلسة صحيح أكبر من 0."
-          : "Please enter a valid session price greater than 0."
-      );
       return;
     }
 
@@ -137,7 +123,6 @@ export default function TherapistDashboard() {
       full_name: fullName,
       specialty,
       bio,
-      price: numericPrice,
     });
 
     if (error) {
@@ -273,14 +258,21 @@ export default function TherapistDashboard() {
                 className="h-40 w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
               />
 
-              <input
-                type="number"
-                min="1"
-                placeholder={isArabic ? "سعر الجلسة بالدولار" : "Session price ($)"}
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full rounded-2xl border border-slate-300 p-4 text-slate-900"
-              />
+              <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">
+                  {isArabic ? "سعر الجلسة" : "Session Price"}
+                </p>
+
+                <p className="mt-2 text-3xl font-bold text-slate-900">
+                  ${price || 0}
+                </p>
+
+                <p className="mt-2 text-sm text-slate-500">
+                  {isArabic
+                    ? "يتم تحديد السعر بواسطة الإدارة."
+                    : "Price managed by the administrator."}
+                </p>
+              </div>
 
               <button
                 onClick={saveProfile}
