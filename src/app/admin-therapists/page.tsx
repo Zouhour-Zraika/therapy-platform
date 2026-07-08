@@ -14,6 +14,7 @@ type Therapist = {
 
 export default function AdminTherapistsPage() {
   const [therapists, setTherapists] = useState<Therapist[]>([]);
+  const [prices, setPrices] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,7 +34,37 @@ export default function AdminTherapistsPage() {
     }
 
     setTherapists(data || []);
+
+    const initialPrices: Record<string, string> = {};
+    (data || []).forEach((therapist) => {
+      initialPrices[therapist.id] = therapist.price?.toString() || "0";
+    });
+
+    setPrices(initialPrices);
     setLoading(false);
+  };
+
+  const updatePrice = async (id: string) => {
+    const newPrice = Number(prices[id]);
+
+    if (!newPrice || newPrice <= 0) {
+      alert("Please enter a valid price greater than 0.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("therapists")
+      .update({ price: newPrice })
+      .eq("id", id);
+
+    if (error) {
+      alert("Error updating price");
+      console.log(error);
+      return;
+    }
+
+    alert("Price updated successfully");
+    getTherapists();
   };
 
   const deleteTherapist = async (id: string) => {
@@ -63,7 +94,7 @@ export default function AdminTherapistsPage() {
           </h1>
 
           <p className="mb-10 text-xl text-slate-600">
-            View and manage therapists on the platform.
+            View therapists and manage session pricing from the admin panel.
           </p>
 
           {loading ? (
@@ -90,8 +121,31 @@ export default function AdminTherapistsPage() {
                   </p>
 
                   <p className="mt-4 text-xl font-bold text-slate-900">
-                    ${therapist.price || 0}/session
+                    Current price: ${therapist.price || 0}/session
                   </p>
+
+                  <div className="mt-5 flex gap-3">
+                    <input
+                      type="number"
+                      min="1"
+                      value={prices[therapist.id] || ""}
+                      onChange={(e) =>
+                        setPrices({
+                          ...prices,
+                          [therapist.id]: e.target.value,
+                        })
+                      }
+                      className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-slate-900"
+                      placeholder="Session price"
+                    />
+
+                    <button
+                      onClick={() => updatePrice(therapist.id)}
+                      className="rounded-xl bg-black px-5 py-3 text-white"
+                    >
+                      Update Price
+                    </button>
+                  </div>
 
                   <button
                     onClick={() => deleteTherapist(therapist.id)}
