@@ -99,7 +99,9 @@ export default function TherapistDashboard() {
 
   const saveProfile = async () => {
     if (!fullName.trim()) {
-      alert(isArabic ? "يرجى إدخال الاسم الكامل." : "Please enter your full name.");
+      alert(
+        isArabic ? "يرجى إدخال الاسم الكامل." : "Please enter your full name."
+      );
       return;
     }
 
@@ -118,18 +120,22 @@ export default function TherapistDashboard() {
       return;
     }
 
-    const { error } = await supabase.from("therapists").upsert({
-      id: user.id,
-      full_name: fullName,
-      specialty,
-      bio,
-    });
+    const { error } = await supabase
+      .from("therapists")
+      .update({
+        full_name: fullName,
+        specialty,
+        bio,
+      })
+      .eq("id", user.id);
 
     if (error) {
       alert(isArabic ? "خطأ في حفظ الملف الشخصي" : "Error saving profile");
       console.log(error);
     } else {
-      alert(isArabic ? "تم حفظ الملف الشخصي بنجاح" : "Profile saved successfully");
+      alert(
+        isArabic ? "تم حفظ الملف الشخصي بنجاح" : "Profile saved successfully"
+      );
       getProfile();
     }
 
@@ -157,7 +163,9 @@ export default function TherapistDashboard() {
 
   const addSlot = async () => {
     if (!slotDate || !time) {
-      alert(isArabic ? "يرجى اختيار التاريخ والوقت" : "Please choose date and time");
+      alert(
+        isArabic ? "يرجى اختيار التاريخ والوقت" : "Please choose date and time"
+      );
       return;
     }
 
@@ -355,7 +363,9 @@ export default function TherapistDashboard() {
 
             {bookings.length === 0 ? (
               <p className="text-slate-600">
-                {isArabic ? "لا توجد حجوزات مدفوعة بعد." : "No paid bookings yet."}
+                {isArabic
+                  ? "لا توجد حجوزات مدفوعة بعد."
+                  : "No paid bookings yet."}
               </p>
             ) : (
               <div className="grid gap-6 md:grid-cols-2">
