@@ -32,22 +32,18 @@ export async function POST(request: Request) {
 
     if (userError || !user) {
       return NextResponse.json(
-        { error: "Invalid session." },
+        { error: "Invalid or expired session." },
         { status: 401 }
       );
     }
 
-    const { data: adminProfile, error: profileError } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    if (
-      profileError ||
-      !adminProfile ||
-      adminProfile.role !== "admin"
-    ) {
+    if (profileError || profile?.role !== "admin") {
       return NextResponse.json(
         { error: "Admin access required." },
         { status: 403 }
@@ -55,6 +51,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+
     const therapistId = String(body.therapistId || "");
     const price = Number(body.price);
 
@@ -72,18 +69,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: updatedTherapist, error: updateError } = await supabaseAdmin
+    const { data: therapist, error: updateError } = await supabaseAdmin
       .from("therapists")
       .update({ price })
       .eq("id", therapistId)
       .select("id, full_name, specialty, bio, price")
       .single();
 
-    if (updateError || !updatedTherapist) {
+    if (updateError || !therapist) {
       return NextResponse.json(
         {
           error:
-            updateError?.message || "The therapist price was not updated.",
+            updateError?.message ||
+            "The therapist price could not be updated.",
         },
         { status: 500 }
       );
@@ -91,7 +89,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      therapist: updatedTherapist,
+      therapist,
     });
   } catch (error) {
     console.error("Update therapist price error:", error);
