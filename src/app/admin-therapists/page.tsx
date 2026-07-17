@@ -11,13 +11,7 @@ type Therapist = {
   bio: string;
   price: number;
   email: string | null;
-  role: string | null;
-};
-
-type Profile = {
-  id: string;
-  email: string | null;
-  role: string | null;
+  role: string;
 };
 
 export default function AdminTherapistsPage() {
@@ -30,74 +24,62 @@ export default function AdminTherapistsPage() {
     getTherapists();
   }, []);
 
+  const getAccessToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    return session?.access_token || null;
+  };
+
   const getTherapists = async () => {
     setLoading(true);
 
-    const { data: therapistData, error: therapistError } = await supabase
-      .from("therapists")
-      .select("id, full_name, specialty, bio, price")
-      .order("full_name", { ascending: true });
+    try {
+      const accessToken = await getAccessToken();
 
-    if (therapistError) {
-      console.error("Therapists error:", therapistError);
-      alert("Unable to load therapists.");
+      if (!accessToken) {
+        alert("Your session has expired. Please log in again.");
+        window.location.href = "/login";
+        return;
+      }
+
+      const response = await fetch("/api/admin/therapists", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: "no-store",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result.error || "Unable to load therapists.");
+
+        if (response.status === 401 || response.status === 403) {
+          window.location.href = "/login";
+        }
+
+        return;
+      }
+
+      const loadedTherapists: Therapist[] = result.therapists || [];
+
+      const initialPrices: Record<string, string> = {};
+
+      loadedTherapists.forEach((therapist) => {
+        initialPrices[therapist.id] = String(therapist.price || 0);
+      });
+
+      setTherapists(loadedTherapists);
+      setPrices(initialPrices);
+    } catch (error) {
+      console.error("Load therapists error:", error);
+      alert("Unexpected error while loading therapists.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const therapistIds = (therapistData || []).map(
-      (therapist) => therapist.id
-    );
-
-    let profiles: Profile[] = [];
-
-    if (therapistIds.length > 0) {
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, email, role")
-        .in("id", therapistIds);
-
-      if (profileError) {
-        console.error("Profiles error:", profileError);
-      } else {
-        profiles = profileData || [];
-      }
-    }
-
-    const profileMap = new Map(
-      profiles.map((profile) => [profile.id, profile])
-    );
-
-    const mergedTherapists: Therapist[] = (therapistData || []).map(
-      (therapist) => {
-        const profile = profileMap.get(therapist.id);
-
-        return {
-          ...therapist,
-          email: profile?.email || null,
-          role: profile?.role || null,
-          price: Number(therapist.price || 0),
-        };
-      }
-    );
-
-    /*
-      Cette page affiche seulement les vrais thérapeutes.
-      Un compte ayant role = admin est exclu.
-    */
-    const actualTherapists = mergedTherapists.filter(
-      (therapist) => therapist.role !== "admin"
-    );
-
-    const initialPrices: Record<string, string> = {};
-
-    actualTherapists.forEach((therapist) => {
-      initialPrices[therapist.id] = String(therapist.price || 0);
-    });
-
-    setTherapists(actualTherapists);
-    setPrices(initialPrices);
-    setLoading(false);
   };
 
   const updatePrice = async (therapistId: string) => {
@@ -111,11 +93,9 @@ export default function AdminTherapistsPage() {
     setProcessingId(therapistId);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const accessToken = await getAccessToken();
 
-      if (!session) {
+      if (!accessToken) {
         alert("Your session has expired. Please log in again.");
         window.location.href = "/login";
         return;
@@ -127,7 +107,7 @@ export default function AdminTherapistsPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
             therapistId,
@@ -170,32 +150,61 @@ export default function AdminTherapistsPage() {
     }
   };
 
-  const deleteTherapist = async (id: string) => {
+  const deleteTherapist = async (therapistId: string) => {
     const confirmDelete = confirm(
       "Delete this therapist profile? This action cannot be undone."
     );
 
     if (!confirmDelete) return;
 
-    setProcessingId(id);
+    setProcessingId(therapistId);
 
-    const { error } = await supabase
-      .from("therapists")
-      .delete()
-      .eq("id", id);
+    try {
+      const accessToken = await getAccessToken();
 
-    if (error) {
-      alert("Error deleting therapist.");
-      console.error(error);
+      if (!accessToken) {
+        alert("Your session has expired. Please log in again.");
+        window.location.href = "/login";
+        return;
+      }
+
+      const response = await fetch("/api/admin/therapists", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          therapistId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result.error || "Error deleting therapist.");
+        return;
+      }
+
+      setTherapists((currentTherapists) =>
+        currentTherapists.filter(
+          (therapist) => therapist.id !== therapistId
+        )
+      );
+
+      setPrices((currentPrices) => {
+        const updatedPrices = { ...currentPrices };
+        delete updatedPrices[therapistId];
+        return updatedPrices;
+      });
+
+      alert("Therapist profile deleted.");
+    } catch (error) {
+      console.error("Delete therapist error:", error);
+      alert("Unexpected error while deleting the therapist.");
+    } finally {
       setProcessingId(null);
-      return;
     }
-
-    setTherapists((currentTherapists) =>
-      currentTherapists.filter((therapist) => therapist.id !== id)
-    );
-
-    setProcessingId(null);
   };
 
   return (
@@ -288,7 +297,9 @@ export default function AdminTherapistsPage() {
                       disabled={isProcessing}
                       className="mt-6 rounded-xl bg-red-600 px-5 py-3 text-white disabled:bg-slate-400"
                     >
-                      Delete Therapist
+                      {isProcessing
+                        ? "Processing..."
+                        : "Delete Therapist"}
                     </button>
                   </article>
                 );
