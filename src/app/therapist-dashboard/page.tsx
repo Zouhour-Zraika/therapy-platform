@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Navbar from "../components/Navbar";
 import { Language } from "../lib/translations";
+import ProtectedRoute from "../components/ProtectedRoute"; 
 
 type AvailabilitySlot = {
   id: string;
@@ -232,6 +233,7 @@ export default function TherapistDashboard() {
   };
 
   return (
+    <ProtectedRoute allowedRoles={["therapist"]}>
     <>
       <Navbar />
 
@@ -420,5 +422,6 @@ export default function TherapistDashboard() {
         </div>
       </main>
     </>
+    </ProtectedRoute>
   );
 }
