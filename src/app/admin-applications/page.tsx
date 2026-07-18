@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 type TherapistApplication = {
   id: string;
@@ -96,6 +97,7 @@ export default function AdminApplicationsPage() {
   };
 
   return (
+    <ProtectedRoute allowedRoles={["admin"]}>
     <>
       <Navbar />
 
@@ -187,5 +189,6 @@ export default function AdminApplicationsPage() {
         </section>
       </main>
     </>
+    </ProtectedRoute>
   );
 }

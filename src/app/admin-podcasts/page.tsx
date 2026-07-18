@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 type Podcast = {
   id: string;
@@ -135,6 +136,7 @@ export default function AdminPodcastsPage() {
   if (!allowed) return null;
 
   return (
+    <ProtectedRoute allowedRoles={["admin"]}>
     <>
       <Navbar />
 
@@ -238,5 +240,6 @@ export default function AdminPodcastsPage() {
         </section>
       </main>
     </>
+    </ProtectedRoute>
   );
 }
