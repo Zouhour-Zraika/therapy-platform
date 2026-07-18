@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
 import { translations, Language } from "../lib/translations";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 type Booking = {
   id: string;
@@ -51,6 +52,7 @@ export default function PatientDashboard() {
   };
 
   return (
+    <ProtectedRoute allowedRoles={["patient"]}>
     <>
       <Navbar />
 
@@ -159,5 +161,6 @@ export default function PatientDashboard() {
         </section>
       </main>
     </>
+    </ProtectedRoute>
   );
 }
