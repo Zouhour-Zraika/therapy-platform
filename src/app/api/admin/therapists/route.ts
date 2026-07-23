@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl) {
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+}
+
+if (!serviceRoleKey) {
+  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+}
+
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
 
 async function verifyAdmin(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -66,11 +73,10 @@ export async function GET(request: Request) {
       return verification.error;
     }
 
-    const { data: therapistRows, error: therapistError } =
-      await supabaseAdmin
-        .from("therapists")
-        .select("id, full_name, specialty, bio, price")
-        .order("full_name", { ascending: true });
+    const { data: therapistRows, error: therapistError } = await supabaseAdmin
+      .from("therapists")
+      .select("id, full_name, specialty, bio, price")
+      .order("full_name", { ascending: true });
 
     if (therapistError) {
       return NextResponse.json(
@@ -79,9 +85,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const therapistIds = (therapistRows || []).map(
-      (therapist) => therapist.id
-    );
+    const therapistIds = (therapistRows ?? []).map((therapist) => therapist.id);
 
     if (therapistIds.length === 0) {
       return NextResponse.json({ therapists: [] });
@@ -100,18 +104,18 @@ export async function GET(request: Request) {
     }
 
     const profileMap = new Map(
-      (profiles || []).map((profile) => [profile.id, profile])
+      (profiles ?? []).map((profile) => [profile.id, profile])
     );
 
-    const therapists = (therapistRows || [])
+    const therapists = (therapistRows ?? [])
       .map((therapist) => {
         const profile = profileMap.get(therapist.id);
 
         return {
           ...therapist,
-          email: profile?.email || null,
-          role: profile?.role || null,
-          price: Number(therapist.price || 0),
+          email: profile?.email ?? null,
+          role: profile?.role ?? null,
+          price: Number(therapist.price ?? 0),
         };
       })
       .filter((therapist) => therapist.role === "therapist");
@@ -136,7 +140,7 @@ export async function DELETE(request: Request) {
     }
 
     const body = await request.json();
-    const therapistId = String(body.therapistId || "");
+    const therapistId = String(body.therapistId ?? "");
 
     if (!therapistId) {
       return NextResponse.json(
