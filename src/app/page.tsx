@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
+import SupportIllustration from "./components/SupportIllustration";
 import { Language } from "./lib/translations";
 
 const supportTopics = [
@@ -18,10 +19,6 @@ const supportTopics = [
       "Learn about persistent worry, physical tension, panic, and the ways anxiety can affect everyday life.",
     arText:
       "تعرّف إلى القلق المستمر والتوتر الجسدي ونوبات الهلع، وكيف يمكن للقلق أن يؤثر في الحياة اليومية.",
-    background: "bg-[#dce6df]",
-    accent: "bg-[#789080]",
-    shape:
-      "rounded-[46%_54%_64%_36%/40%_42%_58%_60%]",
   },
   {
     slug: "depression",
@@ -34,10 +31,6 @@ const supportTopics = [
       "Explore low mood, loss of energy, isolation, and the emotional exhaustion that can accompany depression.",
     arText:
       "تعرّف إلى انخفاض المزاج وفقدان الطاقة والعزلة والإرهاق النفسي الذي قد يصاحب الاكتئاب.",
-    background: "bg-[#e2e5eb]",
-    accent: "bg-[#7d8798]",
-    shape:
-      "rounded-[62%_38%_42%_58%/50%_35%_65%_50%]",
   },
   {
     slug: "relationships",
@@ -50,10 +43,6 @@ const supportTopics = [
       "Explore communication, emotional distance, recurring conflict, boundaries, and relationship patterns.",
     arText:
       "تعرّف إلى التواصل والمسافة العاطفية والخلافات المتكررة والحدود والأنماط داخل العلاقات.",
-    background: "bg-[#eee0d6]",
-    accent: "bg-[#b28772]",
-    shape:
-      "rounded-[35%_65%_56%_44%/60%_48%_52%_40%]",
   },
   {
     slug: "trauma",
@@ -68,10 +57,6 @@ const supportTopics = [
       "Understand emotional responses to overwhelming experiences and how a safe therapeutic relationship may support recovery.",
     arText:
       "تعرّف إلى الاستجابات النفسية للتجارب الصعبة، وكيف يمكن للعلاقة العلاجية الآمنة أن تدعم التعافي.",
-    background: "bg-[#e5dfd4]",
-    accent: "bg-[#9b8769]",
-    shape:
-      "rounded-[54%_46%_34%_66%/42%_58%_42%_58%]",
   },
   {
     slug: "stress-burnout",
@@ -86,10 +71,6 @@ const supportTopics = [
       "Recognise chronic stress, emotional overload, exhaustion, and a loss of balance between demands and recovery.",
     arText:
       "تعرّف إلى الضغط المزمن والحمل النفسي والإرهاق وفقدان التوازن بين متطلبات الحياة والراحة.",
-    background: "bg-[#dce5e6]",
-    accent: "bg-[#6f898e]",
-    shape:
-      "rounded-[45%_55%_38%_62%/58%_38%_62%_42%]",
   },
   {
     slug: "self-esteem",
@@ -104,10 +85,6 @@ const supportTopics = [
       "Explore self-criticism, confidence, shame, perfectionism, and the possibility of building a kinder relationship with yourself.",
     arText:
       "تعرّف إلى نقد الذات والثقة والخجل والسعي إلى الكمال، وإمكانية بناء علاقة أكثر لطفًا مع نفسك.",
-    background: "bg-[#e8dfeb]",
-    accent: "bg-[#907799]",
-    shape:
-      "rounded-[60%_40%_60%_40%/38%_62%_38%_62%]",
   },
 ];
 
@@ -364,8 +341,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* Areas of support editorial cards */}
+            {/* Areas of support editorial cards */}
       <section className="px-5 pb-20 pt-10 sm:px-8 lg:px-12 lg:pb-28">
         <div className="mx-auto max-w-7xl space-y-8 lg:space-y-12">
           {supportTopics.map((topic, index) => {
@@ -378,33 +354,17 @@ export default function Home() {
               >
                 <div className="grid lg:grid-cols-2">
                   <div
-                    className={`relative min-h-[300px] overflow-hidden p-8 sm:min-h-[390px] sm:p-10 ${
-                      topic.background
-                    } ${
+                    className={`relative min-h-[300px] overflow-hidden sm:min-h-[390px] ${
                       illustrationFirst
                         ? "lg:order-1"
                         : "lg:order-2"
                     }`}
                   >
-                    <span
-                      className={`absolute top-8 text-sm font-bold tracking-[0.25em] text-[#415a72]/60 ${
-                        isArabic ? "right-8" : "left-8"
-                      }`}
-                    >
-                      {topic.number}
-                    </span>
-
-                    <div
-                      className={`absolute left-[18%] top-[18%] h-[62%] w-[62%] opacity-90 ${topic.accent} ${topic.shape}`}
+                    <SupportIllustration
+                      slug={topic.slug}
+                      showNumber
+                      className="min-h-[300px] sm:min-h-[390px]"
                     />
-
-                    <div className="absolute bottom-[15%] right-[14%] h-28 w-28 rounded-full border border-white/70" />
-
-                    <div className="absolute right-[23%] top-[20%] h-14 w-14 rounded-full bg-white/60" />
-
-                    <div className="absolute bottom-[21%] left-[14%] h-px w-32 -rotate-[22deg] bg-[#415a72]/30" />
-
-                    <div className="absolute left-[46%] top-[37%] h-24 w-px rotate-[18deg] bg-white/60" />
                   </div>
 
                   <div
@@ -473,7 +433,8 @@ export default function Home() {
           </div>
         </div>
       </section>
-            {/* Booking journey */}
+
+      {/* Booking journey */}
       <section className="bg-[#223748] px-5 py-20 text-white sm:px-8 lg:px-12">
         <div className="mx-auto max-w-7xl">
           <div className="mx-auto max-w-3xl text-center">
