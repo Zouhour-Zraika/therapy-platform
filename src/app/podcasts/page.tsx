@@ -11,7 +11,23 @@ type Podcast = {
   title_ar: string | null;
   description: string;
   description_ar: string | null;
-  audio_url: string;
+
+  content_type: "recorded" | "live" | null;
+
+  audio_url: string | null;
+  video_url: string | null;
+  thumbnail_url: string | null;
+
+  live_url: string | null;
+  live_starts_at: string | null;
+  live_ends_at: string | null;
+
+  host_name: string | null;
+  host_name_ar: string | null;
+  guest_names: string | null;
+  guest_names_ar: string | null;
+
+  duration: string | null;
   language: string;
   topic: string;
   topic_ar: string | null;
@@ -22,8 +38,17 @@ export default function PodcastsPage() {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [now, setNow] = useState(() => new Date());
 
   const { isArabic, t } = useLanguage();
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const getPodcasts = async () => {
@@ -46,10 +71,10 @@ export default function PodcastsPage() {
       setLoading(false);
     };
 
-    getPodcasts();
+    void getPodcasts();
   }, [t]);
 
-  const getPodcastTitle = (podcast: Podcast) => {
+  const getTitle = (podcast: Podcast) => {
     if (isArabic && podcast.title_ar?.trim()) {
       return podcast.title_ar;
     }
@@ -57,7 +82,7 @@ export default function PodcastsPage() {
     return podcast.title;
   };
 
-  const getPodcastDescription = (podcast: Podcast) => {
+  const getDescription = (podcast: Podcast) => {
     if (isArabic && podcast.description_ar?.trim()) {
       return podcast.description_ar;
     }
@@ -65,7 +90,7 @@ export default function PodcastsPage() {
     return podcast.description;
   };
 
-  const getPodcastTopic = (podcast: Podcast) => {
+  const getTopic = (podcast: Podcast) => {
     if (isArabic && podcast.topic_ar?.trim()) {
       return podcast.topic_ar;
     }
@@ -73,14 +98,30 @@ export default function PodcastsPage() {
     return podcast.topic?.trim() || t("podcasts.general");
   };
 
-  const getLanguageLabel = (language: string) => {
-    const normalizedLanguage = language?.toLowerCase();
+  const getHostName = (podcast: Podcast) => {
+    if (isArabic && podcast.host_name_ar?.trim()) {
+      return podcast.host_name_ar;
+    }
 
-    if (normalizedLanguage === "ar") {
+    return podcast.host_name?.trim() || "";
+  };
+
+  const getGuestNames = (podcast: Podcast) => {
+    if (isArabic && podcast.guest_names_ar?.trim()) {
+      return podcast.guest_names_ar;
+    }
+
+    return podcast.guest_names?.trim() || "";
+  };
+
+  const getLanguageLabel = (language: string) => {
+    const normalized = language?.toLowerCase();
+
+    if (normalized === "ar") {
       return t("podcasts.languages.arabic");
     }
 
-    if (normalizedLanguage === "en") {
+    if (normalized === "en") {
       return t("podcasts.languages.english");
     }
 
@@ -88,11 +129,31 @@ export default function PodcastsPage() {
   };
 
   const formatDate = (date: string) => {
-    return new Intl.DateTimeFormat(isArabic ? "ar" : "en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
+    return new Intl.DateTimeFormat(isArabic ? "ar-LB" : "en-GB", {
+      dateStyle: "medium",
+      timeStyle: "short",
     }).format(new Date(date));
+  };
+
+  const getLiveState = (podcast: Podcast) => {
+    if (podcast.content_type !== "live" || !podcast.live_starts_at) {
+      return "recorded";
+    }
+
+    const start = new Date(podcast.live_starts_at);
+    const end = podcast.live_ends_at
+      ? new Date(podcast.live_ends_at)
+      : new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+    if (now < start) {
+      return "upcoming";
+    }
+
+    if (now >= start && now <= end) {
+      return "live";
+    }
+
+    return "ended";
   };
 
   return (
@@ -101,82 +162,239 @@ export default function PodcastsPage() {
 
       <main
         dir={isArabic ? "rtl" : "ltr"}
-        className="min-h-screen bg-slate-100 px-5 py-10 sm:px-8 lg:px-10"
+        className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
       >
-        <div className="mx-auto max-w-6xl">
-          <section className="mb-12 rounded-3xl bg-white p-8 shadow-xl sm:p-10">
-            <h1 className="text-4xl font-bold text-slate-900 sm:text-5xl lg:text-6xl">
-              {t("podcasts.title")}
-            </h1>
+        <section className="mx-auto max-w-7xl">
+          <header className="relative mb-10 overflow-hidden rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10 lg:p-12">
+            <div
+              className={`absolute -top-24 h-72 w-72 rounded-full bg-aan-gold/10 blur-3xl ${
+                isArabic ? "-left-20" : "-right-20"
+              }`}
+            />
 
-            <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-600 sm:text-2xl">
-              {t("podcasts.description")}
-            </p>
-          </section>
+            <div className="relative max-w-4xl">
+              <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                AAN Psychotherapy
+              </p>
+
+              <h1 className="aan-heading mt-4 text-4xl sm:text-5xl lg:text-6xl">
+                {t("podcasts.title")}
+              </h1>
+
+              <div className="mt-6 flex items-center gap-3">
+                <div className="h-px w-28 bg-aan-gold" />
+                <span className="h-2 w-2 rounded-full bg-aan-gold" />
+                <span className="h-1.5 w-1.5 rounded-full bg-aan-gold/60" />
+              </div>
+
+              <p className="mt-6 max-w-3xl text-lg leading-8 text-aan-secondary">
+                {isArabic
+                  ? "شاهد الحوارات المسجلة وانضم إلى اللقاءات المباشرة حول الصحة النفسية والعلاج والرفاه."
+                  : "Watch recorded conversations and join live discussions about mental health, therapy and wellbeing."}
+              </p>
+            </div>
+          </header>
 
           {loading ? (
-            <div className="rounded-3xl bg-white p-10 shadow-xl">
-              <p className="text-xl text-slate-600 sm:text-2xl">
+            <div className="rounded-[2rem] border border-aan-border bg-white p-12 text-center">
+              <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
+
+              <p className="mt-5 font-semibold text-aan-secondary">
                 {t("podcasts.loading")}
               </p>
             </div>
           ) : errorMessage ? (
-            <div className="rounded-3xl bg-white p-10 shadow-xl">
-              <p className="text-xl text-red-700 sm:text-2xl">
-                {errorMessage}
-              </p>
+            <div className="rounded-[2rem] border border-red-200 bg-red-50 p-8 text-center text-red-700">
+              {errorMessage}
             </div>
           ) : podcasts.length === 0 ? (
-            <div className="rounded-3xl bg-white p-10 shadow-xl">
-              <p className="text-xl text-slate-600 sm:text-2xl">
-                {t("podcasts.empty")}
-              </p>
+            <div className="rounded-[2rem] border border-dashed border-aan-border bg-white p-12 text-center">
+              {t("podcasts.empty")}
             </div>
           ) : (
-            <div className="grid gap-8 md:grid-cols-2">
-              {podcasts.map((podcast) => (
-                <article
-                  key={podcast.id}
-                  className="rounded-3xl bg-white p-8 shadow-xl"
-                >
-                  <div className="mb-5 flex items-center justify-between gap-4">
-                    <span className="rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
-                      {getPodcastTopic(podcast)}
-                    </span>
+            <div className="grid gap-8 lg:grid-cols-2">
+              {podcasts.map((podcast) => {
+                const liveState = getLiveState(podcast);
+                const hostName = getHostName(podcast);
+                const guestNames = getGuestNames(podcast);
 
-                    <span className="text-sm text-slate-500">
-                      {getLanguageLabel(podcast.language)}
-                    </span>
-                  </div>
+                return (
+                  <article
+                    key={podcast.id}
+                    className="overflow-hidden rounded-[2rem] border border-aan-border bg-white shadow-[var(--aan-shadow-sm)] transition hover:-translate-y-1 hover:shadow-[var(--aan-shadow-lg)]"
+                  >
+                    <div className="relative bg-black">
+                      {liveState === "live" ? (
+                        <div
+                          className="flex aspect-video items-center justify-center bg-cover bg-center p-8"
+                          style={
+                            podcast.thumbnail_url
+                              ? {
+                                  backgroundImage: `linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)), url("${podcast.thumbnail_url}")`,
+                                }
+                              : undefined
+                          }
+                        >
+                          <div className="text-center text-white">
+                            <span className="inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-bold">
+                              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
+                              {isArabic ? "مباشر الآن" : "LIVE NOW"}
+                            </span>
 
-                  <h2 className="text-3xl font-bold text-slate-900">
-                    {getPodcastTitle(podcast)}
-                  </h2>
+                            <h2 className="mt-5 text-3xl font-bold">
+                              {getTitle(podcast)}
+                            </h2>
 
-                  <p className="mt-4 text-lg leading-relaxed text-slate-600">
-                    {getPodcastDescription(podcast)}
-                  </p>
+                            {podcast.live_url && (
+                              <a
+                                href={podcast.live_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-6 inline-flex rounded-2xl bg-white px-7 py-4 font-bold text-aan-navy"
+                              >
+                                {isArabic
+                                  ? "الانضمام إلى البث المباشر"
+                                  : "Join live session"}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ) : podcast.video_url ? (
+                        <video
+                          controls
+                          preload="metadata"
+                          poster={podcast.thumbnail_url || undefined}
+                          className="aspect-video w-full bg-black object-cover"
+                        >
+                          <source src={podcast.video_url} type="video/mp4" />
+                        </video>
+                      ) : podcast.audio_url ? (
+                        <div className="flex aspect-video items-center justify-center bg-aan-button p-8">
+                          <div className="w-full rounded-2xl bg-white p-6">
+                            <audio controls className="w-full">
+                              <source
+                                src={podcast.audio_url}
+                                type="audio/mpeg"
+                              />
+                            </audio>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex aspect-video items-center justify-center bg-cover bg-center p-8"
+                          style={
+                            podcast.thumbnail_url
+                              ? {
+                                  backgroundImage: `linear-gradient(rgba(34,55,72,.65), rgba(34,55,72,.65)), url("${podcast.thumbnail_url}")`,
+                                }
+                              : undefined
+                          }
+                        >
+                          <div className="text-center text-white">
+                            {liveState === "upcoming" ? (
+                              <>
+                                <span className="rounded-full bg-aan-gold px-4 py-2 text-sm font-bold text-white">
+                                  {isArabic
+                                    ? "بث مباشر قريباً"
+                                    : "Upcoming live"}
+                                </span>
 
-                  <div className="mt-8">
-                    <audio controls className="w-full">
-                      <source
-                        src={podcast.audio_url}
-                        type="audio/mpeg"
-                      />
+                                {podcast.live_starts_at && (
+                                  <p className="mt-5 text-lg font-semibold">
+                                    {formatDate(podcast.live_starts_at)}
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <p>
+                                {isArabic
+                                  ? "التسجيل غير متوفر حالياً."
+                                  : "Recording unavailable."}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                      {t("podcasts.audioUnsupported")}
-                    </audio>
-                  </div>
+                      {podcast.duration && (
+                        <span className="absolute bottom-4 end-4 rounded-full bg-black/75 px-3 py-1.5 text-xs font-bold text-white">
+                          {podcast.duration}
+                        </span>
+                      )}
+                    </div>
 
-                  <p className="mt-5 text-sm text-slate-500">
-                    {t("podcasts.publishedOn")}{" "}
-                    {formatDate(podcast.created_at)}
-                  </p>
-                </article>
-              ))}
+                    <div className="p-6 sm:p-8">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-bold text-aan-navy">
+                          {getTopic(podcast)}
+                        </span>
+
+                        <span className="text-sm font-semibold text-aan-secondary">
+                          {getLanguageLabel(podcast.language)}
+                        </span>
+                      </div>
+
+                      <h2 className="aan-heading mt-6 text-3xl sm:text-4xl">
+                        {getTitle(podcast)}
+                      </h2>
+
+                      <p className="mt-4 leading-8 text-aan-secondary">
+                        {getDescription(podcast)}
+                      </p>
+
+                      {(hostName || guestNames) && (
+                        <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                          {hostName && (
+                            <div className="rounded-2xl bg-[#fbf8f3] p-5">
+                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
+                                {isArabic ? "المقدّم" : "Host"}
+                              </p>
+
+                              <p className="mt-2 font-semibold text-aan-navy">
+                                {hostName}
+                              </p>
+                            </div>
+                          )}
+
+                          {guestNames && (
+                            <div className="rounded-2xl bg-[#fbf8f3] p-5">
+                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
+                                {isArabic ? "الضيوف" : "Guests"}
+                              </p>
+
+                              <p className="mt-2 font-semibold text-aan-navy">
+                                {guestNames}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {liveState === "upcoming" && podcast.live_starts_at && (
+                        <div className="mt-6 rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                          <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
+                            {isArabic ? "موعد البث المباشر" : "Live schedule"}
+                          </p>
+
+                          <p className="mt-2 font-bold text-aan-navy">
+                            {formatDate(podcast.live_starts_at)}
+                          </p>
+                        </div>
+                      )}
+
+                      <p className="mt-7 border-t border-aan-border pt-5 text-sm text-aan-secondary">
+                        {t("podcasts.publishedOn")}{" "}
+                        <span className="font-semibold text-aan-navy">
+                          {formatDate(podcast.created_at)}
+                        </span>
+                      </p>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
-        </div>
+        </section>
       </main>
     </>
   );
