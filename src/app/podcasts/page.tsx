@@ -11,22 +11,17 @@ type Podcast = {
   title_ar: string | null;
   description: string;
   description_ar: string | null;
-
   content_type: "recorded" | "live" | null;
-
   audio_url: string | null;
   video_url: string | null;
   thumbnail_url: string | null;
-
   live_url: string | null;
   live_starts_at: string | null;
   live_ends_at: string | null;
-
   host_name: string | null;
   host_name_ar: string | null;
   guest_names: string | null;
   guest_names_ar: string | null;
-
   duration: string | null;
   language: string;
   topic: string;
@@ -74,45 +69,32 @@ export default function PodcastsPage() {
     void getPodcasts();
   }, [t]);
 
-  const getTitle = (podcast: Podcast) => {
-    if (isArabic && podcast.title_ar?.trim()) {
-      return podcast.title_ar;
+  const getLocalizedValue = (
+    englishValue: string | null | undefined,
+    arabicValue: string | null | undefined,
+  ) => {
+    if (isArabic && arabicValue?.trim()) {
+      return arabicValue.trim();
     }
 
-    return podcast.title;
+    return englishValue?.trim() || "";
   };
 
-  const getDescription = (podcast: Podcast) => {
-    if (isArabic && podcast.description_ar?.trim()) {
-      return podcast.description_ar;
-    }
+  const getTitle = (podcast: Podcast) =>
+    getLocalizedValue(podcast.title, podcast.title_ar);
 
-    return podcast.description;
-  };
+  const getDescription = (podcast: Podcast) =>
+    getLocalizedValue(podcast.description, podcast.description_ar);
 
-  const getTopic = (podcast: Podcast) => {
-    if (isArabic && podcast.topic_ar?.trim()) {
-      return podcast.topic_ar;
-    }
+  const getTopic = (podcast: Podcast) =>
+    getLocalizedValue(podcast.topic, podcast.topic_ar) ||
+    t("podcasts.general");
 
-    return podcast.topic?.trim() || t("podcasts.general");
-  };
+  const getHostName = (podcast: Podcast) =>
+    getLocalizedValue(podcast.host_name, podcast.host_name_ar);
 
-  const getHostName = (podcast: Podcast) => {
-    if (isArabic && podcast.host_name_ar?.trim()) {
-      return podcast.host_name_ar;
-    }
-
-    return podcast.host_name?.trim() || "";
-  };
-
-  const getGuestNames = (podcast: Podcast) => {
-    if (isArabic && podcast.guest_names_ar?.trim()) {
-      return podcast.guest_names_ar;
-    }
-
-    return podcast.guest_names?.trim() || "";
-  };
+  const getGuestNames = (podcast: Podcast) =>
+    getLocalizedValue(podcast.guest_names, podcast.guest_names_ar);
 
   const getLanguageLabel = (language: string) => {
     const normalized = language?.toLowerCase();
@@ -156,6 +138,34 @@ export default function PodcastsPage() {
     return "ended";
   };
 
+  const copy = isArabic
+    ? {
+        description:
+          "شاهد الحوارات المسجلة وانضم إلى اللقاءات المباشرة حول الصحة النفسية والعلاج والرفاه.",
+        liveNow: "مباشر الآن",
+        upcomingLive: "بث مباشر قريباً",
+        joinLive: "الانضمام إلى البث المباشر",
+        recordingUnavailable: "التسجيل غير متوفر حالياً.",
+        liveSchedule: "موعد البث المباشر",
+        host: "المقدّم",
+        guests: "الضيوف",
+        videoUnsupported: "المتصفح لا يدعم تشغيل الفيديو.",
+        videoUnavailable: "لا يوجد فيديو متاح حالياً.",
+      }
+    : {
+        description:
+          "Watch recorded conversations and join live discussions about mental health, therapy and wellbeing.",
+        liveNow: "LIVE NOW",
+        upcomingLive: "Upcoming live",
+        joinLive: "Join live session",
+        recordingUnavailable: "Recording unavailable.",
+        liveSchedule: "Live schedule",
+        host: "Host",
+        guests: "Guests",
+        videoUnsupported: "Your browser does not support video playback.",
+        videoUnavailable: "No video is available at the moment.",
+      };
+
   return (
     <>
       <Navbar />
@@ -167,6 +177,7 @@ export default function PodcastsPage() {
         <section className="mx-auto max-w-7xl">
           <header className="relative mb-10 overflow-hidden rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10 lg:p-12">
             <div
+              aria-hidden="true"
               className={`absolute -top-24 h-72 w-72 rounded-full bg-aan-gold/10 blur-3xl ${
                 isArabic ? "-left-20" : "-right-20"
               }`}
@@ -188,9 +199,7 @@ export default function PodcastsPage() {
               </div>
 
               <p className="mt-6 max-w-3xl text-lg leading-8 text-aan-secondary">
-                {isArabic
-                  ? "شاهد الحوارات المسجلة وانضم إلى اللقاءات المباشرة حول الصحة النفسية والعلاج والرفاه."
-                  : "Watch recorded conversations and join live discussions about mental health, therapy and wellbeing."}
+                {copy.description}
               </p>
             </div>
           </header>
@@ -198,7 +207,6 @@ export default function PodcastsPage() {
           {loading ? (
             <div className="rounded-[2rem] border border-aan-border bg-white p-12 text-center">
               <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
-
               <p className="mt-5 font-semibold text-aan-secondary">
                 {t("podcasts.loading")}
               </p>
@@ -238,7 +246,7 @@ export default function PodcastsPage() {
                           <div className="text-center text-white">
                             <span className="inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-bold">
                               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
-                              {isArabic ? "مباشر الآن" : "LIVE NOW"}
+                              {copy.liveNow}
                             </span>
 
                             <h2 className="mt-5 text-3xl font-bold">
@@ -252,9 +260,7 @@ export default function PodcastsPage() {
                                 rel="noopener noreferrer"
                                 className="mt-6 inline-flex rounded-2xl bg-white px-7 py-4 font-bold text-aan-navy"
                               >
-                                {isArabic
-                                  ? "الانضمام إلى البث المباشر"
-                                  : "Join live session"}
+                                {copy.joinLive}
                               </a>
                             )}
                           </div>
@@ -267,6 +273,7 @@ export default function PodcastsPage() {
                           className="aspect-video w-full bg-black object-cover"
                         >
                           <source src={podcast.video_url} type="video/mp4" />
+                          {copy.videoUnsupported}
                         </video>
                       ) : podcast.audio_url ? (
                         <div className="flex aspect-video items-center justify-center bg-aan-button p-8">
@@ -276,6 +283,7 @@ export default function PodcastsPage() {
                                 src={podcast.audio_url}
                                 type="audio/mpeg"
                               />
+                              {t("podcasts.audioUnsupported")}
                             </audio>
                           </div>
                         </div>
@@ -294,9 +302,7 @@ export default function PodcastsPage() {
                             {liveState === "upcoming" ? (
                               <>
                                 <span className="rounded-full bg-aan-gold px-4 py-2 text-sm font-bold text-white">
-                                  {isArabic
-                                    ? "بث مباشر قريباً"
-                                    : "Upcoming live"}
+                                  {copy.upcomingLive}
                                 </span>
 
                                 {podcast.live_starts_at && (
@@ -307,9 +313,9 @@ export default function PodcastsPage() {
                               </>
                             ) : (
                               <p>
-                                {isArabic
-                                  ? "التسجيل غير متوفر حالياً."
-                                  : "Recording unavailable."}
+                                {liveState === "recorded"
+                                  ? copy.videoUnavailable
+                                  : copy.recordingUnavailable}
                               </p>
                             )}
                           </div>
@@ -338,7 +344,7 @@ export default function PodcastsPage() {
                         {getTitle(podcast)}
                       </h2>
 
-                      <p className="mt-4 leading-8 text-aan-secondary">
+                      <p className="mt-4 whitespace-pre-line leading-8 text-aan-secondary">
                         {getDescription(podcast)}
                       </p>
 
@@ -347,9 +353,8 @@ export default function PodcastsPage() {
                           {hostName && (
                             <div className="rounded-2xl bg-[#fbf8f3] p-5">
                               <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
-                                {isArabic ? "المقدّم" : "Host"}
+                                {copy.host}
                               </p>
-
                               <p className="mt-2 font-semibold text-aan-navy">
                                 {hostName}
                               </p>
@@ -359,9 +364,8 @@ export default function PodcastsPage() {
                           {guestNames && (
                             <div className="rounded-2xl bg-[#fbf8f3] p-5">
                               <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
-                                {isArabic ? "الضيوف" : "Guests"}
+                                {copy.guests}
                               </p>
-
                               <p className="mt-2 font-semibold text-aan-navy">
                                 {guestNames}
                               </p>
@@ -370,17 +374,17 @@ export default function PodcastsPage() {
                         </div>
                       )}
 
-                      {liveState === "upcoming" && podcast.live_starts_at && (
-                        <div className="mt-6 rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
-                          <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
-                            {isArabic ? "موعد البث المباشر" : "Live schedule"}
-                          </p>
-
-                          <p className="mt-2 font-bold text-aan-navy">
-                            {formatDate(podcast.live_starts_at)}
-                          </p>
-                        </div>
-                      )}
+                      {liveState === "upcoming" &&
+                        podcast.live_starts_at && (
+                          <div className="mt-6 rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                            <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
+                              {copy.liveSchedule}
+                            </p>
+                            <p className="mt-2 font-bold text-aan-navy">
+                              {formatDate(podcast.live_starts_at)}
+                            </p>
+                          </div>
+                        )}
 
                       <p className="mt-7 border-t border-aan-border pt-5 text-sm text-aan-secondary">
                         {t("podcasts.publishedOn")}{" "}
