@@ -1,86 +1,144 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2026-04-22.dahlia",
-});
+type CheckoutRequest = {
+  therapist?: string;
+  price?: number | string;
+  slot?: string;
+  language?: "en" | "ar";
+  email?: string;
+  bookingId?: string;
+};
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
+    const secretKey = process.env.STRIPE_SECRET_KEY;
 
-    const {
-      therapist,
-      price,
-      slot,
-      language,
-      email,
-      bookingId,
-    } = body;
+    if (!secretKey) {
+      return NextResponse.json(
+        { error: "STRIPE_SECRET_KEY is missing." },
+        { status: 500 },
+      );
+    }
 
-    const origin = req.headers.get("origin") || "http://localhost:3000";
+    const stripe = new Stripe(secretKey);
+
+    const body = (await request.json()) as CheckoutRequest;
+
+    const therapist = body.therapist?.trim();
+    const slot = body.slot?.trim();
+    const email = body.email?.trim();
+    const bookingId = body.bookingId?.trim();
+    const language = body.language === "ar" ? "ar" : "en";
+    const numericPrice = Number(body.price);
+
+    if (
+      !therapist ||
+      !slot ||
+      !email ||
+      !bookingId ||
+      !Number.isFinite(numericPrice) ||
+      numericPrice <= 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            language === "ar"
+              ? "معلومات الدفع غير مكتملة."
+              : "The payment information is incomplete.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const requestOrigin = new URL(request.url).origin;
+
+    const publicSiteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+      requestOrigin;
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      locale: "en",
+      mode: "payment",
+
       customer_email: email,
+
+      locale: language === "ar" ? "auto" : "en",
+
+      payment_method_types: ["card"],
 
       line_items: [
         {
+          quantity: 1,
+
           price_data: {
             currency: "usd",
+
+            unit_amount: Math.round(numericPrice * 100),
+
             product_data: {
               name:
                 language === "ar"
                   ? `جلسة علاج مع ${therapist}`
-                  : `Therapy Session with ${therapist}`,
+                  : `Therapy session with ${therapist}`,
+
               description: slot,
             },
-            unit_amount: Number(price) * 100,
           },
-          quantity: 1,
         },
       ],
 
-      mode: "payment",
-      success_url: `${origin}/success?bookingId=${bookingId}`,
-      cancel_url: `${origin}/payment`,
+      metadata: {
+        bookingId,
+        therapist,
+        slot,
+        language,
+        email,
+        paymentProvider: "stripe",
+      },
+
+      payment_intent_data: {
+        metadata: {
+          bookingId,
+          paymentProvider: "stripe",
+        },
+      },
+
+      success_url:
+        `${publicSiteUrl}/success` +
+        `?bookingId=${encodeURIComponent(bookingId)}` +
+        `&session_id={CHECKOUT_SESSION_ID}`,
+
+      cancel_url:
+        `${publicSiteUrl}/payment` +
+        `?bookingId=${encodeURIComponent(bookingId)}` +
+        `&therapist=${encodeURIComponent(therapist)}` +
+        `&price=${encodeURIComponent(String(numericPrice))}` +
+        `&slot=${encodeURIComponent(slot)}`,
     });
 
-    try {
-      console.log("Sending booking email to:", email);
-
-      const emailResponse = await fetch(`${origin}/api/send-booking-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          therapist,
-          slot,
-          price,
-          language,
-        }),
-      });
-
-      const emailText = await emailResponse.text();
-
-      console.log("Email API status:", emailResponse.status);
-      console.log("Email API response:", emailText);
-    } catch (emailError) {
-      console.log("Email sending failed:", emailError);
+    if (!session.url) {
+      return NextResponse.json(
+        { error: "Stripe did not return a checkout URL." },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
+      provider: "stripe",
+      sessionId: session.id,
       url: session.url,
     });
   } catch (error) {
-    console.log(error);
+    console.error("Stripe checkout session error:", error);
 
     return NextResponse.json(
-      { error: "Stripe session error" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to create the Stripe checkout session.",
+      },
+      { status: 500 },
     );
   }
 }
