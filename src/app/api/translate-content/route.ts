@@ -1,10 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 type TranslationRequest = {
   sourceLanguage: "en" | "ar";
   targetLanguage: "en" | "ar";
@@ -14,6 +10,10 @@ type TranslationRequest = {
 type TranslationResponse = {
   translations: Record<string, string>;
 };
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(request: Request) {
   try {
