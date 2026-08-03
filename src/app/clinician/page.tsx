@@ -1,203 +1,723 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
-import { translations, Language } from "../lib/translations";
+import { useLanguage } from "@/i18n/LanguageProvider";
+
+type LoginMode = "client" | "therapist";
 
 export default function ClinicianPage() {
   const router = useRouter();
+  const { isArabic, t } = useLanguage();
+
+  const [loginMode, setLoginMode] =
+    useState<LoginMode>("client");
 
   const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const [loginPassword, setLoginPassword] =
+    useState("");
+  const [showPassword, setShowPassword] =
+    useState(false);
 
   const [fullName, setFullName] = useState("");
-  const [applicationEmail, setApplicationEmail] = useState("");
+  const [applicationEmail, setApplicationEmail] =
+    useState("");
   const [specialty, setSpecialty] = useState("");
   const [message, setMessage] = useState("");
 
-  const handleClinicianLogin = async () => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
-      password: loginPassword,
-    });
+  const [loginLoading, setLoginLoading] =
+    useState(false);
+  const [applicationLoading, setApplicationLoading] =
+    useState(false);
 
-    if (error) {
-      alert(error.message);
+  const [loginError, setLoginError] = useState("");
+  const [applicationError, setApplicationError] =
+    useState("");
+  const [applicationSuccess, setApplicationSuccess] =
+    useState("");
+
+  const handleLogin = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    setLoginError("");
+
+    const email = loginEmail.trim();
+
+    if (!email || !loginPassword) {
+      setLoginError(
+        t("clinician.errors.loginRequired")
+      );
       return;
     }
 
-    const user = data.user;
+    try {
+      setLoginLoading(true);
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password: loginPassword,
+        });
 
-    if (profileError || !profile) {
-      alert("Profile not found.");
-      return;
+      if (error) {
+        setLoginError(t("clinician.errors.invalidCredentials"));
+        return;
+      }
+
+      if (!data.user) {
+        setLoginError(
+          t("clinician.errors.accountUnavailable")
+        );
+        return;
+      }
+
+      const { data: profile, error: profileError } =
+        await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .single();
+
+      if (profileError || !profile) {
+        await supabase.auth.signOut();
+
+        setLoginError(
+          t("clinician.errors.profileMissing")
+        );
+        return;
+      }
+
+      if (profile.role === "admin") {
+        router.push("/admin");
+        router.refresh();
+        return;
+      }
+
+      if (profile.role === "therapist") {
+        if (loginMode !== "therapist") {
+          await supabase.auth.signOut();
+
+          setLoginError(
+            t("clinician.errors.selectTherapist")
+          );
+          return;
+        }
+
+        router.push("/therapist-dashboard");
+        router.refresh();
+        return;
+      }
+
+      if (
+        profile.role === "client" ||
+        profile.role === "patient" ||
+        !profile.role
+      ) {
+        if (loginMode !== "client") {
+          await supabase.auth.signOut();
+
+          setLoginError(
+            t("clinician.errors.selectClient")
+          );
+          return;
+        }
+
+        router.push("/dashboard");
+        router.refresh();
+        return;
+      }
+
+      await supabase.auth.signOut();
+
+      setLoginError(
+        t("clinician.errors.noAccess")
+      );
+    } catch (error) {
+      console.error("Login error:", error);
+
+      setLoginError(
+        t("clinician.errors.unexpected")
+      );
+    } finally {
+      setLoginLoading(false);
     }
-
-    if (profile.role === "admin") {
-      router.push("/admin");
-      return;
-    }
-
-    if (profile.role === "therapist") {
-      router.push("/therapist-dashboard");
-      return;
-    }
-
-    alert("This portal is only for clinicians and administrators.");
-    await supabase.auth.signOut();
   };
 
-  const submitApplication = async () => {
-    if (!fullName || !applicationEmail) {
-      alert("Full name and email are required.");
+  const submitApplication = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    setApplicationError("");
+    setApplicationSuccess("");
+
+    const cleanName = fullName.trim();
+    const cleanEmail = applicationEmail.trim();
+    const cleanSpecialty = specialty.trim();
+    const cleanMessage = message.trim();
+
+    if (!cleanName || !cleanEmail) {
+      setApplicationError(
+        t("clinician.errors.applicationRequired")
+      );
       return;
     }
 
-    const { error } = await supabase.from("therapist_applications").insert({
-      full_name: fullName,
-      email: applicationEmail,
-      specialty,
-      message,
-      status: "pending",
-    });
+    try {
+      setApplicationLoading(true);
 
-    if (error) {
-      alert("Application could not be submitted.");
-      console.log(error);
-      return;
+      const { error } = await supabase
+        .from("therapist_applications")
+        .insert({
+          full_name: cleanName,
+          email: cleanEmail,
+          specialty: cleanSpecialty,
+          message: cleanMessage,
+          status: "pending",
+        });
+
+      if (error) {
+        console.error(
+          "Therapist application error:",
+          error
+        );
+
+        setApplicationError(
+          t("clinician.errors.applicationSubmit")
+        );
+        return;
+      }
+
+      setApplicationSuccess(
+        t("clinician.application.success")
+      );
+
+      setFullName("");
+      setApplicationEmail("");
+      setSpecialty("");
+      setMessage("");
+    } catch (error) {
+      console.error(
+        "Therapist application error:",
+        error
+      );
+
+      setApplicationError(
+        t("clinician.errors.unexpected")
+      );
+    } finally {
+      setApplicationLoading(false);
     }
+  };
 
-    alert("Application submitted. The admin team will review it.");
-
-    setFullName("");
-    setApplicationEmail("");
-    setSpecialty("");
-    setMessage("");
+  const scrollToApplication = () => {
+    document
+      .getElementById("therapist-application")
+      ?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
   };
 
   return (
     <>
       <Navbar />
 
-      <main className="min-h-screen bg-slate-100 p-10">
-        <section className="mx-auto mb-10 max-w-6xl rounded-3xl bg-white p-10 text-center shadow-xl">
-          <h1 className="text-6xl font-bold text-slate-900">
-            Clinician Portal
-          </h1>
+      <main
+          dir={isArabic ? "rtl" : "ltr"}
+          className="min-h-screen bg-[#f8f4ee] text-[#223748]"
+        >
+        {/* Login area */}
+        <section className="relative overflow-hidden px-5 py-12 sm:px-8 lg:px-12 lg:py-20">
+          <div className="pointer-events-none absolute -right-28 -top-32 h-80 w-80 rounded-full bg-[#223748]" />
+          <div className="pointer-events-none absolute right-24 top-4 h-52 w-52 rounded-full border border-[#b39668]" />
 
-          <p className="mx-auto mt-5 max-w-3xl text-xl text-slate-600">
-            Secure access for approved therapists and platform administrators.
-            New clinicians can submit an application for review.
-          </p>
+          <div className="mx-auto grid max-w-7xl items-stretch gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+            {/* Login card */}
+            <div className="relative z-10 rounded-[2rem] border border-[#e9dfd0] bg-white p-6 shadow-[0_20px_60px_rgba(34,55,72,0.10)] sm:p-9 lg:p-11">
+              <div className="text-center">
+                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#b39668]">
+                  {t("clinician.login.eyebrow")}
+                </p>
+
+                <h1 className="mt-4 font-serif text-4xl font-semibold text-[#223748] sm:text-5xl">
+                  {t("clinician.login.title")}
+                </h1>
+
+                <p className="mt-4 text-base leading-7 text-[#67737b]">
+                  {t("clinician.login.description")}
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleLogin}
+                className="mt-9"
+              >
+                <p className="mb-3 text-center text-sm font-semibold text-[#223748]">
+                  {t("clinician.login.signInAs")}
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginMode("client");
+                      setLoginError("");
+                    }}
+                    className={`flex min-h-14 items-center justify-center gap-3 rounded-xl border px-4 font-semibold transition ${
+                      loginMode === "client"
+                        ? "border-[#223748] bg-[#223748] text-white shadow-md"
+                        : "border-[#d9dee2] bg-white text-[#223748] hover:border-[#b39668]"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="text-xl"
+                    >
+                      ♙
+                    </span>
+
+                    {t("clinician.login.clientLabel")}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginMode("therapist");
+                      setLoginError("");
+                    }}
+                    className={`flex min-h-14 items-center justify-center gap-3 rounded-xl border px-4 font-semibold transition ${
+                      loginMode === "therapist"
+                        ? "border-[#223748] bg-[#223748] text-white shadow-md"
+                        : "border-[#d9dee2] bg-white text-[#223748] hover:border-[#b39668]"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="text-xl"
+                    >
+                      ♧
+                    </span>
+
+                    {t("clinician.login.therapistLabel")}
+                  </button>
+                </div>
+
+                <div className="mt-7">
+                  <label
+                    htmlFor="login-email"
+                    className="mb-2 block text-sm font-semibold"
+                  >{t("clinician.form.email")}
+                  </label>
+
+                  <input
+                    id="login-email"
+                    type="email"
+                    autoComplete="email"
+                    value={loginEmail}
+                    onChange={(event) =>
+                      setLoginEmail(event.target.value)
+                    }
+                    placeholder={t("clinician.form.emailPlaceholder")}
+                    className="w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 text-[#223748] outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                  />
+                </div>
+
+                <div className="mt-5">
+                  <label
+                    htmlFor="login-password"
+                    className="mb-2 block text-sm font-semibold"
+                  >{t("clinician.form.password")}
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      id="login-password"
+                      type={
+                        showPassword
+                          ? "text"
+                          : "password"
+                      }
+                      autoComplete="current-password"
+                      value={loginPassword}
+                      onChange={(event) =>
+                        setLoginPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder={t("clinician.form.passwordPlaceholder")}
+                      className={`w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 ${isArabic ? "pl-14" : "pr-14"} text-[#223748] outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10`}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowPassword(
+                          (current) => !current
+                        )
+                      }
+                      aria-label={
+                        showPassword
+                          ? t("clinician.form.hidePassword")
+                          : t("clinician.form.showPassword")
+                      }
+                      className={`absolute inset-y-0 flex w-14 ${isArabic ? "left-0" : "right-0"} items-center justify-center text-xl text-[#66737c] hover:text-[#223748]`}
+                    >
+                      {showPassword ? "◉" : "◎"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className={isArabic ? "mt-3 text-left" : "mt-3 text-right"}>
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm font-semibold text-[#415a72] hover:text-[#b39668]"
+                  >
+                    {t("clinician.login.forgotPassword")}
+                  </Link>
+                </div>
+
+                {loginError && (
+                  <div
+                    role="alert"
+                    className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+                  >
+                    {loginError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="mt-6 w-full rounded-xl bg-[#223748] px-6 py-4 text-lg font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#415a72] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loginLoading
+                    ? t("clinician.login.signingIn")
+                    : t("clinician.login.continue")}
+                </button>
+              </form>
+
+              <div className="mt-7 rounded-2xl border border-[#ebe2d5] bg-[#fcfaf7] text-center">
+                <div className="p-5">
+                  <p className="text-sm text-[#67737b]">
+                    {t("clinician.login.noClientAccount")}
+                  </p>
+
+                  <Link
+                    href="/signup"
+                    className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-[#b39668] bg-white px-5 py-3 font-semibold text-[#8f6f40] transition hover:bg-[#b39668] hover:text-white"
+                  >
+                    {t("clinician.login.createClientAccount")}
+                  </Link>
+                </div>
+
+                <div className="border-t border-[#ebe2d5] p-5">
+                  <p className="text-sm font-medium text-[#223748]">
+                    {t("clinician.login.qualifiedTherapist")}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={scrollToApplication}
+                    className="mt-2 inline-flex items-center gap-2 font-semibold text-[#b08343] transition hover:text-[#223748]"
+                  >
+                    {t("clinician.login.applyToJoin")} →
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-6 text-center text-xs leading-6 text-[#728089]">
+                {t("clinician.login.privacyNotice")}
+              </p>
+            </div>
+                        {/* Editorial panel */}
+            <div className="relative hidden min-h-[760px] overflow-hidden rounded-[2.5rem] border border-[#e9dfd0] bg-[#fbf8f3] p-12 lg:block">
+              <div className="relative z-10 max-w-lg">
+                <p className="text-sm font-semibold uppercase tracking-[0.32em] text-[#b39668]">
+                  {t("common.brandName")}
+                </p>
+
+                <h2 className="mt-10 font-serif text-6xl font-semibold leading-[1.08] text-[#223748]">
+                  {t("clinician.editorial.title.line1")}
+                  <br />
+                  {t("clinician.editorial.title.line2")}
+                  <br />
+                  {t("clinician.editorial.title.line3")}
+                  <br />
+                  {t("clinician.editorial.title.line4")}
+                </h2>
+
+                <div className="mt-8 h-px w-20 bg-[#b39668]" />
+
+                <p className="mt-8 max-w-sm text-lg leading-8 text-[#5f6c74]">
+                  {t("clinician.editorial.description")}
+                </p>
+              </div>
+
+              <div className="absolute -bottom-36 left-12 h-[470px] w-[570px] rounded-[50%_50%_35%_65%/55%_44%_56%_45%] bg-[#cbd7d0]" />
+
+              <div className="absolute -bottom-24 right-[-110px] h-[390px] w-[390px] rounded-full border border-[#b39668]" />
+
+              <div className="absolute bottom-28 right-24 h-64 w-40">
+                <div className="absolute bottom-0 left-1/2 h-56 w-px bg-[#526d66]" />
+
+                <div className="absolute left-10 top-10 h-24 w-px -rotate-[35deg] bg-[#526d66]" />
+                <div className="absolute left-3 top-5 h-20 w-8 -rotate-[48deg] rounded-[100%_0] border border-[#526d66]" />
+
+                <div className="absolute right-10 top-20 h-24 w-px rotate-[34deg] bg-[#526d66]" />
+                <div className="absolute right-1 top-10 h-20 w-8 rotate-[42deg] rounded-[0_100%] border border-[#526d66]" />
+
+                <div className="absolute left-12 top-28 h-24 w-px -rotate-[28deg] bg-[#526d66]" />
+                <div className="absolute left-4 top-20 h-20 w-8 -rotate-[42deg] rounded-[100%_0] border border-[#526d66]" />
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2">
-          <div className="rounded-3xl bg-white p-8 shadow-xl">
-            <h2 className="mb-6 text-4xl font-bold text-slate-900">
-              Approved Clinician Login
-            </h2>
+        {/* {t("clinician.login.therapist")} application */}
+        <section
+          id="therapist-application"
+          className="scroll-mt-24 px-5 pb-16 sm:px-8 lg:px-12 lg:pb-24"
+        >
+          <div className="mx-auto grid max-w-7xl overflow-hidden rounded-[2.5rem] border border-[#e8dfd2] bg-white shadow-[0_20px_60px_rgba(34,55,72,0.08)] lg:grid-cols-[0.85fr_1.15fr]">
+            <div className="bg-[#fcfaf7] p-8 sm:p-12 lg:p-14">
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#b39668]">
+                {t("clinician.application.eyebrow")}
+              </p>
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+              <h2 className="mt-4 font-serif text-4xl font-semibold leading-tight text-[#223748] sm:text-5xl">
+                {t("clinician.application.title")}
+              </h2>
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              className="mb-3 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+              <p className="mt-6 max-w-md text-lg leading-8 text-[#637078]">
+                {t("clinician.application.description")}
+              </p>
 
-            <div className="mb-6 text-right">
-              <Link
-                href="/forgot-password"
-                className="text-sm font-semibold text-slate-600 hover:text-black"
-              >
-                Forgot password?
-              </Link>
+              <div className="mt-10 space-y-8">
+                <div className="flex gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f2ece3] text-2xl">
+                    ♧
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-[#223748]">
+                      {t("clinician.application.benefits.impact.title")}
+                    </h3>
+
+                    <p className="mt-1 leading-7 text-[#68757d]">
+                      {t("clinician.application.benefits.impact.description")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f2ece3] text-2xl">
+                    ♢
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-[#223748]">
+                      {t("clinician.application.benefits.professional.title")}
+                    </h3>
+
+                    <p className="mt-1 leading-7 text-[#68757d]">
+                      {t("clinician.application.benefits.professional.description")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f2ece3] text-2xl">
+                    ♡
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-[#223748]">
+                      {t("clinician.application.benefits.community.title")}
+                    </h3>
+
+                    <p className="mt-1 leading-7 text-[#68757d]">
+                      {t("clinician.application.benefits.community.description")}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <button
-              onClick={handleClinicianLogin}
-              className="w-full rounded-2xl bg-black py-4 text-lg font-semibold text-white"
+            <form
+              onSubmit={submitApplication}
+              className="p-8 sm:p-12 lg:p-14"
             >
-              Sign In
-            </button>
+              <div>
+                <label
+                  htmlFor="application-full-name"
+                  className="mb-2 block text-sm font-semibold"
+                >{t("clinician.application.form.fullName")}
+                </label>
 
-            <p className="mt-5 text-center text-sm text-slate-500">
-              This area is for approved therapists and admins only.
-            </p>
-          </div>
+                <input
+                  id="application-full-name"
+                  type="text"
+                  value={fullName}
+                  onChange={(event) =>
+                    setFullName(event.target.value)
+                  }
+                  placeholder={t("clinician.application.form.fullNamePlaceholder")}
+                  className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                />
+              </div>
 
-          <div className="rounded-3xl bg-white p-8 shadow-xl">
-            <h2 className="mb-6 text-4xl font-bold text-slate-900">
-              Apply as a Therapist
-            </h2>
+              <div className="mt-5">
+                <label
+                  htmlFor="application-email"
+                  className="mb-2 block text-sm font-semibold"
+                >{t("clinician.application.form.professionalEmail")}
+                </label>
 
-            <input
-              type="text"
-              placeholder="Full name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+                <input
+                  id="application-email"
+                  type="email"
+                  value={applicationEmail}
+                  onChange={(event) =>
+                    setApplicationEmail(
+                      event.target.value
+                    )
+                  }
+                  placeholder={t("clinician.application.form.professionalEmailPlaceholder")}
+                  className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                />
+              </div>
 
-            <input
-              type="email"
-              placeholder="Professional email"
-              value={applicationEmail}
-              onChange={(e) => setApplicationEmail(e.target.value)}
-              className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+              <div className="mt-5">
+                <label
+                  htmlFor="application-specialty"
+                  className="mb-2 block text-sm font-semibold"
+                >{t("clinician.application.form.specialty")}
+                </label>
 
-            <input
-              type="text"
-              placeholder="Specialty"
-              value={specialty}
-              onChange={(e) => setSpecialty(e.target.value)}
-              className="mb-4 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+                <input
+                  id="application-specialty"
+                  type="text"
+                  value={specialty}
+                  onChange={(event) =>
+                    setSpecialty(event.target.value)
+                  }
+                  placeholder={t("clinician.application.form.specialtyPlaceholder")}
+                  className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                />
+              </div>
 
-            <textarea
-              placeholder="Tell us briefly about your background"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="mb-6 h-36 w-full rounded-2xl border border-slate-300 px-4 py-4 text-slate-900"
-            />
+              <div className="mt-5">
+                <label
+                  htmlFor="application-message"
+                  className="mb-2 block text-sm font-semibold"
+                >{t("clinician.application.form.about")}
+                </label>
 
-            <button
-              onClick={submitApplication}
-              className="w-full rounded-2xl bg-black py-4 text-lg font-semibold text-white"
-            >
-              Submit Application
-            </button>
+                <textarea
+                  id="application-message"
+                  value={message}
+                  onChange={(event) =>
+                    setMessage(event.target.value)
+                  }
+                  placeholder={t("clinician.application.form.aboutPlaceholder")}
+                  className="min-h-36 w-full resize-y rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                />
+              </div>
 
-            <p className="mt-5 text-center text-sm text-slate-500">
-              Applications are reviewed by platform admins before access is
-              granted.
-            </p>
+              {applicationError && (
+                <div
+                  role="alert"
+                  className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+                >
+                  {applicationError}
+                </div>
+              )}
+
+              {applicationSuccess && (
+                <div
+                  role="status"
+                  className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800"
+                >
+                  {applicationSuccess}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={applicationLoading}
+                className="mt-6 w-full rounded-xl bg-[#223748] px-6 py-4 text-lg font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#415a72] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {applicationLoading
+                  ? t("clinician.application.submitting")
+                  : t("clinician.application.submit")}
+              </button>
+
+              <p className="mt-5 text-center text-sm leading-6 text-[#6d7981]">
+                {t("clinician.application.confidentiality")}
+              </p>
+            </form>
           </div>
         </section>
 
-        <div className="mt-10 text-center">
-          <Link href="/login" className="text-slate-600 underline">
-            Patient access
-          </Link>
-        </div>
+        {/* Trust points */}
+        <section className="px-5 pb-20 sm:px-8 lg:px-12">
+          <div className="mx-auto grid max-w-7xl overflow-hidden rounded-[2rem] border border-[#e8dfd2] bg-white shadow-sm md:grid-cols-3">
+            <div className="flex gap-4 p-7 sm:p-8">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4eee5] text-xl">
+                ♢
+              </div>
+
+              <div>
+                <h3 className="font-semibold">
+                  {t("clinician.trust.private.title")}
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-[#69757d]">
+                  {t("clinician.trust.private.description")}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 border-y border-[#ebe2d6] p-7 sm:p-8 md:border-x md:border-y-0">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4eee5] text-xl">
+                ♧
+              </div>
+
+              <div>
+                <h3 className="font-semibold">
+                  {t("clinician.trust.reviewed.title")}
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-[#69757d]">
+                  {t("clinician.trust.reviewed.description")}
+                  
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-4 p-7 sm:p-8">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f4eee5] text-xl">
+                ✓
+              </div>
+
+              <div>
+                <h3 className="font-semibold">
+                  {t("clinician.trust.trusted.title")}
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-[#69757d]">
+                  {t("clinician.trust.trusted.description")}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </>
   );

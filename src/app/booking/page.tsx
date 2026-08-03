@@ -9,8 +9,9 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useLanguage } from "@/i18n/LanguageProvider";
+import type { TranslationKey } from "@/i18n/config";
 import Navbar from "../components/Navbar";
-import { Language } from "../lib/translations";
 
 type BookingStep = 1 | 2 | 3 | 4;
 
@@ -39,128 +40,68 @@ type Slot = {
 
 type SupportOption = {
   value: string;
-  en: string;
-  ar: string;
   keywords: string[];
 };
 
 const supportOptions: SupportOption[] = [
   {
     value: "depression",
-    en: "Depression and low mood",
-    ar: "الاكتئاب وتدنّي المزاج",
     keywords: ["depression", "depressive", "low mood", "mood", "اكتئاب", "مزاج"],
   },
   {
     value: "anxiety",
-    en: "Anxiety and panic",
-    ar: "القلق ونوبات الهلع",
     keywords: ["anxiety", "panic", "social anxiety", "قلق", "هلع"],
   },
   {
     value: "stress",
-    en: "Stress and burnout",
-    ar: "الضغط النفسي والإرهاق",
     keywords: ["stress", "burnout", "work stress", "ضغط", "إرهاق"],
   },
   {
     value: "ocd",
-    en: "OCD and intrusive thoughts",
-    ar: "الوسواس القهري والأفكار الملحّة",
     keywords: ["ocd", "obsessive", "intrusive", "وسواس"],
   },
   {
     value: "relationships",
-    en: "Relationship difficulties",
-    ar: "صعوبات العلاقات",
     keywords: ["relationship", "family", "couple", "زواج", "علاقة", "أسرة"],
   },
   {
     value: "couples-therapy",
-    en: "Couples therapy",
-    ar: "العلاج الزوجي",
     keywords: ["couples", "couple therapy", "marriage", "زوجي", "زواج"],
   },
   {
     value: "eating-disorders",
-    en: "Eating difficulties",
-    ar: "اضطرابات وصعوبات الأكل",
     keywords: ["eating", "food", "anorexia", "bulimia", "أكل", "غذاء"],
   },
   {
     value: "addiction",
-    en: "Addiction",
-    ar: "الإدمان",
     keywords: ["addiction", "substance", "إدمان"],
   },
   {
     value: "trauma",
-    en: "Trauma and difficult experiences",
-    ar: "الصدمات والتجارب الصعبة",
     keywords: ["trauma", "ptsd", "grief", "loss", "صدمة", "فقدان"],
   },
   {
     value: "unsure",
-    en: "I am not sure yet",
-    ar: "لست متأكدًا بعد",
     keywords: [],
   },
   {
     value: "other",
-    en: "Other",
-    ar: "أخرى",
     keywords: [],
   },
 ];
 
 const therapistPreferences = [
-  {
-    value: "female",
-    en: "Female therapist",
-    ar: "معالِجة",
-  },
-  {
-    value: "male",
-    en: "Male therapist",
-    ar: "معالِج",
-  },
-  {
-    value: "none",
-    en: "No preference",
-    ar: "لا يوجد تفضيل",
-  },
-];
+  { value: "female" },
+  { value: "male" },
+  { value: "none" },
+] as const;
 
 const availabilityOptions = [
-  {
-    value: "before-noon",
-    en: "Before noon",
-    ar: "قبل الظهر",
-    descriptionEn: "Sessions before 12:00 PM",
-    descriptionAr: "الجلسات قبل الساعة 12 ظهرًا",
-  },
-  {
-    value: "after-noon",
-    en: "After noon",
-    ar: "بعد الظهر",
-    descriptionEn: "Sessions from 12:00 PM onward",
-    descriptionAr: "الجلسات من الساعة 12 ظهرًا وما بعد",
-  },
-  {
-    value: "earliest",
-    en: "Earliest available session",
-    ar: "أقرب موعد متاح",
-    descriptionEn: "Show the nearest available option",
-    descriptionAr: "عرض أقرب موعد متاح",
-  },
-  {
-    value: "none",
-    en: "No preference",
-    ar: "لا يوجد تفضيل",
-    descriptionEn: "Show all available times",
-    descriptionAr: "عرض جميع المواعيد المتاحة",
-  },
-];
+  { value: "before-noon" },
+  { value: "after-noon" },
+  { value: "earliest" },
+  { value: "none" },
+] as const;
 
 function BookingContent() {
   const searchParams = useSearchParams();
@@ -169,7 +110,11 @@ function BookingContent() {
 
   const bookingSectionRef = useRef<HTMLDivElement | null>(null);
 
-  const [language, setLanguage] = useState<Language>("en");
+  const { isArabic, t } = useLanguage();
+
+  const translate = (key: string) => {
+    return t(key as TranslationKey);
+  };
   const [step, setStep] = useState<BookingStep>(1);
 
   const [therapists, setTherapists] = useState<Therapist[]>([]);
@@ -187,29 +132,7 @@ function BookingContent() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [dataError, setDataError] = useState("");
 
-  const isArabic = language === "ar";
 
-  useEffect(() => {
-    const savedLanguage = localStorage.getItem("language") as Language;
-
-    if (savedLanguage === "en" || savedLanguage === "ar") {
-      setLanguage(savedLanguage);
-    }
-
-    const handleLanguageChange = () => {
-      const updatedLanguage = localStorage.getItem("language") as Language;
-
-      if (updatedLanguage === "en" || updatedLanguage === "ar") {
-        setLanguage(updatedLanguage);
-      }
-    };
-
-    window.addEventListener("storage", handleLanguageChange);
-
-    return () => {
-      window.removeEventListener("storage", handleLanguageChange);
-    };
-  }, []);
 
   useEffect(() => {
     if (
@@ -242,11 +165,7 @@ function BookingContent() {
         console.error("Therapists error:", therapistError);
         console.error("Slots error:", slotError);
 
-        setDataError(
-          isArabic
-            ? "تعذر تحميل بيانات الحجز حاليًا."
-            : "We could not load the booking information.",
-        );
+        setDataError(t("booking.errors.load"));
 
         setLoading(false);
         return;
@@ -276,7 +195,7 @@ function BookingContent() {
     };
 
     loadBookingData();
-  }, [directTherapistId, isArabic]);
+  }, [directTherapistId, t]);
 
   const progress = useMemo(() => {
     if (step === 4) {
@@ -287,21 +206,10 @@ function BookingContent() {
   }, [step]);
 
   const translateDay = (day: string) => {
-    if (!isArabic) {
-      return day;
-    }
+  const key = `booking.days.${day.toLowerCase()}`;
+  const translatedDay = translate(key);
 
-    const days: Record<string, string> = {
-      Monday: "الاثنين",
-      Tuesday: "الثلاثاء",
-      Wednesday: "الأربعاء",
-      Thursday: "الخميس",
-      Friday: "الجمعة",
-      Saturday: "السبت",
-      Sunday: "الأحد",
-    };
-
-    return days[day] || day;
+  return translatedDay === key ? day : translatedDay;
   };
 
   const getTherapistName = (therapist: Therapist) => {
@@ -329,9 +237,7 @@ function BookingContent() {
       return therapist.bio;
     }
 
-    return isArabic
-      ? "معالج نفسي يقدم جلسات علاجية عبر الإنترنت في بيئة آمنة وسرية."
-      : "Psychotherapist offering professional online sessions in a safe and confidential environment.";
+    return t("booking.therapists.defaultBio");
   };
 
   const normalizeGender = (gender?: string | null) => {
@@ -644,11 +550,7 @@ function BookingContent() {
       if (bookingError) {
         console.error("Booking error:", bookingError);
 
-        alert(
-          isArabic
-            ? "تعذر إنشاء الحجز. يرجى المحاولة مرة أخرى."
-            : "We could not create your booking. Please try again.",
-        );
+        alert(t("booking.errors.create"));
 
         return;
       }
@@ -678,29 +580,19 @@ function BookingContent() {
           <div className="mx-auto max-w-6xl">
             <div className="mx-auto max-w-3xl text-center">
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-[#b39668]">
-                {isArabic
-                  ? "حجز جلسة عبر الإنترنت"
-                  : "BOOK AN ONLINE SESSION"}
+                {t("booking.hero.eyebrow")}
               </p>
 
               <h1 className="mt-4 text-4xl font-bold leading-tight sm:text-5xl">
                 {directTherapistId
-                  ? isArabic
-                    ? "اختر موعد جلستك"
-                    : "Choose your session time"
-                  : isArabic
-                    ? "لنساعدك على إيجاد الخيار المناسب"
-                    : "Let us help you find the right option"}
+                  ? t("booking.hero.directTitle")
+                  : t("booking.hero.title")}
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#66727a]">
                 {directTherapistId
-                  ? isArabic
-                    ? "اختر أحد المواعيد المتاحة. سيُطلب منك تسجيل الدخول فقط عند تأكيد الحجز."
-                    : "Select an available time. You will only be asked to sign in when confirming your booking."
-                  : isArabic
-                    ? "أجب عن بعض الأسئلة القصيرة لنساعدك على عرض الخيارات التي تتوافق مع احتياجاتك وتفضيلاتك."
-                    : "Answer a few short questions to view options that correspond to your needs, preferences, and availability."}
+                  ? t("booking.hero.directDescription")
+                  : t("booking.hero.description")}
               </p>
             </div>
 
@@ -708,9 +600,9 @@ function BookingContent() {
               <div className="mx-auto mt-10 max-w-5xl">
                 <div className="flex items-center justify-between text-sm font-semibold text-[#69747a]">
                   <span>
-                    {isArabic
-                      ? `الخطوة ${step} من 4`
-                      : `Step ${step} of 4`}
+                    {t("booking.progress")
+                      .replace("{step}", String(step))
+                      .replace("{total}", "4")}
                   </span>
 
                   <span>{Math.round(Number.parseFloat(progress))}%</span>
@@ -728,9 +620,7 @@ function BookingContent() {
             {loading ? (
               <div className="mt-10 rounded-[2rem] bg-white p-12 text-center shadow-sm">
                 <p className="text-lg text-[#66727a]">
-                  {isArabic
-                    ? "جارٍ تحميل خيارات الحجز..."
-                    : "Loading booking options..."}
+                  {t("booking.loading")}
                 </p>
               </div>
             ) : dataError ? (
@@ -742,19 +632,15 @@ function BookingContent() {
                 {step === 1 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {isArabic ? "احتياجاتك" : "YOUR NEEDS"}
+                      {t("booking.steps.support.eyebrow")}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {isArabic
-                        ? "ما نوع الدعم الذي تبحث عنه؟"
-                        : "What would you like support with?"}
+                      {t("booking.steps.support.title")}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {isArabic
-                        ? "يمكنك اختيار أكثر من إجابة."
-                        : "You may select more than one option."}
+                      {t("booking.steps.support.description")}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -773,7 +659,7 @@ function BookingContent() {
                             }`}
                           >
                             <span className="flex items-center justify-between gap-4">
-                              <span>{isArabic ? option.ar : option.en}</span>
+                              <span>{translate(`booking.supportOptions.${option.value}`)}</span>
 
                               <span
                                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-sm ${
@@ -795,19 +681,15 @@ function BookingContent() {
                 {step === 2 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {isArabic ? "تفضيلاتك" : "YOUR PREFERENCE"}
+                      {t("booking.steps.therapist.eyebrow")}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {isArabic
-                        ? "هل لديك تفضيل يتعلق بالمعالج؟"
-                        : "Do you have a therapist preference?"}
+                      {t("booking.steps.therapist.title")}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {isArabic
-                        ? "اختر ما يجعلك تشعر براحة أكبر."
-                        : "Choose the option that would make you feel most comfortable."}
+                      {t("booking.steps.therapist.description")}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -828,7 +710,7 @@ function BookingContent() {
                                 : "border-[#e3dbcf] text-[#4f5e68] hover:border-[#b39668]"
                             }`}
                           >
-                            {isArabic ? option.ar : option.en}
+                            {translate(`booking.therapistPreferences.${option.value}`)}
                           </button>
                         );
                       })}
@@ -839,19 +721,15 @@ function BookingContent() {
                 {step === 3 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {isArabic ? "الموعد المناسب" : "YOUR AVAILABILITY"}
+                      {t("booking.steps.availability.eyebrow")}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {isArabic
-                        ? "متى تفضّل أن تكون جلستك؟"
-                        : "When would you prefer your session?"}
+                      {t("booking.steps.availability.title")}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {isArabic
-                        ? "سنستخدم هذا الاختيار لعرض المواعيد الأقرب إلى تفضيلاتك."
-                        : "We will use this choice to show the most relevant available sessions."}
+                      {t("booking.steps.availability.description")}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -873,13 +751,13 @@ function BookingContent() {
                             }`}
                           >
                             <span className="block font-semibold text-[#223748]">
-                              {isArabic ? option.ar : option.en}
+                              {translate(`booking.availabilityOptions.${option.value}.title`)}
                             </span>
 
                             <span className="mt-1 block text-sm text-[#69747a]">
-                              {isArabic
-                                ? option.descriptionAr
-                                : option.descriptionEn}
+                              {translate(
+                                `booking.availabilityOptions.${option.value}.description`,
+                              )}
                             </span>
                           </button>
                         );
@@ -891,27 +769,21 @@ function BookingContent() {
                 {step === 4 && !selectedTherapist && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {isArabic ? "الخيارات المتاحة" : "AVAILABLE OPTIONS"}
+                      {t("booking.results.eyebrow")}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {isArabic
-                        ? "معالجون يتوافقون مع تفضيلاتك"
-                        : "Therapists matching your preferences"}
+                      {t("booking.results.title")}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {isArabic
-                        ? "تستند هذه النتائج إلى المعلومات والتفضيلات التي اخترتها، ولا تمثّل توصية طبية."
-                        : "These results are based on the information and preferences you selected. They are not a clinical recommendation."}
+                      {t("booking.results.description")}
                     </p>
 
                     {matchingTherapists.length === 0 ? (
                       <div className="mt-8 rounded-2xl bg-[#f8f4ee] p-8 text-center">
                         <p className="text-[#66727a]">
-                          {isArabic
-                            ? "لا توجد مواعيد متاحة حاليًا تتوافق مع اختياراتك."
-                            : "There are currently no available sessions matching your choices."}
+                          {t("booking.results.empty")}
                         </p>
                       </div>
                     ) : (
@@ -957,9 +829,7 @@ function BookingContent() {
                               {nextSlot && (
                                 <div className="mt-5 rounded-2xl bg-[#f3eee6] p-4">
                                   <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#8f744d]">
-                                    {isArabic
-                                      ? "أقرب موعد متاح"
-                                      : "NEXT AVAILABLE SESSION"}
+                                    {t("booking.results.nextAvailable")}
                                   </p>
 
                                   <p className="mt-2 font-semibold">
@@ -973,7 +843,7 @@ function BookingContent() {
                                 <p className="text-xl font-bold">
                                   ${therapist.price}
                                   <span className="text-sm font-normal text-[#69747a]">
-                                    {isArabic ? " / جلسة" : " / session"}
+                                    {t("booking.sessionPriceSuffix")}
                                   </span>
                                 </p>
 
@@ -982,9 +852,7 @@ function BookingContent() {
                                   onClick={() => selectTherapist(therapist)}
                                   className="rounded-xl bg-[#415a72] px-5 py-3 font-semibold text-white transition hover:bg-[#32495f]"
                                 >
-                                  {isArabic
-                                    ? "اختر هذا المعالج"
-                                    : "Select a Session"}
+                                  {t("booking.results.selectSession")}
                                 </button>
                               </div>
                             </article>
@@ -1005,9 +873,7 @@ function BookingContent() {
                       }}
                       className="text-sm font-semibold text-[#8f744d] hover:underline"
                     >
-                      {isArabic
-                        ? "← العودة إلى الخيارات"
-                        : "← Back to therapist options"}
+                      {t("booking.therapistDetail.back")}
                     </button>
 
                     <div className="mt-6 grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
@@ -1033,9 +899,7 @@ function BookingContent() {
 
                         <div className="mt-6 border-t border-[#d9cdbb] pt-5">
                           <p className="text-sm text-[#69747a]">
-                            {isArabic
-                              ? "جلسة علاج نفسي عبر الإنترنت"
-                              : "Online psychotherapy session"}
+                            {t("booking.therapistDetail.sessionType")}
                           </p>
 
                           <p className="mt-2 text-3xl font-bold">
@@ -1046,23 +910,17 @@ function BookingContent() {
 
                       <section>
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#b39668]">
-                          {isArabic
-                            ? "اختر موعدًا"
-                            : "SELECT A SESSION TIME"}
+                          {t("booking.therapistDetail.eyebrow")}
                         </p>
 
                         <h2 className="mt-3 text-3xl font-bold">
-                          {isArabic
-                            ? "المواعيد المتاحة"
-                            : "Available sessions"}
+                          {t("booking.therapistDetail.title")}
                         </h2>
 
                         {selectedTherapistSlots.length === 0 ? (
                           <div className="mt-6 rounded-2xl bg-[#f8f4ee] p-7">
                             <p className="text-[#66727a]">
-                              {isArabic
-                                ? "لا توجد مواعيد متاحة لهذا المعالج حاليًا."
-                                : "There are currently no available sessions for this therapist."}
+                              {t("booking.therapistDetail.empty")}
                             </p>
                           </div>
                         ) : (
@@ -1104,15 +962,13 @@ function BookingContent() {
                         {selectedSlot && (
                           <div className="mt-6 rounded-2xl border border-[#dfd4c4] bg-[#fffdf9] p-5">
                             <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#8f744d]">
-                              {isArabic
-                                ? "ملخص الحجز"
-                                : "BOOKING SUMMARY"}
+                              {t("booking.summary.eyebrow")}
                             </p>
 
                             <div className="mt-4 space-y-2 text-[#56636c]">
                               <p>
                                 <strong className="text-[#223748]">
-                                  {isArabic ? "المعالج: " : "Therapist: "}
+                                  {t("booking.summary.therapistLabel")}
                                 </strong>
 
                                 {getTherapistName(selectedTherapist)}
@@ -1120,7 +976,7 @@ function BookingContent() {
 
                               <p>
                                 <strong className="text-[#223748]">
-                                  {isArabic ? "الموعد: " : "Session: "}
+                                  {t("booking.summary.sessionLabel")}
                                 </strong>
 
                                 {translateDay(selectedSlot.day)} ·{" "}
@@ -1129,7 +985,7 @@ function BookingContent() {
 
                               <p>
                                 <strong className="text-[#223748]">
-                                  {isArabic ? "الإجمالي: " : "Total: "}
+                                  {t("booking.summary.totalLabel")}
                                 </strong>
 
                                 ${selectedTherapist.price}
@@ -1145,18 +1001,12 @@ function BookingContent() {
                           className="mt-7 w-full rounded-2xl bg-[#415a72] px-7 py-4 text-lg font-semibold text-white shadow-md transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {bookingLoading
-                            ? isArabic
-                              ? "جارٍ المتابعة..."
-                              : "Continuing..."
-                            : isArabic
-                              ? "متابعة الحجز"
-                              : "Continue Booking"}
+                            ? t("booking.actions.continuing")
+                            : t("booking.actions.continueBooking")}
                         </button>
 
                         <p className="mt-4 text-center text-sm leading-6 text-[#69747a]">
-                          {isArabic
-                            ? "سيُطلب منك تسجيل الدخول أو إنشاء حساب فقط بعد اختيار الموعد."
-                            : "You will only be asked to sign in or create an account after selecting a session."}
+                          {t("booking.therapistDetail.signInNotice")}
                         </p>
                       </section>
                     </div>
@@ -1171,7 +1021,7 @@ function BookingContent() {
                       disabled={step === 1}
                       className="rounded-2xl border border-[#cfc4b4] px-7 py-3 font-semibold text-[#415a72] transition hover:bg-[#f6f1e9] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {isArabic ? "السابق" : "Back"}
+                      {t("booking.actions.back")}
                     </button>
 
                     <button
@@ -1181,12 +1031,8 @@ function BookingContent() {
                       className="rounded-2xl bg-[#415a72] px-8 py-3 font-semibold text-white shadow-md transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {step === 3
-                        ? isArabic
-                          ? "عرض الخيارات"
-                          : "View Available Options"
-                        : isArabic
-                          ? "التالي"
-                          : "Continue"}
+                        ? t("booking.actions.viewOptions")
+                        : t("booking.actions.continue")}
                     </button>
                   </div>
                 )}
@@ -1195,9 +1041,7 @@ function BookingContent() {
 
             {!directTherapistId && (
               <p className="mx-auto mt-7 max-w-3xl text-center text-sm leading-7 text-[#6b7479]">
-                {isArabic
-                  ? "تساعد هذه الأسئلة على تصفية الخيارات وفقًا لاحتياجاتك وتفضيلاتك. ولا تمثل توصية أو تشخيصًا طبيًا."
-                  : "These questions help filter available options according to your needs and preferences. They do not provide a clinical recommendation or diagnosis."}
+                {t("booking.disclaimer")}
               </p>
             )}
           </div>
@@ -1208,11 +1052,13 @@ function BookingContent() {
 }
 
 export default function BookingPage() {
+  const { t } = useLanguage();
+
   return (
     <Suspense
       fallback={
         <main className="min-h-screen bg-[#f8f4ee] p-10 text-center text-[#223748]">
-          <p className="text-lg">Loading booking...</p>
+          <p className="text-lg">{t("booking.loading")}</p>
         </main>
       }
     >

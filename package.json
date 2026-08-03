@@ -3,17 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint",
+  "translate": "node --env-file=.env.local scripts/translate-missing.mjs"
+},
   "dependencies": {
     "@stripe/stripe-js": "^9.6.0",
     "@supabase/supabase-js": "^2.105.4",
     "axios": "^1.16.1",
     "emoji-picker-react": "^4.19.1",
     "next": "16.2.6",
+    "openai": "^6.49.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.3",

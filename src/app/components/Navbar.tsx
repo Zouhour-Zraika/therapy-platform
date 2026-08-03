@@ -1,42 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { translations, Language } from "../lib/translations";
+import { useLanguage } from "@/i18n/LanguageProvider";
 
 type UserRole = "patient" | "therapist" | "admin" | null;
 
+type NavigationItem = {
+  href: string;
+  label: string;
+};
+
 export default function Navbar() {
-  const [language, setLanguage] = useState<Language>("en");
+  const pathname = usePathname();
+
+  const {
+    language,
+    isArabic,
+    changeLanguage,
+    t,
+  } = useLanguage();
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [role, setRole] = useState<UserRole>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  useEffect(() => {
-    const savedLanguage = localStorage.getItem("language") as Language;
-
-    if (savedLanguage === "ar" || savedLanguage === "en") {
-      setLanguage(savedLanguage);
-      document.documentElement.dir =
-        savedLanguage === "ar" ? "rtl" : "ltr";
-    }
-
-    checkUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      checkUser();
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const checkUser = async () => {
+  const checkUser = useCallback(async () => {
     setLoadingUser(true);
 
     const {
@@ -67,33 +59,35 @@ export default function Navbar() {
     }
 
     setLoadingUser(false);
-  };
+  }, []);
 
-  const changeLanguage = (lang: Language) => {
-    localStorage.setItem("language", lang);
-    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  useEffect(() => {
+    void checkUser();
 
-    setLanguage(lang);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void checkUser();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [checkUser]);
+
+  useEffect(() => {
     setMenuOpen(false);
-
-    window.location.reload();
-  };
+  }, [pathname]);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      alert(
-        language === "ar"
-          ? "حدث خطأ أثناء تسجيل الخروج"
-          : "Error while logging out"
-      );
-
+      alert(t("navbar.logoutError"));
       return;
     }
 
-    alert(language === "ar" ? "تم تسجيل الخروج" : "Logged out");
-
+    alert(t("navbar.logoutSuccess"));
     window.location.href = "/";
   };
 
@@ -113,105 +107,145 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const t = translations[language];
-  const isArabic = language === "ar";
+  const handleLanguageChange = (newLanguage: "en" | "ar") => {
+    changeLanguage(newLanguage);
+    setMenuOpen(false);
+  };
 
-  return (
-    <header className="sticky top-0 z-50 border-b border-[#e7dcc9] bg-[#fffdf9]/95 backdrop-blur">
-      <nav className="mx-auto flex min-h-[88px] max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+  const isActive = (href: string) => {
+    if (href === "/") {
+      return pathname === "/";
+    }
+
+    return pathname.startsWith(href);
+  };
+
+  const navigationItems: NavigationItem[] = [
+    {
+      href: "/",
+      label: t("navbar.home"),
+    },
+    {
+      href: "/therapists",
+      label: t("navbar.therapists"),
+    },
+    {
+      href: "/support",
+      label: t("navbar.support"),
+    },
+    {
+      href: "/podcasts",
+      label: t("navbar.podcasts"),
+    },
+  ];
+
+  const desktopLinkClass = (href: string) =>
+    `relative rounded-lg px-2.5 py-2 text-[15px] font-bold tracking-[0.01em] transition duration-200 ${
+      isActive(href)
+        ? "text-aan-heading"
+        : "text-aan-navy hover:text-aan-heading"
+    }`;
+
+  const mobileLinkClass = (href: string) =>
+    `rounded-xl border px-4 py-3 text-lg font-bold transition duration-200 ${
+      isActive(href)
+        ? "border-aan-gold/50 bg-[#f3ece1] text-aan-heading"
+        : "border-transparent text-aan-navy hover:border-aan-border hover:bg-aan-background hover:text-aan-heading"
+    }`;
+      return (
+    <header className="sticky top-0 z-50 border-b border-aan-border bg-[#fffdf9]/97 shadow-[0_4px_18px_rgba(39,59,82,0.06)] backdrop-blur-md">
+      <nav
+        dir={isArabic ? "rtl" : "ltr"}
+        className="mx-auto flex min-h-[92px] max-w-7xl items-center justify-between gap-5 px-4 py-3 sm:px-6 lg:px-8"
+      >
         <Link
           href="/"
           onClick={closeMenu}
-          className="flex items-center"
           aria-label="AAN Psychotherapy home"
+          className="group flex shrink-0 items-center"
         >
           <div className={isArabic ? "text-right" : "text-left"}>
-            <p className="text-2xl font-bold tracking-[0.32em] text-[#415a72]">
+            <p className="text-[1.65rem] font-extrabold tracking-[0.32em] text-aan-heading transition duration-200 group-hover:text-aan-button">
               AAN
             </p>
 
-            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#b39668] sm:text-xs">
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.22em] text-aan-gold sm:text-xs">
               Psychotherapy
             </p>
           </div>
         </Link>
 
-        <div className="hidden items-center gap-5 text-sm font-semibold text-[#415a72] lg:flex">
-          <Link href="/" className="transition hover:text-[#b39668]">
-            {t.home}
-          </Link>
+        <div className="hidden items-center gap-2 lg:flex">
+          <div className="flex items-center gap-1">
+            {navigationItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={desktopLinkClass(item.href)}
+              >
+                {item.label}
 
-          <Link
-            href="/therapists"
-            className="transition hover:text-[#b39668]"
-          >
-            {t.therapists}
-          </Link>
+                {isActive(item.href) && (
+                  <span className="absolute inset-x-2 -bottom-0.5 h-0.5 rounded-full bg-aan-gold" />
+                )}
+              </Link>
+            ))}
+          </div>
 
-          <Link
-            href="/support"
-            className="transition hover:text-[#b39668]"
-          >
-            {isArabic ? "مجالات الدعم" : "Areas of Support"}
-          </Link>
+          <div className="mx-2 h-7 w-px bg-aan-border" />
 
-          <Link
-            href="/podcasts"
-            className="transition hover:text-[#b39668]"
-          >
-            {isArabic ? "البودكاست" : "Podcasts"}
-          </Link>
+          <div className="flex items-center rounded-xl border border-aan-border bg-aan-background p-1">
+            <button
+              type="button"
+              onClick={() => handleLanguageChange("en")}
+              aria-pressed={language === "en"}
+              className={`rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
+                language === "en"
+                  ? "bg-aan-button text-white shadow-sm"
+                  : "text-aan-navy hover:bg-white hover:text-aan-heading"
+              }`}
+            >
+              EN
+            </button>
 
-          <div className="mx-1 h-6 w-px bg-[#ded1bc]" />
-
-          <button
-            type="button"
-            onClick={() => changeLanguage("en")}
-            className={`rounded-lg px-3 py-2 transition ${
-              language === "en"
-                ? "bg-[#415a72] text-white"
-                : "hover:bg-[#f0e8dc]"
-            }`}
-          >
-            EN
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeLanguage("ar")}
-            className={`rounded-lg px-3 py-2 transition ${
-              language === "ar"
-                ? "bg-[#415a72] text-white"
-                : "hover:bg-[#f0e8dc]"
-            }`}
-          >
-            العربية
-          </button>
+            <button
+              type="button"
+              onClick={() => handleLanguageChange("ar")}
+              aria-pressed={language === "ar"}
+              className={`rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
+                language === "ar"
+                  ? "bg-aan-button text-white shadow-sm"
+                  : "text-aan-navy hover:bg-white hover:text-aan-heading"
+              }`}
+            >
+              العربية
+            </button>
+          </div>
 
           {!loadingUser &&
             (isLoggedIn ? (
               <>
                 <Link
                   href={getDashboardLink()}
-                  className="rounded-xl border-2 border-[#b39668] px-4 py-2 text-[#415a72] transition hover:bg-[#b39668] hover:text-white"
+                  className="ml-1 rounded-xl border-2 border-aan-gold bg-white px-5 py-2.5 text-sm font-bold text-aan-heading transition duration-200 hover:bg-aan-gold hover:text-white"
                 >
-                  {isArabic ? "لوحة التحكم" : "Dashboard"}
+                  {t("navbar.dashboard")}
                 </Link>
 
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="rounded-xl bg-[#415a72] px-4 py-2 text-white transition hover:bg-[#32495f]"
+                  className="rounded-xl bg-aan-button px-5 py-2.5 text-sm font-bold text-white shadow-sm transition duration-200 hover:bg-aan-hover hover:shadow-md"
                 >
-                  {t.logout}
+                  {t("navbar.logout")}
                 </button>
               </>
             ) : (
               <Link
                 href="/clinician"
-                className="rounded-xl bg-[#415a72] px-5 py-2.5 text-white transition hover:bg-[#32495f]"
+                className="ml-1 rounded-xl bg-aan-button px-5 py-2.5 text-sm font-bold text-white shadow-sm transition duration-200 hover:bg-aan-hover hover:shadow-md"
               >
-                {isArabic ? "بوابة المعالج" : "Clinician Portal"}
+                {t("navbar.signInRegister")}
               </Link>
             ))}
         </div>
@@ -219,79 +253,62 @@ export default function Navbar() {
         <button
           type="button"
           onClick={() => setMenuOpen((previous) => !previous)}
-          aria-label={isArabic ? "فتح القائمة" : "Open menu"}
+          aria-label={t("navbar.openMenu")}
           aria-expanded={menuOpen}
-          className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#d8c8aa] bg-white text-[#415a72] lg:hidden"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-aan-border bg-white text-aan-heading shadow-sm transition duration-200 hover:border-aan-gold hover:bg-aan-background lg:hidden"
         >
           {menuOpen ? (
             <span className="text-3xl leading-none">×</span>
           ) : (
             <div className="space-y-1.5">
-              <span className="block h-0.5 w-6 bg-[#415a72]" />
-              <span className="block h-0.5 w-6 bg-[#415a72]" />
-              <span className="block h-0.5 w-6 bg-[#415a72]" />
+              <span className="block h-0.5 w-6 rounded-full bg-aan-heading" />
+              <span className="block h-0.5 w-6 rounded-full bg-aan-heading" />
+              <span className="block h-0.5 w-6 rounded-full bg-aan-heading" />
             </div>
           )}
         </button>
       </nav>
+            {menuOpen && (
+        <div
+          dir={isArabic ? "rtl" : "ltr"}
+          className="border-t border-aan-border bg-[#fffdf9] px-4 py-5 shadow-lg lg:hidden"
+        >
+          <div className="mx-auto flex max-w-7xl flex-col gap-2">
+            {navigationItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={closeMenu}
+                className={mobileLinkClass(item.href)}
+              >
+                {item.label}
+              </Link>
+            ))}
 
-      {menuOpen && (
-        <div className="border-t border-[#e7dcc9] bg-[#fffdf9] px-4 py-5 lg:hidden">
-          <div className="mx-auto flex max-w-7xl flex-col gap-3">
-            <Link
-              href="/"
-              onClick={closeMenu}
-              className="rounded-xl px-4 py-3 text-lg font-semibold text-[#415a72] hover:bg-[#f3ede3]"
-            >
-              {t.home}
-            </Link>
+            <div className="my-3 h-px bg-aan-border" />
 
-            <Link
-              href="/therapists"
-              onClick={closeMenu}
-              className="rounded-xl px-4 py-3 text-lg font-semibold text-[#415a72] hover:bg-[#f3ede3]"
-            >
-              {t.therapists}
-            </Link>
-
-            <Link
-              href="/support"
-              onClick={closeMenu}
-              className="rounded-xl px-4 py-3 text-lg font-semibold text-[#415a72] hover:bg-[#f3ede3]"
-            >
-              {isArabic ? "مجالات الدعم" : "Areas of Support"}
-            </Link>
-
-            <Link
-              href="/podcasts"
-              onClick={closeMenu}
-              className="rounded-xl px-4 py-3 text-lg font-semibold text-[#415a72] hover:bg-[#f3ede3]"
-            >
-              {isArabic ? "البودكاست" : "Podcasts"}
-            </Link>
-
-            <div className="my-2 h-px bg-[#e7dcc9]" />
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-aan-border bg-aan-background p-2">
               <button
                 type="button"
-                onClick={() => changeLanguage("en")}
-                className={`rounded-xl border px-4 py-3 font-semibold ${
+                onClick={() => handleLanguageChange("en")}
+                aria-pressed={language === "en"}
+                className={`rounded-xl px-3 py-3 font-bold transition duration-200 ${
                   language === "en"
-                    ? "border-[#415a72] bg-[#415a72] text-white"
-                    : "border-[#d8c8aa] bg-white text-[#415a72]"
+                    ? "bg-aan-button text-white shadow-sm"
+                    : "text-aan-navy hover:bg-white hover:text-aan-heading"
                 }`}
               >
-                English
+                EN
               </button>
 
               <button
                 type="button"
-                onClick={() => changeLanguage("ar")}
-                className={`rounded-xl border px-4 py-3 font-semibold ${
+                onClick={() => handleLanguageChange("ar")}
+                aria-pressed={language === "ar"}
+                className={`rounded-xl px-3 py-3 font-bold transition duration-200 ${
                   language === "ar"
-                    ? "border-[#415a72] bg-[#415a72] text-white"
-                    : "border-[#d8c8aa] bg-white text-[#415a72]"
+                    ? "bg-aan-button text-white shadow-sm"
+                    : "text-aan-navy hover:bg-white hover:text-aan-heading"
                 }`}
               >
                 العربية
@@ -300,31 +317,31 @@ export default function Navbar() {
 
             {!loadingUser &&
               (isLoggedIn ? (
-                <div className="mt-3 grid gap-3">
+                <div className="mt-4 grid gap-3">
                   <Link
                     href={getDashboardLink()}
                     onClick={closeMenu}
-                    className="rounded-xl border-2 border-[#b39668] px-4 py-3 text-center text-lg font-semibold text-[#415a72]"
+                    className="rounded-xl border-2 border-aan-gold bg-white px-4 py-3 text-center text-lg font-bold text-aan-heading transition duration-200 hover:bg-aan-gold hover:text-white"
                   >
-                    {isArabic ? "لوحة التحكم" : "Dashboard"}
+                    {t("navbar.dashboard")}
                   </Link>
 
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="rounded-xl bg-[#415a72] px-4 py-3 text-lg font-semibold text-white"
+                    className="rounded-xl bg-aan-button px-4 py-3 text-lg font-bold text-white shadow-sm transition duration-200 hover:bg-aan-hover"
                   >
-                    {t.logout}
+                    {t("navbar.logout")}
                   </button>
                 </div>
               ) : (
-                <div className="mt-3 grid gap-3">
+                <div className="mt-4">
                   <Link
                     href="/clinician"
                     onClick={closeMenu}
-                    className="rounded-xl bg-[#415a72] px-4 py-3 text-center text-lg font-semibold text-white"
+                    className="block rounded-xl bg-aan-button px-4 py-3 text-center text-lg font-bold text-white shadow-sm transition duration-200 hover:bg-aan-hover"
                   >
-                    {isArabic ? "بوابة المعالج" : "Clinician Portal"}
+                    {t("navbar.signInRegister")}
                   </Link>
                 </div>
               ))}
