@@ -93,8 +93,7 @@ export default function AdminPodcastsPage() {
     useState("");
 
   const [existingVideoUrl, setExistingVideoUrl] = useState("");
-  const [existingThumbnailUrl, setExistingThumbnailUrl] =
-    useState("");
+  
 
   const [audioUrl, setAudioUrl] = useState("");
 
@@ -533,7 +532,6 @@ export default function AdminPodcastsPage() {
     setDuration("");
 
     setExistingVideoUrl("");
-    setExistingThumbnailUrl("");
     setAudioUrl("");
 
     setLiveUrl("");
@@ -720,9 +718,7 @@ export default function AdminPodcastsPage() {
           : null;
 
       const finalThumbnailUrl =
-        uploadedThumbnailUrl ||
-        existingThumbnailUrl.trim() ||
-        null;
+       uploadedThumbnailUrl || null;
 
       const podcastToInsert = {
         title: english.title,
@@ -1269,33 +1265,13 @@ export default function AdminPodcastsPage() {
                         </div>
                       )}
 
-                      <div className="mt-5">
-                        <Field label={copy.optionalThumbnailUrl}>
-                          <input
-                            value={existingThumbnailUrl}
-                            onChange={(event) =>
-                              setExistingThumbnailUrl(
-                                event.target.value,
-                              )
-                            }
-                            disabled={submitting}
-                            dir="ltr"
-                            className="aan-field p-4 font-normal"
-                          />
-                        </Field>
-                      </div>
+                      
                     </div>
 
                     <div className="overflow-hidden rounded-2xl border border-aan-border bg-white">
-                      {thumbnailPreviewUrl ? (
+                     {thumbnailPreviewUrl ? (
                         <img
                           src={thumbnailPreviewUrl}
-                          alt="Thumbnail preview"
-                          className="aspect-video h-full w-full object-cover"
-                        />
-                      ) : existingThumbnailUrl ? (
-                        <img
-                          src={existingThumbnailUrl}
                           alt="Thumbnail preview"
                           className="aspect-video h-full w-full object-cover"
                         />
