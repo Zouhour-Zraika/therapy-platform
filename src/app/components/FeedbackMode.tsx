@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useState,
@@ -10,8 +9,16 @@ import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
 
-type UserRole = "admin" | "patient" | "therapist" | null;
-type FeedbackStatus = "open" | "in_progress" | "done";
+type UserRole =
+  | "admin"
+  | "patient"
+  | "therapist"
+  | null;
+
+type FeedbackStatus =
+  | "open"
+  | "in_progress"
+  | "done";
 
 type SiteFeedback = {
   id: string;
@@ -43,140 +50,201 @@ export default function FeedbackMode() {
   const pathname = usePathname();
   const { isArabic } = useLanguage();
 
-  const [role, setRole] = useState<UserRole>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [loadingRole, setLoadingRole] = useState(true);
+  const [role, setRole] =
+    useState<UserRole>(null);
 
-  const [reviewMode, setReviewMode] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [userId, setUserId] =
+    useState<string | null>(null);
 
-  const [feedback, setFeedback] = useState<SiteFeedback[]>([]);
-  const [selectedElement, setSelectedElement] =
-    useState<SelectedElement | null>(null);
+  const [loadingRole, setLoadingRole] =
+    useState(true);
+
+  const [reviewMode, setReviewMode] =
+    useState(false);
+
+  const [panelOpen, setPanelOpen] =
+    useState(false);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [feedback, setFeedback] =
+    useState<SiteFeedback[]>([]);
+
+  const [
+    selectedElement,
+    setSelectedElement,
+  ] = useState<SelectedElement | null>(null);
 
   const [note, setNote] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
   const copy = isArabic
     ? {
         reviewMode: "وضع الملاحظات",
-        reviewActive: "وضع الملاحظات مفعّل",
-        reviewInactive: "وضع الملاحظات غير مفعّل",
         instruction:
           "اضغط على أي نص أو زر أو صورة في الصفحة لإضافة ملاحظة.",
         selectedElement: "العنصر المحدد",
         noteLabel: "الملاحظة",
-        notePlaceholder: "اكتب التعديل المطلوب...",
+        notePlaceholder:
+          "اكتب التعديل المطلوب...",
         save: "حفظ الملاحظة",
         saving: "جارٍ الحفظ...",
         cancel: "إلغاء",
         notes: "الملاحظات",
-        noNotes: "لا توجد ملاحظات على هذه الصفحة.",
+        noNotes:
+          "لا توجد ملاحظات على هذه الصفحة.",
         open: "مفتوحة",
         inProgress: "قيد التنفيذ",
         done: "منتهية",
         delete: "حذف",
-        close: "إغلاق",
-        required: "يرجى كتابة الملاحظة.",
-        saveError: "تعذر حفظ الملاحظة.",
-        loadError: "تعذر تحميل الملاحظات.",
-        deleteError: "تعذر حذف الملاحظة.",
-        updateError: "تعذر تحديث حالة الملاحظة.",
+        required:
+          "يرجى كتابة الملاحظة.",
+        saveError:
+          "تعذر حفظ الملاحظة.",
+        loadError:
+          "تعذر تحميل الملاحظات.",
+        deleteError:
+          "تعذر حذف الملاحظة.",
+        updateError:
+          "تعذر تحديث حالة الملاحظة.",
         saved: "تم حفظ الملاحظة.",
         pageNotes: "ملاحظات الصفحة",
+        deleteQuestion:
+          "هل تريد حذف هذه الملاحظة؟",
       }
     : {
         reviewMode: "Review Mode",
-        reviewActive: "Review mode is active",
-        reviewInactive: "Review mode is inactive",
         instruction:
           "Click any text, button or image on the page to add a note.",
-        selectedElement: "Selected element",
+        selectedElement:
+          "Selected element",
         noteLabel: "Note",
-        notePlaceholder: "Describe the requested change...",
+        notePlaceholder:
+          "Describe the requested change...",
         save: "Save note",
         saving: "Saving...",
         cancel: "Cancel",
         notes: "Notes",
-        noNotes: "There are no notes on this page.",
+        noNotes:
+          "There are no notes on this page.",
         open: "Open",
         inProgress: "In progress",
         done: "Done",
         delete: "Delete",
-        close: "Close",
-        required: "Please enter a note.",
-        saveError: "Unable to save the note.",
-        loadError: "Unable to load feedback.",
-        deleteError: "Unable to delete the note.",
-        updateError: "Unable to update the note status.",
+        required:
+          "Please enter a note.",
+        saveError:
+          "Unable to save the note.",
+        loadError:
+          "Unable to load feedback.",
+        deleteError:
+          "Unable to delete the note.",
+        updateError:
+          "Unable to update the note status.",
         saved: "Note saved.",
         pageNotes: "Page notes",
+        deleteQuestion:
+          "Delete this note?",
       };
 
-  const loadCurrentUser = useCallback(async () => {
-    setLoadingRole(true);
+  const loadCurrentUser =
+    useCallback(async () => {
+      setLoadingRole(true);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    if (userError || !user) {
-      setRole(null);
-      setUserId(null);
+      if (userError || !user) {
+        setRole(null);
+        setUserId(null);
+        setLoadingRole(false);
+        return;
+      }
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) {
+        console.error(
+          "Feedback profile error:",
+          profileError,
+        );
+
+        setRole(null);
+        setUserId(null);
+        setLoadingRole(false);
+        return;
+      }
+
+      setRole(
+        (profile?.role as UserRole) || null,
+      );
+
+      setUserId(user.id);
       setLoadingRole(false);
-      return;
-    }
+    }, []);
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+  const loadFeedback =
+    useCallback(async () => {
+      if (role !== "admin") {
+        return;
+      }
 
-    if (profileError) {
-      console.error("Feedback profile error:", profileError);
-      setRole(null);
-      setUserId(null);
-      setLoadingRole(false);
-      return;
-    }
+      setErrorMessage("");
 
-    setRole((profile?.role as UserRole) || null);
-    setUserId(user.id);
-    setLoadingRole(false);
-  }, []);
+      const { data, error } =
+        await supabase
+          .from("site_feedback")
+          .select("*")
+          .eq("page_path", pathname)
+          .order("created_at", {
+            ascending: false,
+          });
 
-  const loadFeedback = useCallback(async () => {
-    if (role !== "admin") {
-      return;
-    }
+      if (error) {
+        console.error(
+          "Feedback load error:",
+          error,
+        );
 
-    const { data, error } = await supabase
-      .from("site_feedback")
-      .select("*")
-      .eq("page_path", pathname)
-      .order("created_at", { ascending: false });
+        setErrorMessage(copy.loadError);
+        return;
+      }
 
-    if (error) {
-      console.error("Feedback load error:", error);
-      setErrorMessage(copy.loadError);
-      return;
-    }
-
-    setFeedback((data as SiteFeedback[] | null) || []);
-  }, [copy.loadError, pathname, role]);
+      setFeedback(
+        (data as SiteFeedback[] | null) ||
+          [],
+      );
+    }, [
+      copy.loadError,
+      pathname,
+      role,
+    ]);
 
   useEffect(() => {
     void loadCurrentUser();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void loadCurrentUser();
-    });
+    } =
+      supabase.auth.onAuthStateChange(
+        () => {
+          void loadCurrentUser();
+        },
+      );
 
     return () => {
       subscription.unsubscribe();
@@ -194,93 +262,137 @@ export default function FeedbackMode() {
     setPanelOpen(false);
     setSelectedElement(null);
     setNote("");
-    setSuccessMessage("");
     setErrorMessage("");
+    setSuccessMessage("");
   }, [pathname]);
 
   useEffect(() => {
-    if (!reviewMode) {
-      document.body.style.cursor = "";
-      return;
-    }
-
-    document.body.style.cursor = "crosshair";
+    document.body.style.cursor =
+      reviewMode ? "crosshair" : "";
 
     return () => {
       document.body.style.cursor = "";
     };
   }, [reviewMode]);
 
-  const isFeedbackUiElement = (target: HTMLElement) => {
-    return Boolean(target.closest("[data-feedback-ui='true']"));
+  const isFeedbackUiElement = (
+    target: HTMLElement,
+  ) => {
+    return Boolean(
+      target.closest(
+        "[data-feedback-ui='true']",
+      ),
+    );
   };
 
-  const getUsefulText = (element: HTMLElement) => {
-    if (element instanceof HTMLImageElement) {
-      return element.alt || element.src || "Image";
+  const getUsefulText = (
+    element: HTMLElement,
+  ) => {
+    if (
+      element instanceof HTMLImageElement
+    ) {
+      return (
+        element.alt ||
+        element.getAttribute(
+          "aria-label",
+        ) ||
+        element.src ||
+        "Image"
+      );
     }
 
     if (
       element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement
+      element instanceof
+        HTMLTextAreaElement
     ) {
       return (
         element.value ||
         element.placeholder ||
-        element.getAttribute("aria-label") ||
+        element.getAttribute(
+          "aria-label",
+        ) ||
         element.tagName
       );
     }
 
     const text =
       element.innerText?.trim() ||
-      element.getAttribute("aria-label") ||
+      element.textContent?.trim() ||
+      element.getAttribute(
+        "aria-label",
+      ) ||
       element.getAttribute("title") ||
       element.tagName;
 
     return text.slice(0, 500);
   };
 
-  const handlePageClick = (
-    event: ReactMouseEvent<HTMLDivElement>,
-  ) => {
+  useEffect(() => {
     if (!reviewMode) {
       return;
     }
 
-    const target = event.target as HTMLElement;
+    const handleDocumentClick = (
+      event: MouseEvent,
+    ) => {
+      const target =
+        event.target as HTMLElement | null;
 
-    if (isFeedbackUiElement(target)) {
-      return;
-    }
+      if (
+        !target ||
+        isFeedbackUiElement(target)
+      ) {
+        return;
+      }
 
-    event.preventDefault();
-    event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
 
-    const rect = target.getBoundingClientRect();
+      const rect =
+        target.getBoundingClientRect();
 
-    const absoluteX =
-      rect.left + window.scrollX + rect.width / 2;
+      setSelectedElement({
+        text: getUsefulText(target),
+        tag: target.tagName.toLowerCase(),
+        x:
+          rect.left +
+          window.scrollX +
+          rect.width / 2,
+        y:
+          rect.top +
+          window.scrollY +
+          rect.height / 2,
+        pageWidth:
+          document.documentElement
+            .scrollWidth,
+        pageHeight:
+          document.documentElement
+            .scrollHeight,
+      });
 
-    const absoluteY =
-      rect.top + window.scrollY + rect.height / 2;
+      setNote("");
+      setErrorMessage("");
+      setSuccessMessage("");
+      setPanelOpen(true);
+    };
 
-    setSelectedElement({
-      text: getUsefulText(target),
-      tag: target.tagName.toLowerCase(),
-      x: absoluteX,
-      y: absoluteY,
-      pageWidth: document.documentElement.scrollWidth,
-      pageHeight: document.documentElement.scrollHeight,
-    });
+    document.addEventListener(
+      "click",
+      handleDocumentClick,
+      true,
+    );
 
-    setNote("");
-    setErrorMessage("");
-    setSuccessMessage("");
-    setPanelOpen(true);
-  };
-
-  const saveFeedback = async () => {
+    return () => {
+      document.removeEventListener(
+        "click",
+        handleDocumentClick,
+        true,
+      );
+    };
+  }, [reviewMode]);
+    const saveFeedback = async () => {
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -313,7 +425,11 @@ export default function FeedbackMode() {
       });
 
     if (error) {
-      console.error("Feedback save error:", error);
+      console.error(
+        "Feedback save error:",
+        error,
+      );
+
       setErrorMessage(copy.saveError);
       setSaving(false);
       return;
@@ -342,7 +458,11 @@ export default function FeedbackMode() {
       .eq("id", id);
 
     if (error) {
-      console.error("Feedback update error:", error);
+      console.error(
+        "Feedback update error:",
+        error,
+      );
+
       alert(copy.updateError);
       return;
     }
@@ -350,11 +470,11 @@ export default function FeedbackMode() {
     await loadFeedback();
   };
 
-  const deleteFeedback = async (id: string) => {
+  const deleteFeedback = async (
+    id: string,
+  ) => {
     const confirmed = window.confirm(
-      isArabic
-        ? "هل تريد حذف هذه الملاحظة؟"
-        : "Delete this note?",
+      copy.deleteQuestion,
     );
 
     if (!confirmed) {
@@ -367,7 +487,11 @@ export default function FeedbackMode() {
       .eq("id", id);
 
     if (error) {
-      console.error("Feedback delete error:", error);
+      console.error(
+        "Feedback delete error:",
+        error,
+      );
+
       alert(copy.deleteError);
       return;
     }
@@ -375,27 +499,39 @@ export default function FeedbackMode() {
     await loadFeedback();
   };
 
-  const getMarkerPosition = (item: SiteFeedback) => {
+  const getMarkerPosition = (
+    item: SiteFeedback,
+  ) => {
     const currentWidth =
-      document.documentElement.scrollWidth || 1;
+      document.documentElement
+        .scrollWidth || 1;
 
     const currentHeight =
-      document.documentElement.scrollHeight || 1;
+      document.documentElement
+        .scrollHeight || 1;
 
-    const originalWidth = item.page_width || currentWidth;
-    const originalHeight = item.page_height || currentHeight;
+    const originalWidth =
+      item.page_width || currentWidth;
+
+    const originalHeight =
+      item.page_height || currentHeight;
 
     return {
       left:
-        ((item.x_position || 0) / originalWidth) *
+        ((item.x_position || 0) /
+          originalWidth) *
         currentWidth,
+
       top:
-        ((item.y_position || 0) / originalHeight) *
+        ((item.y_position || 0) /
+          originalHeight) *
         currentHeight,
     };
   };
 
-  const statusLabel = (status: FeedbackStatus) => {
+  const statusLabel = (
+    status: FeedbackStatus,
+  ) => {
     if (status === "done") {
       return copy.done;
     }
@@ -407,7 +543,9 @@ export default function FeedbackMode() {
     return copy.open;
   };
 
-  const statusClasses = (status: FeedbackStatus) => {
+  const statusClasses = (
+    status: FeedbackStatus,
+  ) => {
     if (status === "done") {
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     }
@@ -419,57 +557,64 @@ export default function FeedbackMode() {
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
 
-  if (loadingRole || role !== "admin") {
+  if (
+    loadingRole ||
+    role !== "admin"
+  ) {
     return null;
   }
 
   return (
     <>
-      <div
-        onClickCapture={handlePageClick}
-        className={`pointer-events-none fixed inset-0 z-[80] ${
-          reviewMode ? "pointer-events-auto" : ""
-        }`}
-        aria-hidden="true"
-      />
-
       {reviewMode &&
-        feedback.map((item, index) => {
-          const position = getMarkerPosition(item);
+        feedback.map(
+          (item, index) => {
+            const position =
+              getMarkerPosition(item);
 
-          return (
-            <button
-              key={item.id}
-              type="button"
-              data-feedback-ui="true"
-              onClick={() => {
-                setPanelOpen(true);
-                setSelectedElement(null);
-              }}
-              style={{
-                left: `${position.left}px`,
-                top: `${position.top}px`,
-              }}
-              className="absolute z-[90] flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-red-600 text-sm font-bold text-white shadow-lg"
-              title={item.note}
-            >
-              {index + 1}
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={item.id}
+                type="button"
+                data-feedback-ui="true"
+                onClick={() => {
+                  setPanelOpen(true);
+                  setSelectedElement(
+                    null,
+                  );
+                }}
+                style={{
+                  left: `${position.left}px`,
+                  top: `${position.top}px`,
+                }}
+                className="absolute z-[90] flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-red-600 text-sm font-bold text-white shadow-lg"
+                title={item.note}
+              >
+                {index + 1}
+              </button>
+            );
+          },
+        )}
 
       <div
         data-feedback-ui="true"
-        dir={isArabic ? "rtl" : "ltr"}
+        dir={
+          isArabic ? "rtl" : "ltr"
+        }
         className={`fixed bottom-6 z-[100] ${
-          isArabic ? "left-6" : "right-6"
+          isArabic
+            ? "left-6"
+            : "right-6"
         }`}
       >
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => {
-              setReviewMode((current) => !current);
+              setReviewMode(
+                (current) => !current,
+              );
+
               setPanelOpen(false);
               setSelectedElement(null);
               setErrorMessage("");
@@ -493,7 +638,8 @@ export default function FeedbackMode() {
             }}
             className="rounded-2xl border border-aan-border bg-white px-5 py-4 font-bold text-aan-navy shadow-xl"
           >
-            {copy.notes} ({feedback.length})
+            {copy.notes} (
+            {feedback.length})
           </button>
         </div>
       </div>
@@ -501,14 +647,15 @@ export default function FeedbackMode() {
       {reviewMode && (
         <div
           data-feedback-ui="true"
-          dir={isArabic ? "rtl" : "ltr"}
+          dir={
+            isArabic ? "rtl" : "ltr"
+          }
           className="fixed left-1/2 top-24 z-[100] -translate-x-1/2 rounded-full border border-red-200 bg-red-50 px-5 py-3 text-sm font-bold text-red-700 shadow-lg"
         >
           {copy.instruction}
         </div>
       )}
-
-      {panelOpen && (
+            {panelOpen && (
         <div
           data-feedback-ui="true"
           dir={isArabic ? "rtl" : "ltr"}
@@ -601,7 +748,9 @@ export default function FeedbackMode() {
                     disabled={saving}
                     className="aan-cta rounded-2xl px-5 py-4 font-bold text-white disabled:opacity-60"
                   >
-                    {saving ? copy.saving : copy.save}
+                    {saving
+                      ? copy.saving
+                      : copy.save}
                   </button>
                 </div>
               </div>
@@ -613,70 +762,76 @@ export default function FeedbackMode() {
                   </div>
                 ) : (
                   <div className="grid gap-5">
-                    {feedback.map((item, index) => (
-                      <article
-                        key={item.id}
-                        className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">
-                            {index + 1}
-                          </span>
+                    {feedback.map(
+                      (item, index) => (
+                        <article
+                          key={item.id}
+                          className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">
+                              {index + 1}
+                            </span>
 
-                          <span
-                            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${statusClasses(
-                              item.status,
-                            )}`}
-                          >
-                            {statusLabel(item.status)}
-                          </span>
-                        </div>
+                            <span
+                              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${statusClasses(
+                                item.status,
+                              )}`}
+                            >
+                              {statusLabel(
+                                item.status,
+                              )}
+                            </span>
+                          </div>
 
-                        <p className="mt-4 whitespace-pre-line font-semibold leading-7 text-aan-navy">
-                          {item.note}
-                        </p>
-
-                        {item.element_text && (
-                          <p className="mt-3 line-clamp-3 text-sm leading-6 text-aan-secondary">
-                            {item.element_text}
+                          <p className="mt-4 whitespace-pre-line font-semibold leading-7 text-aan-navy">
+                            {item.note}
                           </p>
-                        )}
 
-                        <select
-                          value={item.status}
-                          onChange={(event) =>
-                            void updateStatus(
-                              item.id,
-                              event.target
-                                .value as FeedbackStatus,
-                            )
-                          }
-                          className="aan-field mt-5 w-full p-3 text-sm font-semibold"
-                        >
-                          <option value="open">
-                            {copy.open}
-                          </option>
+                          {item.element_text && (
+                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-aan-secondary">
+                              {item.element_text}
+                            </p>
+                          )}
 
-                          <option value="in_progress">
-                            {copy.inProgress}
-                          </option>
+                          <select
+                            value={item.status}
+                            onChange={(event) =>
+                              void updateStatus(
+                                item.id,
+                                event.target
+                                  .value as FeedbackStatus,
+                              )
+                            }
+                            className="aan-field mt-5 w-full p-3 text-sm font-semibold"
+                          >
+                            <option value="open">
+                              {copy.open}
+                            </option>
 
-                          <option value="done">
-                            {copy.done}
-                          </option>
-                        </select>
+                            <option value="in_progress">
+                              {copy.inProgress}
+                            </option>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void deleteFeedback(item.id)
-                          }
-                          className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-700 hover:bg-red-50"
-                        >
-                          {copy.delete}
-                        </button>
-                      </article>
-                    ))}
+                            <option value="done">
+                              {copy.done}
+                            </option>
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void deleteFeedback(
+                                item.id,
+                              )
+                            }
+                            className="mt-3 w-full rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-700 hover:bg-red-50"
+                          >
+                            {copy.delete}
+                          </button>
+                        </article>
+                      ),
+                    )}
                   </div>
                 )}
               </div>
