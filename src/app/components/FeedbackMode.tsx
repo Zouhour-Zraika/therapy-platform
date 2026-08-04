@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  FormEvent,
   useCallback,
   useEffect,
   useState,
@@ -8,12 +9,6 @@ import {
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
-
-type UserRole =
-  | "admin"
-  | "patient"
-  | "therapist"
-  | null;
 
 type FeedbackStatus =
   | "open"
@@ -32,7 +27,7 @@ type SiteFeedback = {
   page_width: number | null;
   page_height: number | null;
   status: FeedbackStatus;
-  created_by: string;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -46,18 +41,40 @@ type SelectedElement = {
   pageHeight: number;
 };
 
+type ReviewAccessResponse = {
+  allowed?: boolean;
+  error?: string;
+};
+
+type FeedbackApiResponse = {
+  feedback?: SiteFeedback[] | SiteFeedback;
+  error?: string;
+};
+
 export default function FeedbackMode() {
   const pathname = usePathname();
   const { isArabic } = useLanguage();
 
-  const [role, setRole] =
-    useState<UserRole>(null);
-
-  const [userId, setUserId] =
-    useState<string | null>(null);
-
-  const [loadingRole, setLoadingRole] =
+  const [loadingAccess, setLoadingAccess] =
     useState(true);
+
+  const [hasAccess, setHasAccess] =
+    useState(false);
+
+  const [isAdmin, setIsAdmin] =
+    useState(false);
+
+  const [accessModalOpen, setAccessModalOpen] =
+    useState(false);
+
+  const [accessCode, setAccessCode] =
+    useState("");
+
+  const [checkingCode, setCheckingCode] =
+    useState(false);
+
+  const [accessError, setAccessError] =
+    useState("");
 
   const [reviewMode, setReviewMode] =
     useState(false);
@@ -77,6 +94,7 @@ export default function FeedbackMode() {
   ] = useState<SelectedElement | null>(null);
 
   const [note, setNote] = useState("");
+
   const [errorMessage, setErrorMessage] =
     useState("");
 
@@ -85,44 +103,55 @@ export default function FeedbackMode() {
 
   const copy = isArabic
     ? {
+        reviewAccess: "الدخول إلى وضع الملاحظات",
+        accessDescription:
+          "أدخل رمز المراجعة لإضافة الملاحظات من دون تسجيل الدخول.",
+        accessCode: "رمز المراجعة",
+        accessPlaceholder: "أدخل الرمز...",
+        unlock: "دخول",
+        checking: "جارٍ التحقق...",
+        invalidCode: "رمز المراجعة غير صحيح.",
         reviewMode: "وضع الملاحظات",
+        openReview: "فتح وضع الملاحظات",
         instruction:
           "اضغط على أي نص أو زر أو صورة في الصفحة لإضافة ملاحظة.",
         selectedElement: "العنصر المحدد",
         noteLabel: "الملاحظة",
-        notePlaceholder:
-          "اكتب التعديل المطلوب...",
+        notePlaceholder: "اكتب التعديل المطلوب...",
         save: "حفظ الملاحظة",
         saving: "جارٍ الحفظ...",
         cancel: "إلغاء",
         notes: "الملاحظات",
-        noNotes:
-          "لا توجد ملاحظات على هذه الصفحة.",
+        noNotes: "لا توجد ملاحظات على هذه الصفحة.",
         open: "مفتوحة",
         inProgress: "قيد التنفيذ",
         done: "منتهية",
         delete: "حذف",
-        required:
-          "يرجى كتابة الملاحظة.",
-        saveError:
-          "تعذر حفظ الملاحظة.",
-        loadError:
-          "تعذر تحميل الملاحظات.",
-        deleteError:
-          "تعذر حذف الملاحظة.",
-        updateError:
-          "تعذر تحديث حالة الملاحظة.",
+        required: "يرجى كتابة الملاحظة.",
+        saveError: "تعذر حفظ الملاحظة.",
+        loadError: "تعذر تحميل الملاحظات.",
+        deleteError: "تعذر حذف الملاحظة.",
+        updateError: "تعذر تحديث حالة الملاحظة.",
         saved: "تم حفظ الملاحظة.",
         pageNotes: "ملاحظات الصفحة",
-        deleteQuestion:
-          "هل تريد حذف هذه الملاحظة؟",
+        deleteQuestion: "هل تريد حذف هذه الملاحظة؟",
+        close: "إغلاق",
+        lockReview: "إغلاق وصول المراجعة",
       }
     : {
+        reviewAccess: "Review access",
+        accessDescription:
+          "Enter the review code to leave notes without signing in.",
+        accessCode: "Review code",
+        accessPlaceholder: "Enter the code...",
+        unlock: "Continue",
+        checking: "Checking...",
+        invalidCode: "The review code is incorrect.",
         reviewMode: "Review Mode",
+        openReview: "Open Review Mode",
         instruction:
           "Click any text, button or image on the page to add a note.",
-        selectedElement:
-          "Selected element",
+        selectedElement: "Selected element",
         noteLabel: "Note",
         notePlaceholder:
           "Describe the requested change...",
@@ -130,132 +159,246 @@ export default function FeedbackMode() {
         saving: "Saving...",
         cancel: "Cancel",
         notes: "Notes",
-        noNotes:
-          "There are no notes on this page.",
+        noNotes: "There are no notes on this page.",
         open: "Open",
         inProgress: "In progress",
         done: "Done",
         delete: "Delete",
-        required:
-          "Please enter a note.",
-        saveError:
-          "Unable to save the note.",
-        loadError:
-          "Unable to load feedback.",
-        deleteError:
-          "Unable to delete the note.",
-        updateError:
-          "Unable to update the note status.",
+        required: "Please enter a note.",
+        saveError: "Unable to save the note.",
+        loadError: "Unable to load feedback.",
+        deleteError: "Unable to delete the note.",
+        updateError: "Unable to update the note status.",
         saved: "Note saved.",
         pageNotes: "Page notes",
-        deleteQuestion:
-          "Delete this note?",
+        deleteQuestion: "Delete this note?",
+        close: "Close",
+        lockReview: "Close review access",
       };
 
-  const loadCurrentUser =
+  const getAccessToken =
     useCallback(async () => {
-      setLoadingRole(true);
-
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (userError || !user) {
-        setRole(null);
-        setUserId(null);
-        setLoadingRole(false);
-        return;
-      }
-
-      const {
-        data: profile,
-        error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError) {
-        console.error(
-          "Feedback profile error:",
-          profileError,
-        );
-
-        setRole(null);
-        setUserId(null);
-        setLoadingRole(false);
-        return;
-      }
-
-      setRole(
-        (profile?.role as UserRole) || null,
-      );
-
-      setUserId(user.id);
-      setLoadingRole(false);
+      return session?.access_token || null;
     }, []);
 
-  const loadFeedback =
+  const getApiHeaders =
     useCallback(async () => {
-      if (role !== "admin") {
-        return;
-      }
+      const token = await getAccessToken();
 
-      setErrorMessage("");
+      return {
+        "Content-Type": "application/json",
+        ...(token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : {}),
+      };
+    }, [getAccessToken]);
 
-      const { data, error } =
-        await supabase
-          .from("site_feedback")
-          .select("*")
-          .eq("page_path", pathname)
-          .order("created_at", {
-            ascending: false,
-          });
+  const checkReviewAccess =
+    useCallback(async () => {
+      setLoadingAccess(true);
 
-      if (error) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        let adminAccess = false;
+
+        if (user) {
+          const { data: profile } =
+            await supabase
+              .from("profiles")
+              .select("role")
+              .eq("id", user.id)
+              .maybeSingle();
+
+          adminAccess =
+            profile?.role === "admin";
+        }
+
+        setIsAdmin(adminAccess);
+
+        if (adminAccess) {
+          setHasAccess(true);
+          setLoadingAccess(false);
+          return;
+        }
+
+        const response = await fetch(
+          "/api/review-access",
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+
+        const result =
+          (await response.json()) as ReviewAccessResponse;
+
+        setHasAccess(
+          response.ok && result.allowed === true,
+        );
+      } catch (error) {
         console.error(
-          "Feedback load error:",
+          "Review access check error:",
           error,
         );
 
-        setErrorMessage(copy.loadError);
-        return;
+        setHasAccess(false);
+      } finally {
+        setLoadingAccess(false);
       }
-
-      setFeedback(
-        (data as SiteFeedback[] | null) ||
-          [],
-      );
-    }, [
-      copy.loadError,
-      pathname,
-      role,
-    ]);
+    }, []);
 
   useEffect(() => {
-    void loadCurrentUser();
+    void checkReviewAccess();
 
     const {
       data: { subscription },
-    } =
-      supabase.auth.onAuthStateChange(
-        () => {
-          void loadCurrentUser();
-        },
-      );
+    } = supabase.auth.onAuthStateChange(() => {
+      void checkReviewAccess();
+    });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadCurrentUser]);
+  }, [checkReviewAccess]);
+
+  const submitAccessCode = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    setAccessError("");
+
+    if (!accessCode.trim()) {
+      setAccessError(copy.invalidCode);
+      return;
+    }
+
+    setCheckingCode(true);
+
+    try {
+      const response = await fetch(
+        "/api/review-access",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code: accessCode.trim(),
+          }),
+        },
+      );
+
+      const result =
+        (await response.json()) as ReviewAccessResponse;
+
+      if (
+        !response.ok ||
+        result.allowed !== true
+      ) {
+        setAccessError(
+          result.error || copy.invalidCode,
+        );
+        return;
+      }
+
+      setHasAccess(true);
+      setAccessModalOpen(false);
+      setAccessCode("");
+      setReviewMode(true);
+    } catch (error) {
+      console.error(
+        "Review code error:",
+        error,
+      );
+
+      setAccessError(copy.invalidCode);
+    } finally {
+      setCheckingCode(false);
+    }
+  };
+
+  const closeReviewAccess = async () => {
+    if (!isAdmin) {
+      await fetch("/api/review-access", {
+        method: "DELETE",
+      });
+    }
+
+    setHasAccess(isAdmin);
+    setReviewMode(false);
+    setPanelOpen(false);
+    setSelectedElement(null);
+    setFeedback([]);
+  };
+    const loadFeedback = useCallback(async () => {
+    if (!hasAccess) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    try {
+      const headers = await getApiHeaders();
+
+      const response = await fetch(
+        `/api/site-feedback?pagePath=${encodeURIComponent(
+          pathname,
+        )}`,
+        {
+          method: "GET",
+          headers,
+          cache: "no-store",
+        },
+      );
+
+      const result =
+        (await response.json()) as FeedbackApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || copy.loadError,
+        );
+      }
+
+      setFeedback(
+        Array.isArray(result.feedback)
+          ? result.feedback
+          : [],
+      );
+    } catch (error) {
+      console.error(
+        "Feedback load error:",
+        error,
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : copy.loadError,
+      );
+    }
+  }, [
+    copy.loadError,
+    getApiHeaders,
+    hasAccess,
+    pathname,
+  ]);
 
   useEffect(() => {
-    if (role === "admin") {
+    if (hasAccess) {
       void loadFeedback();
     }
-  }, [loadFeedback, role]);
+  }, [hasAccess, loadFeedback]);
 
   useEffect(() => {
     setReviewMode(false);
@@ -264,7 +407,11 @@ export default function FeedbackMode() {
     setNote("");
     setErrorMessage("");
     setSuccessMessage("");
-  }, [pathname]);
+
+    if (hasAccess) {
+      void loadFeedback();
+    }
+  }, [hasAccess, loadFeedback, pathname]);
 
   useEffect(() => {
     document.body.style.cursor =
@@ -329,7 +476,7 @@ export default function FeedbackMode() {
   };
 
   useEffect(() => {
-    if (!reviewMode) {
+    if (!reviewMode || !hasAccess) {
       return;
     }
 
@@ -391,8 +538,9 @@ export default function FeedbackMode() {
         true,
       );
     };
-  }, [reviewMode]);
-    const saveFeedback = async () => {
+  }, [hasAccess, reviewMode]);
+
+  const saveFeedback = async () => {
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -401,73 +549,117 @@ export default function FeedbackMode() {
       return;
     }
 
-    if (!selectedElement || !userId) {
+    if (!selectedElement) {
       setErrorMessage(copy.saveError);
       return;
     }
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("site_feedback")
-      .insert({
-        page_path: pathname,
-        page_url: window.location.href,
-        note: note.trim(),
-        element_text: selectedElement.text,
-        element_tag: selectedElement.tag,
-        x_position: selectedElement.x,
-        y_position: selectedElement.y,
-        page_width: selectedElement.pageWidth,
-        page_height: selectedElement.pageHeight,
-        status: "open",
-        created_by: userId,
-      });
+    try {
+      const headers = await getApiHeaders();
 
-    if (error) {
+      const response = await fetch(
+        "/api/site-feedback",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            pagePath: pathname,
+            pageUrl: window.location.href,
+            note: note.trim(),
+            elementText:
+              selectedElement.text,
+            elementTag:
+              selectedElement.tag,
+            xPosition:
+              selectedElement.x,
+            yPosition:
+              selectedElement.y,
+            pageWidth:
+              selectedElement.pageWidth,
+            pageHeight:
+              selectedElement.pageHeight,
+          }),
+        },
+      );
+
+      const result =
+        (await response.json()) as FeedbackApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || copy.saveError,
+        );
+      }
+
+      setSuccessMessage(copy.saved);
+      setNote("");
+      setSelectedElement(null);
+
+      await loadFeedback();
+
+      window.setTimeout(() => {
+        setSuccessMessage("");
+        setPanelOpen(false);
+      }, 900);
+    } catch (error) {
       console.error(
         "Feedback save error:",
         error,
       );
 
-      setErrorMessage(copy.saveError);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : copy.saveError,
+      );
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setSuccessMessage(copy.saved);
-    setNote("");
-    setSelectedElement(null);
-    setSaving(false);
-
-    await loadFeedback();
-
-    window.setTimeout(() => {
-      setSuccessMessage("");
-      setPanelOpen(false);
-    }, 900);
   };
 
   const updateStatus = async (
     id: string,
     status: FeedbackStatus,
   ) => {
-    const { error } = await supabase
-      .from("site_feedback")
-      .update({ status })
-      .eq("id", id);
+    try {
+      const headers = await getApiHeaders();
 
-    if (error) {
+      const response = await fetch(
+        "/api/site-feedback",
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            id,
+            status,
+          }),
+        },
+      );
+
+      const result =
+        (await response.json()) as FeedbackApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || copy.updateError,
+        );
+      }
+
+      await loadFeedback();
+    } catch (error) {
       console.error(
         "Feedback update error:",
         error,
       );
 
-      alert(copy.updateError);
-      return;
+      alert(
+        error instanceof Error
+          ? error.message
+          : copy.updateError,
+      );
     }
-
-    await loadFeedback();
   };
 
   const deleteFeedback = async (
@@ -481,22 +673,42 @@ export default function FeedbackMode() {
       return;
     }
 
-    const { error } = await supabase
-      .from("site_feedback")
-      .delete()
-      .eq("id", id);
+    try {
+      const headers = await getApiHeaders();
 
-    if (error) {
+      const response = await fetch(
+        "/api/site-feedback",
+        {
+          method: "DELETE",
+          headers,
+          body: JSON.stringify({
+            id,
+          }),
+        },
+      );
+
+      const result =
+        (await response.json()) as FeedbackApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          result.error || copy.deleteError,
+        );
+      }
+
+      await loadFeedback();
+    } catch (error) {
       console.error(
         "Feedback delete error:",
         error,
       );
 
-      alert(copy.deleteError);
-      return;
+      alert(
+        error instanceof Error
+          ? error.message
+          : copy.deleteError,
+      );
     }
-
-    await loadFeedback();
   };
 
   const getMarkerPosition = (
@@ -557,11 +769,112 @@ export default function FeedbackMode() {
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
 
-  if (
-    loadingRole ||
-    role !== "admin"
-  ) {
+  if (loadingAccess) {
     return null;
+  }
+    if (!hasAccess) {
+    return (
+      <>
+        <div
+          data-feedback-ui="true"
+          dir={isArabic ? "rtl" : "ltr"}
+          className={`fixed bottom-6 z-[100] ${
+            isArabic ? "left-6" : "right-6"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setAccessModalOpen(true);
+              setAccessError("");
+            }}
+            className="rounded-2xl bg-aan-button px-5 py-4 font-bold text-white shadow-xl transition hover:bg-aan-hover"
+          >
+            ✎ {copy.openReview}
+          </button>
+        </div>
+
+        {accessModalOpen && (
+          <div
+            data-feedback-ui="true"
+            dir={isArabic ? "rtl" : "ltr"}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-5"
+            onClick={() =>
+              setAccessModalOpen(false)
+            }
+          >
+            <form
+              onSubmit={submitAccessCode}
+              onClick={(event) =>
+                event.stopPropagation()
+              }
+              className="w-full max-w-md rounded-[2rem] border border-aan-border bg-white p-7 shadow-2xl sm:p-9"
+            >
+              <div className="flex items-start justify-between gap-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.22em] text-aan-gold">
+                    AAN Review
+                  </p>
+
+                  <h2 className="aan-heading mt-2 text-3xl">
+                    {copy.reviewAccess}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccessModalOpen(false)
+                  }
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-aan-border text-2xl text-aan-navy"
+                >
+                  ×
+                </button>
+              </div>
+
+              <p className="mt-5 leading-7 text-aan-secondary">
+                {copy.accessDescription}
+              </p>
+
+              <label className="mt-6 grid gap-2 font-bold text-aan-navy">
+                {copy.accessCode}
+
+                <input
+                  type="password"
+                  value={accessCode}
+                  onChange={(event) =>
+                    setAccessCode(
+                      event.target.value,
+                    )
+                  }
+                  placeholder={
+                    copy.accessPlaceholder
+                  }
+                  autoComplete="off"
+                  className="aan-field p-4 font-normal"
+                />
+              </label>
+
+              {accessError && (
+                <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                  {accessError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={checkingCode}
+                className="aan-cta mt-6 w-full rounded-2xl px-5 py-4 font-bold text-white disabled:opacity-60"
+              >
+                {checkingCode
+                  ? copy.checking
+                  : copy.unlock}
+              </button>
+            </form>
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
@@ -579,9 +892,7 @@ export default function FeedbackMode() {
                 data-feedback-ui="true"
                 onClick={() => {
                   setPanelOpen(true);
-                  setSelectedElement(
-                    null,
-                  );
+                  setSelectedElement(null);
                 }}
                 style={{
                   left: `${position.left}px`,
@@ -598,16 +909,14 @@ export default function FeedbackMode() {
 
       <div
         data-feedback-ui="true"
-        dir={
-          isArabic ? "rtl" : "ltr"
-        }
+        dir={isArabic ? "rtl" : "ltr"}
         className={`fixed bottom-6 z-[100] ${
           isArabic
             ? "left-6"
             : "right-6"
         }`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <button
             type="button"
             onClick={() => {
@@ -638,32 +947,46 @@ export default function FeedbackMode() {
             }}
             className="rounded-2xl border border-aan-border bg-white px-5 py-4 font-bold text-aan-navy shadow-xl"
           >
-            {copy.notes} (
-            {feedback.length})
+            {copy.notes} ({feedback.length})
           </button>
+
+          {!isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                void closeReviewAccess();
+              }}
+              className="rounded-2xl border border-aan-border bg-white px-4 py-4 text-sm font-bold text-aan-secondary shadow-xl"
+            >
+              {copy.lockReview}
+            </button>
+          )}
         </div>
       </div>
 
       {reviewMode && (
         <div
           data-feedback-ui="true"
-          dir={
-            isArabic ? "rtl" : "ltr"
-          }
+          dir={isArabic ? "rtl" : "ltr"}
           className="fixed left-1/2 top-24 z-[100] -translate-x-1/2 rounded-full border border-red-200 bg-red-50 px-5 py-3 text-sm font-bold text-red-700 shadow-lg"
         >
           {copy.instruction}
         </div>
       )}
-            {panelOpen && (
+
+      {panelOpen && (
         <div
           data-feedback-ui="true"
           dir={isArabic ? "rtl" : "ltr"}
           className="fixed inset-0 z-[110] flex justify-end bg-black/25"
-          onClick={() => setPanelOpen(false)}
+          onClick={() =>
+            setPanelOpen(false)
+          }
         >
           <aside
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
             className="h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl sm:p-8"
           >
             <div className="flex items-start justify-between gap-5">
@@ -681,7 +1004,9 @@ export default function FeedbackMode() {
 
               <button
                 type="button"
-                onClick={() => setPanelOpen(false)}
+                onClick={() =>
+                  setPanelOpen(false)
+                }
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-aan-border text-2xl text-aan-navy"
               >
                 ×
@@ -700,7 +1025,9 @@ export default function FeedbackMode() {
                   </p>
 
                   <p className="mt-3 text-xs font-bold text-aan-navy">
-                    &lt;{selectedElement.tag}&gt;
+                    &lt;
+                    {selectedElement.tag}
+                    &gt;
                   </p>
                 </div>
 
@@ -710,9 +1037,13 @@ export default function FeedbackMode() {
                   <textarea
                     value={note}
                     onChange={(event) =>
-                      setNote(event.target.value)
+                      setNote(
+                        event.target.value,
+                      )
                     }
-                    placeholder={copy.notePlaceholder}
+                    placeholder={
+                      copy.notePlaceholder
+                    }
                     className="aan-field min-h-40 resize-y p-4 font-normal"
                   />
                 </label>
@@ -755,7 +1086,7 @@ export default function FeedbackMode() {
                 </div>
               </div>
             ) : (
-              <div className="mt-8">
+                            <div className="mt-8">
                 {feedback.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-8 text-center text-aan-secondary">
                     {copy.noNotes}
@@ -778,9 +1109,7 @@ export default function FeedbackMode() {
                                 item.status,
                               )}`}
                             >
-                              {statusLabel(
-                                item.status,
-                              )}
+                              {statusLabel(item.status)}
                             </span>
                           </div>
 
