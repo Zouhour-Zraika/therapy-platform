@@ -5,6 +5,7 @@ import {
   Playfair_Display,
 } from "next/font/google";
 import { LanguageProvider } from "@/i18n/LanguageProvider";
+import FeedbackMode from "./components/FeedbackMode";
 import "./globals.css";
 
 const inter = Inter({
@@ -56,7 +57,10 @@ export default function RootLayout({
       className={`${inter.variable} ${playfair.variable} ${notoArabic.variable} h-full`}
     >
       <body className="flex min-h-full flex-col bg-aan-background font-sans antialiased">
-        <LanguageProvider>{children}</LanguageProvider>
+        <LanguageProvider>
+          {children}
+          <FeedbackMode />
+        </LanguageProvider>
       </body>
     </html>
   );
