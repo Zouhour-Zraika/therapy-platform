@@ -14,32 +14,29 @@ export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceRoleKey =
+
+  // Accepte l’ancien nom ou le nouveau secret Supabase.
+  const supabaseServerKey =
+    process.env.SUPABASE_SECRET_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!stripeSecretKey) {
-    console.error("STRIPE_SECRET_KEY is missing.");
-
     return NextResponse.json(
-      { error: "Stripe configuration is missing." },
+      { error: "STRIPE_SECRET_KEY is missing." },
       { status: 500 },
     );
   }
 
   if (!webhookSecret) {
-    console.error("STRIPE_WEBHOOK_SECRET is missing.");
-
     return NextResponse.json(
-      { error: "Stripe webhook configuration is missing." },
+      { error: "STRIPE_WEBHOOK_SECRET is missing." },
       { status: 500 },
     );
   }
 
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
-    console.error("Supabase server configuration is missing.");
-
+  if (!supabaseUrl || !supabaseServerKey) {
     return NextResponse.json(
-      { error: "Database configuration is missing." },
+      { error: "Supabase server configuration is missing." },
       { status: 500 },
     );
   }
@@ -48,7 +45,7 @@ export async function POST(request: Request) {
 
   const supabaseAdmin = createClient(
     supabaseUrl,
-    supabaseServiceRoleKey,
+    supabaseServerKey,
     {
       auth: {
         autoRefreshToken: false,
@@ -71,7 +68,7 @@ export async function POST(request: Request) {
 
   try {
     /*
-     * Stripe doit recevoir le corps brut de la requête.
+     * Stripe exige le corps brut pour vérifier la signature.
      * Ne remplace pas request.text() par request.json().
      */
     const rawBody = await request.text();
@@ -96,137 +93,223 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (
+    const isSuccessfulCheckout =
       event.type === "checkout.session.completed" ||
       event.type ===
-        "checkout.session.async_payment_succeeded"
-    ) {
-      const session = event.data.object as Stripe.Checkout.Session;
+        "checkout.session.async_payment_succeeded";
 
-      const bookingId = session.metadata?.bookingId?.trim();
-      const therapist = session.metadata?.therapist?.trim();
-      const slot = session.metadata?.slot?.trim();
-      const language =
-        session.metadata?.language === "ar" ? "ar" : "en";
+    if (!isSuccessfulCheckout) {
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+      });
+    }
 
-      const customerEmail =
-        session.customer_details?.email ||
-        session.customer_email ||
-        session.metadata?.email ||
-        "";
+    const session =
+      event.data.object as Stripe.Checkout.Session;
 
-      if (!bookingId) {
-        console.error(
-          "Stripe session does not contain bookingId metadata.",
-          session.id,
+    /*
+     * Avec les cartes Stripe, la session doit être réellement payée.
+     * Cela évite de confirmer une réservation incomplète.
+     */
+    if (session.payment_status !== "paid") {
+      console.log(
+        "Stripe session received but not paid:",
+        session.id,
+        session.payment_status,
+      );
+
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+        reason: "Payment is not paid yet.",
+      });
+    }
+
+    const bookingId =
+      session.metadata?.bookingId?.trim();
+
+    const therapist =
+      session.metadata?.therapist?.trim() ||
+      "Therapist";
+
+    const slot =
+      session.metadata?.slot?.trim() || "";
+
+    const language =
+      session.metadata?.language === "ar"
+        ? "ar"
+        : "en";
+
+    const customerEmail =
+      session.customer_details?.email ||
+      session.customer_email ||
+      session.metadata?.email ||
+      "";
+
+    if (!bookingId) {
+      console.error(
+        "Stripe session does not contain bookingId:",
+        session.id,
+      );
+
+      return NextResponse.json(
+        { error: "Booking identifier is missing." },
+        { status: 400 },
+      );
+    }
+
+    const {
+      data: existingBooking,
+      error: bookingReadError,
+    } = await supabaseAdmin
+      .from("bookings")
+      .select("id, status")
+      .eq("id", bookingId)
+      .maybeSingle<BookingRecord>();
+
+    if (bookingReadError) {
+      throw bookingReadError;
+    }
+
+    if (!existingBooking) {
+      console.error("Booking not found:", bookingId);
+
+      return NextResponse.json(
+        { error: "Booking not found." },
+        { status: 404 },
+      );
+    }
+
+    const paymentIntentId =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id;
+
+    /*
+     * Utilise l’identifiant du PaymentIntent lorsqu’il existe.
+     * Sinon, utilise l’identifiant de Checkout Session.
+     */
+    const transactionId =
+      paymentIntentId || session.id;
+
+    const amount =
+      typeof session.amount_total === "number"
+        ? session.amount_total / 100
+        : 0;
+
+    const currency =
+      session.currency?.toUpperCase() || "USD";
+
+    /*
+     * Upsert idempotent :
+     * si Stripe renvoie l’événement, aucune deuxième ligne
+     * de paiement n’est créée.
+     */
+    const { error: paymentError } =
+      await supabaseAdmin
+        .from("payments")
+        .upsert(
+          {
+            booking_id: bookingId,
+            provider: "stripe",
+            amount,
+            currency,
+            status: "paid",
+            transaction_id: transactionId,
+          },
+          {
+            onConflict: "transaction_id",
+            ignoreDuplicates: false,
+          },
         );
 
-        return NextResponse.json(
-          { error: "Booking identifier is missing." },
-          { status: 400 },
-        );
-      }
+    if (paymentError) {
+      throw paymentError;
+    }
 
-      /*
-       * Vérifier l'état avant la mise à jour évite d'envoyer
-       * plusieurs emails si Stripe renvoie le même événement.
-       */
-      const {
-        data: existingBooking,
-        error: bookingReadError,
-      } = await supabaseAdmin
-        .from("bookings")
-        .select("id, status")
-        .eq("id", bookingId)
-        .maybeSingle<BookingRecord>();
+    const bookingWasAlreadyPaid =
+      existingBooking.status === "paid";
 
-      if (bookingReadError) {
-        throw bookingReadError;
-      }
-
-      if (!existingBooking) {
-        console.error("Booking not found:", bookingId);
-
-        return NextResponse.json(
-          { error: "Booking not found." },
-          { status: 404 },
-        );
-      }
-
-      if (existingBooking.status !== "paid") {
-        const { error: updateError } = await supabaseAdmin
+    if (!bookingWasAlreadyPaid) {
+      const { error: updateError } =
+        await supabaseAdmin
           .from("bookings")
           .update({
             status: "paid",
           })
           .eq("id", bookingId);
 
-        if (updateError) {
-          throw updateError;
-        }
+      if (updateError) {
+        throw updateError;
+      }
 
-        /*
-         * L'email est envoyé seulement après confirmation Stripe.
-         */
-        if (customerEmail) {
-          const siteUrl =
-            process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-            new URL(request.url).origin;
+      /*
+       * Envoi de l’e-mail une seule fois,
+       * lors du passage réel à paid.
+       */
+      if (customerEmail) {
+        const siteUrl =
+          process.env.NEXT_PUBLIC_SITE_URL?.replace(
+            /\/$/,
+            "",
+          ) || new URL(request.url).origin;
 
-          try {
-            const emailResponse = await fetch(
-              `${siteUrl}/api/send-booking-email`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  email: customerEmail,
-                  therapist: therapist || "Therapist",
-                  slot: slot || "",
-                  price:
-                    typeof session.amount_total === "number"
-                      ? session.amount_total / 100
-                      : 0,
-                  language,
-                  bookingId,
-                  paymentProvider: "stripe",
-                }),
+        try {
+          const emailResponse = await fetch(
+            `${siteUrl}/api/send-booking-email`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
               },
-            );
+              body: JSON.stringify({
+                email: customerEmail,
+                therapist,
+                slot,
+                price: amount,
+                language,
+                bookingId,
+                paymentProvider: "stripe",
+                transactionId,
+              }),
+            },
+          );
 
-            if (!emailResponse.ok) {
-              const emailError = await emailResponse.text();
-
-              console.error(
-                "Booking confirmation email failed:",
-                emailResponse.status,
-                emailError,
-              );
-            }
-          } catch (emailError) {
-            /*
-             * On ne retourne pas une erreur Stripe ici :
-             * le paiement est déjà confirmé et la réservation est payée.
-             */
+          if (!emailResponse.ok) {
             console.error(
-              "Booking email request failed:",
-              emailError,
+              "Booking confirmation email failed:",
+              emailResponse.status,
+              await emailResponse.text(),
             );
           }
+        } catch (emailError) {
+          /*
+           * Le paiement reste validé même si l’e-mail échoue.
+           */
+          console.error(
+            "Booking confirmation email request failed:",
+            emailError,
+          );
         }
       }
     }
 
     return NextResponse.json({
       received: true,
+      bookingId,
+      paymentStatus: "paid",
+      transactionId,
+      alreadyProcessed: bookingWasAlreadyPaid,
     });
   } catch (error) {
-    console.error("Stripe webhook processing error:", error);
+    console.error(
+      "Stripe webhook processing error:",
+      error,
+    );
 
     /*
-     * Le statut 500 indique à Stripe qu'il peut réessayer l'événement.
+     * Le statut 500 permet à Stripe de réessayer.
      */
     return NextResponse.json(
       {
