@@ -9,10 +9,19 @@ type AdminSection = {
   href: string;
   title: string;
   description: string;
-  icon: "profile" | "applications" | "therapists" | "podcasts";
+  icon:
+    | "profile"
+    | "applications"
+    | "therapists"
+    | "podcasts"
+    | "admins";
 };
 
-function SectionIcon({ type }: { type: AdminSection["icon"] }) {
+function SectionIcon({
+  type,
+}: {
+  type: AdminSection["icon"];
+}) {
   if (type === "profile") {
     return (
       <svg
@@ -24,7 +33,9 @@ function SectionIcon({ type }: { type: AdminSection["icon"] }) {
         strokeWidth="1.8"
       >
         <circle cx="12" cy="8" r="3.25" />
+
         <path d="M5.5 19c.7-3.6 3.05-5.5 6.5-5.5s5.8 1.9 6.5 5.5" />
+
         <path d="M18.5 5.5 20 7l-3.6 3.6-1.9.4.4-1.9z" />
       </svg>
     );
@@ -41,7 +52,9 @@ function SectionIcon({ type }: { type: AdminSection["icon"] }) {
         strokeWidth="1.8"
       >
         <path d="M7 3.75h7.5L19 8.25V20.25H7z" />
+
         <path d="M14.5 3.75v4.5H19" />
+
         <path d="M10 12h6M10 15.5h6" />
       </svg>
     );
@@ -58,9 +71,33 @@ function SectionIcon({ type }: { type: AdminSection["icon"] }) {
         strokeWidth="1.8"
       >
         <circle cx="9" cy="8" r="3" />
+
         <circle cx="16.5" cy="9" r="2.25" />
+
         <path d="M3.75 19c.6-3.7 2.75-5.6 6.25-5.6 3.45 0 5.6 1.9 6.2 5.6" />
+
         <path d="M15 14.5c2.9.1 4.65 1.6 5.2 4.5" />
+      </svg>
+    );
+  }
+
+  if (type === "admins") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-7 w-7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <circle cx="8" cy="8" r="3" />
+
+        <circle cx="16" cy="8" r="3" />
+
+        <path d="M3 19c.5-3.5 2.2-5.3 5-5.3s4.5 1.8 5 5.3" />
+
+        <path d="M11 19c.5-3.5 2.2-5.3 5-5.3s4.5 1.8 5 5.3" />
       </svg>
     );
   }
@@ -74,7 +111,14 @@ function SectionIcon({ type }: { type: AdminSection["icon"] }) {
       stroke="currentColor"
       strokeWidth="1.8"
     >
-      <rect x="8" y="3.5" width="8" height="12" rx="4" />
+      <rect
+        x="8"
+        y="3.5"
+        width="8"
+        height="12"
+        rx="4"
+      />
+
       <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5M9.5 20.5h5" />
     </svg>
   );
@@ -86,53 +130,90 @@ export default function AdminPage() {
   const copy = isArabic
     ? {
         eyebrow: "لوحة الإدارة",
+
         title: "إدارة منصة AAN",
+
         description:
-          "إدارة الملف الشخصي للمسؤول وطلبات المعالجين وملفات المعالجين ومحتوى البودكاست من لوحة تحكم آمنة واحدة.",
+          "إدارة الملف الشخصي للمسؤول وطلبات المعالجين وملفات المعالجين ومحتوى البودكاست وحسابات المسؤولين من لوحة تحكم آمنة واحدة.",
 
         profileTitle: "ملفي الشخصي",
+
         profileDescription:
           "تحديث صورة المسؤول والاسم والمسمى الوظيفي والنبذة المهنية.",
 
-        applicationsTitle: "طلبات المعالجين",
+        applicationsTitle:
+          "طلبات المعالجين",
+
         applicationsDescription:
           "مراجعة طلبات المعالجين الجدد والموافقة عليها أو رفضها.",
 
-        therapistsTitle: "إدارة المعالجين",
+        therapistsTitle:
+          "إدارة المعالجين",
+
         therapistsDescription:
           "إدارة ملفات المعالجين المعتمدين وأسعار الجلسات.",
 
-        podcastsTitle: "إدارة البودكاست",
+        podcastsTitle:
+          "إدارة البودكاست",
+
         podcastsDescription:
           "إضافة محتوى البودكاست وترجمته وحذفه.",
 
-        comingSoonTitle: "المزيد من أدوات الإدارة قريباً",
+        adminsTitle:
+          "إدارة المسؤولين",
+
+        adminsDescription:
+          "دعوة مسؤول جديد وإدارة حسابات المسؤولين المصرح لهم.",
+
+        comingSoonTitle:
+          "المزيد من أدوات الإدارة قريباً",
+
         comingSoonDescription:
           "ستتم إضافة إدارة الحجوزات وإعدادات المنصة والتقارير في المرحلة القادمة.",
       }
     : {
-        eyebrow: "Administration dashboard",
-        title: "AAN Administration",
-        description:
-          "Manage your administrator profile, therapist applications, approved therapists and bilingual podcast content from one secure dashboard.",
+        eyebrow:
+          "Administration dashboard",
 
-        profileTitle: "My Admin Profile",
+        title:
+          "AAN Administration",
+
+        description:
+          "Manage your administrator profile, therapist applications, approved therapists, bilingual podcast content and administrator accounts from one secure dashboard.",
+
+        profileTitle:
+          "My Admin Profile",
+
         profileDescription:
           "Update your administrator photo, name, professional title and biography.",
 
-        applicationsTitle: "Therapist Applications",
+        applicationsTitle:
+          "Therapist Applications",
+
         applicationsDescription:
           "Review, approve or reject new therapist applications.",
 
-        therapistsTitle: "Manage Therapists",
+        therapistsTitle:
+          "Manage Therapists",
+
         therapistsDescription:
           "Manage approved therapist profiles and session prices.",
 
-        podcastsTitle: "Manage Podcasts",
+        podcastsTitle:
+          "Manage Podcasts",
+
         podcastsDescription:
           "Add, translate and delete mental health podcasts.",
 
-        comingSoonTitle: "More administration tools are coming soon",
+        adminsTitle:
+          "Manage Administrators",
+
+        adminsDescription:
+          "Invite a new administrator and manage authorised admin accounts.",
+
+        comingSoonTitle:
+          "More administration tools are coming soon",
+
         comingSoonDescription:
           "Booking management, platform settings and reporting will be added in the next development phase.",
       };
@@ -141,30 +222,40 @@ export default function AdminPage() {
     {
       href: "/admin-profile",
       title: copy.profileTitle,
-      description: copy.profileDescription,
+      description:
+        copy.profileDescription,
       icon: "profile",
     },
     {
       href: "/admin-applications",
       title: copy.applicationsTitle,
-      description: copy.applicationsDescription,
+      description:
+        copy.applicationsDescription,
       icon: "applications",
     },
     {
       href: "/admin-therapists",
       title: copy.therapistsTitle,
-      description: copy.therapistsDescription,
+      description:
+        copy.therapistsDescription,
       icon: "therapists",
     },
     {
       href: "/admin-podcasts",
       title: copy.podcastsTitle,
-      description: copy.podcastsDescription,
+      description:
+        copy.podcastsDescription,
       icon: "podcasts",
     },
+    {
+      href: "/admin-users",
+      title: copy.adminsTitle,
+      description:
+        copy.adminsDescription,
+      icon: "admins",
+    },
   ];
-
-  return (
+    return (
     <ProtectedRoute allowedRoles={["admin"]}>
       <>
         <Navbar />
