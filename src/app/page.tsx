@@ -105,23 +105,6 @@ export default function Home() {
                 {t("home.hero.bookSession")}
               </Link>
             </div>
-
-            <div className="mt-8 flex flex-wrap gap-5 text-sm font-semibold text-aan-secondary">
-              <span className="flex items-center gap-2">
-                <span className="text-aan-gold">✓</span>
-                {t("home.hero.features.private")}
-              </span>
-
-              <span className="flex items-center gap-2">
-                <span className="text-aan-gold">✓</span>
-                {t("home.hero.features.secure")}
-              </span>
-
-              <span className="flex items-center gap-2">
-                <span className="text-aan-gold">✓</span>
-                {t("home.hero.features.languages")}
-              </span>
-            </div>
           </div>
 
           {/* Photo originale intégrée sans cadre */}
@@ -135,18 +118,19 @@ export default function Home() {
               quality={75}
               sizes="(max-width: 1024px) 92vw, 580px"
               className="
-                  h-auto
-                  w-full
-                  max-w-[580px]
-                  object-contain
-                  [mask-image:radial-gradient(ellipse_at_center,black_68%,transparent_100%)]
-                  [-webkit-mask-image:radial-gradient(ellipse_at_center,black_68%,transparent_100%)]
-                "
+                h-auto
+                w-full
+                max-w-[580px]
+                object-contain
+                [mask-image:radial-gradient(ellipse_at_center,black_68%,transparent_100%)]
+                [-webkit-mask-image:radial-gradient(ellipse_at_center,black_68%,transparent_100%)]
+              "
             />
           </div>
         </div>
       </section>
-            {/* Areas of support introduction */}
+
+      {/* Areas of support introduction */}
       <section className="px-5 pb-8 pt-20 sm:px-8 lg:px-12 lg:pt-28">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
@@ -335,7 +319,8 @@ export default function Home() {
           </div>
         </div>
       </section>
-            {/* Unsure section */}
+
+      {/* Unsure section */}
       <section className="px-5 pb-24 pt-10 sm:px-8 lg:px-12 lg:pb-32">
         <div className="mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] border border-aan-border bg-[linear-gradient(135deg,#efe6d8_0%,#f8f4ee_55%,#edf3f9_100%)] shadow-[var(--aan-shadow-md)]">
           <div className="grid items-center gap-10 p-8 sm:p-12 lg:grid-cols-[1.15fr_0.85fr] lg:p-16">
@@ -379,6 +364,45 @@ export default function Home() {
 
               <div className="absolute right-[31%] top-[25%] h-14 w-14 rounded-full bg-white/75 shadow-[var(--aan-shadow-sm)]" />
             </div>
+          </div>
+        </div>
+      </section>
+            {/* Trust information moved to the bottom of the Home page */}
+      <section className="border-t border-aan-border bg-white px-5 py-8 sm:px-8 lg:px-12">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:flex-wrap sm:gap-x-8 sm:gap-y-4">
+            <span className="flex items-center gap-2 text-sm font-semibold text-aan-secondary">
+              <span
+                aria-hidden="true"
+                className="font-bold text-aan-gold"
+              >
+                ✓
+              </span>
+
+              {t("home.hero.features.private")}
+            </span>
+
+            <span className="flex items-center gap-2 text-sm font-semibold text-aan-secondary">
+              <span
+                aria-hidden="true"
+                className="font-bold text-aan-gold"
+              >
+                ✓
+              </span>
+
+              {t("home.hero.features.secure")}
+            </span>
+
+            <span className="flex items-center gap-2 text-sm font-semibold text-aan-secondary">
+              <span
+                aria-hidden="true"
+                className="font-bold text-aan-gold"
+              >
+                ✓
+              </span>
+
+              {t("home.hero.features.languages")}
+            </span>
           </div>
         </div>
       </section>

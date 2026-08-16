@@ -26,7 +26,8 @@ type LanguageContextValue = {
   t: (key: TranslationKey) => string;
 };
 
-const LanguageContext = createContext<LanguageContextValue | null>(null);
+const LanguageContext =
+  createContext<LanguageContextValue | null>(null);
 
 type LanguageProviderProps = {
   children: ReactNode;
@@ -39,25 +40,34 @@ export function LanguageProvider({
     useState<Language>(defaultLanguage);
 
   useEffect(() => {
-    const savedLanguage = localStorage.getItem("language");
+    const savedLanguage =
+      localStorage.getItem("language");
 
     const initialLanguage =
-      savedLanguage && isLanguage(savedLanguage)
+      savedLanguage &&
+      isLanguage(savedLanguage)
         ? savedLanguage
         : defaultLanguage;
 
     setLanguage(initialLanguage);
 
-    document.documentElement.lang = initialLanguage;
+    document.documentElement.lang =
+      initialLanguage;
+
     document.documentElement.dir =
       getDirection(initialLanguage);
   }, []);
 
   const changeLanguage = useCallback(
     (newLanguage: Language) => {
-      localStorage.setItem("language", newLanguage);
+      localStorage.setItem(
+        "language",
+        newLanguage,
+      );
 
-      document.documentElement.lang = newLanguage;
+      document.documentElement.lang =
+        newLanguage;
+
       document.documentElement.dir =
         getDirection(newLanguage);
 
@@ -80,18 +90,25 @@ export function LanguageProvider({
       changeLanguage,
       t,
     }),
-    [language, changeLanguage, t],
+    [
+      language,
+      changeLanguage,
+      t,
+    ],
   );
 
   return (
-    <LanguageContext.Provider value={value}>
+    <LanguageContext.Provider
+      value={value}
+    >
       {children}
     </LanguageContext.Provider>
   );
 }
 
 export function useLanguage() {
-  const context = useContext(LanguageContext);
+  const context =
+    useContext(LanguageContext);
 
   if (!context) {
     throw new Error(

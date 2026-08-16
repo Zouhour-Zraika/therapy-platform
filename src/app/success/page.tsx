@@ -1,103 +1,267 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import {
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+
+type BookingStatus = {
+  id: string;
+  status: string;
+  therapist_name: string | null;
+  slot_day: string | null;
+  slot_time: string | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  meeting_url: string | null;
+  meeting_provider: string | null;
+  calendar_event_id: string | null;
+};
 
 function SuccessContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const searchParams =
+    useSearchParams();
 
-  const bookingId = searchParams.get("bookingId");
+  const router =
+    useRouter();
 
-  const [message, setMessage] = useState("Confirming your payment...");
+  const bookingId =
+    searchParams.get("bookingId");
+
+  const sessionId =
+    searchParams.get("session_id");
+
+  const [booking, setBooking] =
+    useState<BookingStatus | null>(
+      null,
+    );
+
+  const [message, setMessage] =
+    useState(
+      "Confirming your payment...",
+    );
+
+  const [loading, setLoading] =
+    useState(true);
 
   useEffect(() => {
-    const updateBooking = async () => {
-      if (!bookingId) {
-        setMessage("Booking not found.");
-        return;
-      }
+    let cancelled = false;
 
-      const { data: booking, error: getBookingError } = await supabase
-        .from("bookings")
-        .select("id, slot_id, therapist_name, slot_day, slot_time")
-        .eq("id", bookingId)
-        .single();
+    const verifyPayment =
+      async () => {
+        if (
+          !sessionId ||
+          !bookingId
+        ) {
+          if (!cancelled) {
+            setMessage(
+              "Payment reference is incomplete.",
+            );
 
-      if (getBookingError || !booking) {
-        console.log("Get booking error:", getBookingError);
-        setMessage("Payment successful, but booking was not found.");
-        return;
-      }
+            setLoading(false);
+          }
 
-      setMessage("Creating your Zoom meeting...");
+          return;
+        }
 
-      const zoomResponse = await fetch("/api/create-zoom-meeting", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          therapist: booking.therapist_name,
-          slot: `${booking.slot_day} ${booking.slot_time}`,
-        }),
-      });
+        /*
+         * Retry quelques fois car le webhook Stripe
+         * peut terminer juste après le retour
+         * vers la page success.
+         */
+        for (
+          let attempt = 0;
+          attempt < 8;
+          attempt += 1
+        ) {
+          try {
+            const params =
+              new URLSearchParams({
+                session_id:
+                  sessionId,
+                bookingId,
+              });
 
-      const zoomData = await zoomResponse.json();
+            const response =
+              await fetch(
+                `/api/payment-status?${params.toString()}`,
+                {
+                  cache: "no-store",
+                },
+              );
 
-      if (!zoomData.join_url || !zoomData.start_url) {
-        console.log("Zoom error:", zoomData);
-        setMessage("Payment successful, but Zoom meeting creation failed.");
-        return;
-      }
+            const data =
+              await response.json();
 
-      const { error: updateBookingError } = await supabase
-        .from("bookings")
-        .update({
-          status: "paid",
-          zoom_join_url: zoomData.join_url,
-          zoom_start_url: zoomData.start_url,
-        })
-        .eq("id", bookingId);
+            if (!response.ok) {
+              throw new Error(
+                data.error ||
+                  "Unable to verify payment.",
+              );
+            }
 
-      if (updateBookingError) {
-        console.log("Booking update error:", updateBookingError);
-        setMessage("Payment successful, but booking update failed.");
-        return;
-      }
+            if (
+              data.paymentStatus !==
+              "paid"
+            ) {
+              if (!cancelled) {
+                setMessage(
+                  "Your payment is still being confirmed...",
+                );
+              }
+            } else if (
+              data.booking?.status ===
+              "paid"
+            ) {
+              if (cancelled) {
+                return;
+              }
 
-      const { error: updateSlotError } = await supabase
-        .from("availability_slots")
-        .update({
-          is_booked: true,
-        })
-        .eq("id", booking.slot_id);
+              setBooking(
+                data.booking,
+              );
 
-      if (updateSlotError) {
-        console.log("Slot update error:", updateSlotError);
-        setMessage("Payment successful, but slot update failed.");
-        return;
-      }
+              setMessage(
+                "Payment successful! Your booking is confirmed.",
+              );
 
-      setMessage("Payment successful! Your Zoom session is confirmed.");
+              setLoading(false);
 
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 2500);
+              return;
+            } else {
+              if (!cancelled) {
+                setMessage(
+                  "Payment received. Finalising your booking...",
+                );
+              }
+            }
+          } catch (error) {
+            console.error(
+              "Payment confirmation error:",
+              error,
+            );
+          }
+
+          await new Promise(
+            (resolve) =>
+              window.setTimeout(
+                resolve,
+                1500,
+              ),
+          );
+        }
+
+        if (!cancelled) {
+          setMessage(
+            "Your payment was received, but the booking is still being finalised. Please check your dashboard shortly.",
+          );
+
+          setLoading(false);
+        }
+      };
+
+    void verifyPayment();
+
+    return () => {
+      cancelled = true;
     };
+  }, [
+    bookingId,
+    sessionId,
+  ]);
 
-    updateBooking();
-  }, [bookingId, router]);
+  const formatDateTime = (
+    value: string | null,
+  ) => {
+    if (!value) {
+      return null;
+    }
+
+    return new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        dateStyle: "full",
+        timeStyle: "short",
+        timeZone:
+          "Asia/Beirut",
+      },
+    ).format(
+      new Date(value),
+    );
+  };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-10">
-      <section className="rounded-3xl bg-white p-12 text-center shadow-lg">
-        <h1 className="mb-6 text-6xl font-bold text-slate-900">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+      <section className="w-full max-w-2xl rounded-3xl bg-white p-8 text-center shadow-lg sm:p-12">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700">
+          ✓
+        </div>
+
+        <h1 className="mt-6 text-4xl font-bold text-slate-900 sm:text-5xl">
           Payment Successful
         </h1>
 
-        <p className="text-2xl text-slate-600">{message}</p>
+        <p className="mt-5 text-lg leading-8 text-slate-600">
+          {message}
+        </p>
+
+        {booking && (
+          <div className="mt-8 rounded-2xl bg-slate-50 p-6 text-left">
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Booking details
+            </p>
+
+            <p className="mt-4 text-lg text-slate-800">
+              <strong>
+                Therapist:
+              </strong>{" "}
+              {booking.therapist_name ||
+                "Therapist"}
+            </p>
+
+            {booking.scheduled_start && (
+              <p className="mt-3 text-lg text-slate-800">
+                <strong>
+                  Session:
+                </strong>{" "}
+                {formatDateTime(
+                  booking.scheduled_start,
+                )}
+              </p>
+            )}
+
+            {booking.meeting_url && (
+              <a
+                href={
+                  booking.meeting_url
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-6 inline-flex rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white"
+              >
+                Join Google Meet
+              </a>
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() =>
+            router.push(
+              "/dashboard",
+            )
+          }
+          disabled={loading}
+          className="mt-8 rounded-2xl bg-[#415a72] px-7 py-3 font-semibold text-white disabled:opacity-50"
+        >
+          Go to dashboard
+        </button>
       </section>
     </main>
   );
@@ -105,7 +269,15 @@ function SuccessContent() {
 
 export default function SuccessPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-slate-100">
+          <p>
+            Confirming payment...
+          </p>
+        </main>
+      }
+    >
       <SuccessContent />
     </Suspense>
   );

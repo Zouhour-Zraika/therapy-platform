@@ -14,7 +14,8 @@ type AdminSection = {
     | "applications"
     | "therapists"
     | "podcasts"
-    | "admins";
+    | "admins"
+    | "privacy";
 };
 
 function SectionIcon({
@@ -102,6 +103,24 @@ function SectionIcon({
     );
   }
 
+  if (type === "privacy") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-7 w-7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <path d="M12 3 19 6v5c0 4.7-2.8 8-7 10-4.2-2-7-5.3-7-10V6z" />
+
+        <path d="m9.2 12 1.8 1.8 4-4" />
+      </svg>
+    );
+  }
+
+  // Podcasts
   return (
     <svg
       viewBox="0 0 24 24"
@@ -134,7 +153,7 @@ export default function AdminPage() {
         title: "إدارة منصة AAN",
 
         description:
-          "إدارة الملف الشخصي للمسؤول وطلبات المعالجين وملفات المعالجين ومحتوى البودكاست وحسابات المسؤولين من لوحة تحكم آمنة واحدة.",
+          "إدارة الملف الشخصي للمسؤول وطلبات المعالجين وملفات المعالجين ومحتوى البودكاست وحسابات المسؤولين وطلبات الخصوصية من لوحة تحكم آمنة واحدة.",
 
         profileTitle: "ملفي الشخصي",
 
@@ -165,6 +184,12 @@ export default function AdminPage() {
         adminsDescription:
           "دعوة مسؤول جديد وإدارة حسابات المسؤولين المصرح لهم.",
 
+        privacyTitle:
+          "طلبات الخصوصية",
+
+        privacyDescription:
+          "مراجعة وإدارة طلبات الوصول إلى البيانات وتصحيحها وحذفها وطلبات الخصوصية الأخرى.",
+
         comingSoonTitle:
           "المزيد من أدوات الإدارة قريباً",
 
@@ -179,7 +204,7 @@ export default function AdminPage() {
           "AAN Administration",
 
         description:
-          "Manage your administrator profile, therapist applications, approved therapists, bilingual podcast content and administrator accounts from one secure dashboard.",
+          "Manage your administrator profile, therapist applications, approved therapists, bilingual podcast content, administrator accounts and privacy requests from one secure dashboard.",
 
         profileTitle:
           "My Admin Profile",
@@ -211,14 +236,19 @@ export default function AdminPage() {
         adminsDescription:
           "Invite a new administrator and manage authorised admin accounts.",
 
+        privacyTitle:
+          "Privacy Requests",
+
+        privacyDescription:
+          "Review and manage requests to access, correct or delete personal data and other privacy requests.",
+
         comingSoonTitle:
           "More administration tools are coming soon",
 
         comingSoonDescription:
           "Booking management, platform settings and reporting will be added in the next development phase.",
       };
-
-  const adminSections: AdminSection[] = [
+        const adminSections: AdminSection[] = [
     {
       href: "/admin-profile",
       title: copy.profileTitle,
@@ -254,8 +284,16 @@ export default function AdminPage() {
         copy.adminsDescription,
       icon: "admins",
     },
+    {
+      href: "/admin-privacy",
+      title: copy.privacyTitle,
+      description:
+        copy.privacyDescription,
+      icon: "privacy",
+    },
   ];
-    return (
+
+  return (
     <ProtectedRoute allowedRoles={["admin"]}>
       <>
         <Navbar />
@@ -337,8 +375,7 @@ export default function AdminPage() {
                 </Link>
               ))}
             </div>
-
-            <div className="mt-10 rounded-[2rem] border border-aan-border bg-[linear-gradient(135deg,#ffffff_0%,#eef4fa_100%)] p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
+                        <div className="mt-10 rounded-[2rem] border border-aan-border bg-[linear-gradient(135deg,#ffffff_0%,#eef4fa_100%)] p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
               <div className="flex items-start gap-5">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-aan-gold bg-white text-aan-gold">
                   <svg

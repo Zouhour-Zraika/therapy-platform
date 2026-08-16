@@ -23,8 +23,6 @@ type Therapist = {
   specialty_ar: string | null;
   price: number;
 
-  // Ces colonnes sont optionnelles.
-  // La page continue à fonctionner même si elles n’existent pas encore.
   gender?: string | null;
   bio?: string | null;
   bio_ar?: string | null;
@@ -32,10 +30,13 @@ type Therapist = {
 
 type Slot = {
   id: string;
+  slot_date: string | null;
   day: string;
   time: string;
   therapist_id: string;
   is_booked: boolean | null;
+  starts_at: string | null;
+  ends_at: string | null;
 };
 
 type SupportOption = {
@@ -46,39 +47,94 @@ type SupportOption = {
 const supportOptions: SupportOption[] = [
   {
     value: "depression",
-    keywords: ["depression", "depressive", "low mood", "mood", "اكتئاب", "مزاج"],
+    keywords: [
+      "depression",
+      "depressive",
+      "low mood",
+      "mood",
+      "اكتئاب",
+      "مزاج",
+    ],
   },
   {
     value: "anxiety",
-    keywords: ["anxiety", "panic", "social anxiety", "قلق", "هلع"],
+    keywords: [
+      "anxiety",
+      "panic",
+      "social anxiety",
+      "قلق",
+      "هلع",
+    ],
   },
   {
     value: "stress",
-    keywords: ["stress", "burnout", "work stress", "ضغط", "إرهاق"],
+    keywords: [
+      "stress",
+      "burnout",
+      "work stress",
+      "ضغط",
+      "إرهاق",
+    ],
   },
   {
     value: "ocd",
-    keywords: ["ocd", "obsessive", "intrusive", "وسواس"],
+    keywords: [
+      "ocd",
+      "obsessive",
+      "intrusive",
+      "وسواس",
+    ],
   },
   {
     value: "relationships",
-    keywords: ["relationship", "family", "couple", "زواج", "علاقة", "أسرة"],
+    keywords: [
+      "relationship",
+      "family",
+      "couple",
+      "زواج",
+      "علاقة",
+      "أسرة",
+    ],
   },
   {
     value: "couples-therapy",
-    keywords: ["couples", "couple therapy", "marriage", "زوجي", "زواج"],
+    keywords: [
+      "couples",
+      "couple therapy",
+      "marriage",
+      "زوجي",
+      "زواج",
+    ],
   },
   {
     value: "eating-disorders",
-    keywords: ["eating", "food", "anorexia", "bulimia", "أكل", "غذاء"],
+    keywords: [
+      "eating",
+      "food",
+      "anorexia",
+      "bulimia",
+      "أكل",
+      "غذاء",
+    ],
   },
   {
     value: "addiction",
-    keywords: ["addiction", "substance", "إدمان"],
+    keywords: [
+      "addiction",
+      "substance",
+      "إدمان",
+    ],
   },
   {
     value: "trauma",
-    keywords: ["trauma", "ptsd", "grief", "loss", "صدمة", "فقدان"],
+    keywords: [
+      "trauma",
+      "ptsd",
+      "grief",
+      "loss",
+      "صدمة",
+      "فقدان",
+    ],
   },
   {
     value: "unsure",
@@ -105,41 +161,83 @@ const availabilityOptions = [
 
 function BookingContent() {
   const searchParams = useSearchParams();
-  const directTherapistId = searchParams.get("therapistId");
-  const supportFromUrl = searchParams.get("support");
 
-  const bookingSectionRef = useRef<HTMLDivElement | null>(null);
+  const directTherapistId =
+    searchParams.get("therapistId");
+
+  const directSlotId =
+    searchParams.get("slotId");
+
+  const supportFromUrl =
+    searchParams.get("support");
+
+  const bookingSectionRef =
+    useRef<HTMLDivElement | null>(null);
 
   const { isArabic, t } = useLanguage();
 
   const translate = (key: string) => {
     return t(key as TranslationKey);
   };
-  const [step, setStep] = useState<BookingStep>(1);
 
-  const [therapists, setTherapists] = useState<Therapist[]>([]);
-  const [allSlots, setAllSlots] = useState<Slot[]>([]);
+  const [step, setStep] =
+    useState<BookingStep>(1);
 
-  const [selectedSupport, setSelectedSupport] = useState<string[]>([]);
-  const [therapistPreference, setTherapistPreference] = useState("");
-  const [availabilityPreference, setAvailabilityPreference] = useState("");
+  const [therapists, setTherapists] =
+    useState<Therapist[]>([]);
 
-  const [selectedTherapist, setSelectedTherapist] =
-    useState<Therapist | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [allSlots, setAllSlots] =
+    useState<Slot[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [dataError, setDataError] = useState("");
+  const [
+    selectedSupport,
+    setSelectedSupport,
+  ] = useState<string[]>([]);
 
+  const [
+    therapistPreference,
+    setTherapistPreference,
+  ] = useState("");
 
+  const [
+    availabilityPreference,
+    setAvailabilityPreference,
+  ] = useState("");
+
+  const [
+    selectedTherapist,
+    setSelectedTherapist,
+  ] = useState<Therapist | null>(null);
+
+  const [
+    selectedSlot,
+    setSelectedSlot,
+  ] = useState<Slot | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [
+    bookingLoading,
+    setBookingLoading,
+  ] = useState(false);
+
+  const [
+    dataError,
+    setDataError,
+  ] = useState("");
 
   useEffect(() => {
     if (
       supportFromUrl &&
-      supportOptions.some((option) => option.value === supportFromUrl)
+      supportOptions.some(
+        (option) =>
+          option.value === supportFromUrl,
+      )
     ) {
-      setSelectedSupport([supportFromUrl]);
+      setSelectedSupport([
+        supportFromUrl,
+      ]);
     }
   }, [supportFromUrl]);
 
@@ -149,87 +247,418 @@ function BookingContent() {
       setDataError("");
 
       const [
-        { data: therapistData, error: therapistError },
-        { data: slotData, error: slotError },
+        {
+          data: therapistData,
+          error: therapistError,
+        },
+        {
+          data: slotData,
+          error: slotError,
+        },
       ] = await Promise.all([
-        supabase.from("therapists").select("*").order("full_name"),
+        supabase
+          .from("therapists")
+          .select("*")
+          .order("full_name"),
+
         supabase
           .from("availability_slots")
           .select("*")
           .eq("is_booked", false)
-          .order("day", { ascending: true })
-          .order("time", { ascending: true }),
+          .order("slot_date", {
+            ascending: true,
+          })
+          .order("time", {
+            ascending: true,
+          }),
       ]);
 
-      if (therapistError || slotError) {
-        console.error("Therapists error:", therapistError);
-        console.error("Slots error:", slotError);
+      if (
+        therapistError ||
+        slotError
+      ) {
+        console.error(
+          "Therapists error:",
+          therapistError,
+        );
 
-        setDataError(t("booking.errors.load"));
+        console.error(
+          "Slots error:",
+          slotError,
+        );
+
+        setDataError(
+          t("booking.errors.load"),
+        );
 
         setLoading(false);
         return;
       }
 
-      const loadedTherapists = (therapistData || []) as Therapist[];
-      const loadedSlots = ((slotData || []) as Slot[]).filter(
-        (slot) => slot.is_booked !== true,
+      const loadedTherapists =
+        (therapistData || []) as Therapist[];
+
+      const loadedSlots =
+        ((slotData || []) as Slot[]).filter(
+          (slot) =>
+            slot.is_booked !== true,
+        );
+
+      setTherapists(
+        loadedTherapists,
       );
 
-      setTherapists(loadedTherapists);
-      setAllSlots(loadedSlots);
+      setAllSlots(
+        loadedSlots,
+      );
 
       if (directTherapistId) {
         const directTherapist =
           loadedTherapists.find(
-            (therapist) => therapist.id === directTherapistId,
+            (therapist) =>
+              therapist.id ===
+              directTherapistId,
           ) || null;
 
         if (directTherapist) {
-          setSelectedTherapist(directTherapist);
+          setSelectedTherapist(
+            directTherapist,
+          );
+
           setStep(4);
+
+          if (directSlotId) {
+            const directSlot =
+              loadedSlots.find(
+                (slot) =>
+                  slot.id ===
+                    directSlotId &&
+                  slot.therapist_id ===
+                    directTherapist.id,
+              ) || null;
+
+            setSelectedSlot(
+              directSlot,
+            );
+          }
         }
       }
 
       setLoading(false);
     };
 
-    loadBookingData();
-  }, [directTherapistId, t]);
+    void loadBookingData();
+  }, [
+    directTherapistId,
+    directSlotId,
+    t,
+  ]);
 
-  const progress = useMemo(() => {
-    if (step === 4) {
-      return "100%";
-    }
+  const progress =
+    useMemo(() => {
+      if (step === 4) {
+        return "100%";
+      }
 
-    return `${(step / 4) * 100}%`;
-  }, [step]);
+      return `${(step / 4) * 100}%`;
+    }, [step]);
 
-  const translateDay = (day: string) => {
-  const key = `booking.days.${day.toLowerCase()}`;
-  const translatedDay = translate(key);
+  const translateDay = (
+    day: string,
+  ) => {
+    const key =
+      `booking.days.${day.toLowerCase()}`;
 
-  return translatedDay === key ? day : translatedDay;
+    const translatedDay =
+      translate(key);
+
+    return translatedDay === key
+      ? day
+      : translatedDay;
   };
 
-  const getTherapistName = (therapist: Therapist) => {
-    if (isArabic && therapist.full_name_ar) {
+  const formatSlotDate = (
+    slot: Slot,
+  ) => {
+    if (!slot.slot_date) {
+      return translateDay(
+        slot.day,
+      );
+    }
+
+    return new Intl.DateTimeFormat(
+      isArabic
+        ? "ar-LB"
+        : "en-GB",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      },
+    ).format(
+      new Date(
+        `${slot.slot_date}T12:00:00`,
+      ),
+    );
+  };
+
+  const getTimeZoneOffsetMs = (
+    date: Date,
+    timeZone: string,
+  ) => {
+    const formatter =
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          timeZone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23",
+        },
+      );
+
+    const parts =
+      formatter.formatToParts(
+        date,
+      );
+
+    const values =
+      Object.fromEntries(
+        parts
+          .filter(
+            (part) =>
+              part.type !==
+              "literal",
+          )
+          .map(
+            (part) => [
+              part.type,
+              part.value,
+            ],
+          ),
+      );
+
+    const asUtc = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute),
+      Number(values.second),
+    );
+
+    return (
+      asUtc -
+      date.getTime()
+    );
+  };
+
+  const parseSlotTime = (
+    time: string,
+  ) => {
+    const normalized =
+      time
+        .trim()
+        .toUpperCase();
+
+    const match =
+      normalized.match(
+        /^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/,
+      );
+
+    if (!match) {
+      return null;
+    }
+
+    let hour =
+      Number(match[1]);
+
+    const minute =
+      Number(
+        match[2] || "0",
+      );
+
+    const period =
+      match[3];
+
+    if (
+      Number.isNaN(hour) ||
+      Number.isNaN(minute) ||
+      minute < 0 ||
+      minute > 59
+    ) {
+      return null;
+    }
+
+    if (period) {
+      if (
+        hour < 1 ||
+        hour > 12
+      ) {
+        return null;
+      }
+
+      if (
+        period === "PM" &&
+        hour < 12
+      ) {
+        hour += 12;
+      }
+
+      if (
+        period === "AM" &&
+        hour === 12
+      ) {
+        hour = 0;
+      }
+    } else if (
+      hour < 0 ||
+      hour > 23
+    ) {
+      return null;
+    }
+
+    return {
+      hour,
+      minute,
+    };
+  };
+
+  const getScheduledStart = (
+    slot: Slot,
+  ) => {
+    if (slot.starts_at) {
+      const existingStart =
+        new Date(
+          slot.starts_at,
+        );
+
+      if (
+        !Number.isNaN(
+          existingStart.getTime(),
+        )
+      ) {
+        return existingStart;
+      }
+    }
+
+    if (!slot.slot_date) {
+      return null;
+    }
+
+    const parsedTime =
+      parseSlotTime(
+        slot.time,
+      );
+
+    if (!parsedTime) {
+      return null;
+    }
+
+    const [
+      year,
+      month,
+      day,
+    ] =
+      slot.slot_date
+        .split("-")
+        .map(Number);
+
+    if (
+      !year ||
+      !month ||
+      !day
+    ) {
+      return null;
+    }
+
+    const timeZone =
+      "Asia/Beirut";
+
+    const utcGuess =
+      new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          parsedTime.hour,
+          parsedTime.minute,
+          0,
+        ),
+      );
+
+    let offset =
+      getTimeZoneOffsetMs(
+        utcGuess,
+        timeZone,
+      );
+
+    let result =
+      new Date(
+        utcGuess.getTime() -
+          offset,
+      );
+
+    const correctedOffset =
+      getTimeZoneOffsetMs(
+        result,
+        timeZone,
+      );
+
+    if (
+      correctedOffset !==
+      offset
+    ) {
+      offset =
+        correctedOffset;
+
+      result =
+        new Date(
+          utcGuess.getTime() -
+            offset,
+        );
+    }
+
+    return result;
+  };
+    const getTherapistName = (
+    therapist: Therapist,
+  ) => {
+    if (
+      isArabic &&
+      therapist.full_name_ar
+    ) {
       return therapist.full_name_ar;
     }
 
     return therapist.full_name;
   };
 
-  const getTherapistSpecialty = (therapist: Therapist) => {
-    if (isArabic && therapist.specialty_ar) {
+  const getTherapistSpecialty = (
+    therapist: Therapist,
+  ) => {
+    if (
+      isArabic &&
+      therapist.specialty_ar
+    ) {
       return therapist.specialty_ar;
     }
 
     return therapist.specialty;
   };
 
-  const getTherapistBio = (therapist: Therapist) => {
-    if (isArabic && therapist.bio_ar) {
+  const getTherapistBio = (
+    therapist: Therapist,
+  ) => {
+    if (
+      isArabic &&
+      therapist.bio_ar
+    ) {
       return therapist.bio_ar;
     }
 
@@ -237,15 +666,22 @@ function BookingContent() {
       return therapist.bio;
     }
 
-    return t("booking.therapists.defaultBio");
+    return t(
+      "booking.therapists.defaultBio",
+    );
   };
 
-  const normalizeGender = (gender?: string | null) => {
+  const normalizeGender = (
+    gender?: string | null,
+  ) => {
     if (!gender) {
       return "";
     }
 
-    const value = gender.toLowerCase().trim();
+    const value =
+      gender
+        .toLowerCase()
+        .trim();
 
     if (
       value === "female" ||
@@ -268,61 +704,72 @@ function BookingContent() {
     return value;
   };
 
-  const parseTimeHour = (time: string) => {
-    const normalizedTime = time.trim().toUpperCase();
-    const match = normalizedTime.match(
-      /^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/,
-    );
+  const parseTimeHour = (
+    time: string,
+  ) => {
+    const parsed =
+      parseSlotTime(
+        time,
+      );
 
-    if (!match) {
+    if (!parsed) {
       return null;
     }
 
-    let hour = Number(match[1]);
-    const period = match[3];
-
-    if (period === "PM" && hour < 12) {
-      hour += 12;
-    }
-
-    if (period === "AM" && hour === 12) {
-      hour = 0;
-    }
-
-    return hour;
+    return parsed.hour;
   };
 
-  const slotMatchesAvailability = (slot: Slot) => {
+  const slotMatchesAvailability = (
+    slot: Slot,
+  ) => {
     if (
-    availabilityPreference === "" ||
-    availabilityPreference === "none" ||
-    availabilityPreference === "earliest"
-  ) {
+      availabilityPreference ===
+        "" ||
+      availabilityPreference ===
+        "none" ||
+      availabilityPreference ===
+        "earliest"
+    ) {
+      return true;
+    }
+
+    const hour =
+      parseTimeHour(
+        slot.time,
+      );
+
+    if (hour === null) {
+      return true;
+    }
+
+    if (
+      availabilityPreference ===
+      "before-noon"
+    ) {
+      return hour < 12;
+    }
+
+    if (
+      availabilityPreference ===
+      "after-noon"
+    ) {
+      return hour >= 12;
+    }
+
     return true;
-  }
-
-  const hour = parseTimeHour(slot.time);
-
-  if (hour === null) {
-    return true;
-  }
-
-  if (availabilityPreference === "before-noon") {
-    return hour < 12;
-  }
-
-  if (availabilityPreference === "after-noon") {
-    return hour >= 12;
-  }
-
-  return true;
   };
 
-  const therapistMatchesSupport = (therapist: Therapist) => {
+  const therapistMatchesSupport = (
+    therapist: Therapist,
+  ) => {
     if (
       selectedSupport.length === 0 ||
-      selectedSupport.includes("unsure") ||
-      selectedSupport.includes("other")
+      selectedSupport.includes(
+        "unsure",
+      ) ||
+      selectedSupport.includes(
+        "other",
+      )
     ) {
       return true;
     }
@@ -337,22 +784,35 @@ function BookingContent() {
       .join(" ")
       .toLowerCase();
 
-    return selectedSupport.some((selectedValue) => {
-      const option = supportOptions.find(
-        (support) => support.value === selectedValue,
-      );
+    return selectedSupport.some(
+      (selectedValue) => {
+        const option =
+          supportOptions.find(
+            (support) =>
+              support.value ===
+              selectedValue,
+          );
 
-      if (!option || option.keywords.length === 0) {
-        return true;
-      }
+        if (
+          !option ||
+          option.keywords.length === 0
+        ) {
+          return true;
+        }
 
-      return option.keywords.some((keyword) =>
-        searchableText.includes(keyword.toLowerCase()),
-      );
-    });
+        return option.keywords.some(
+          (keyword) =>
+            searchableText.includes(
+              keyword.toLowerCase(),
+            ),
+        );
+      },
+    );
   };
 
-  const therapistMatchesGender = (therapist: Therapist) => {
+  const therapistMatchesGender = (
+    therapist: Therapist,
+  ) => {
     if (
       therapistPreference === "" ||
       therapistPreference === "none"
@@ -360,93 +820,162 @@ function BookingContent() {
       return true;
     }
 
-    const therapistGender = normalizeGender(therapist.gender);
+    const therapistGender =
+      normalizeGender(
+        therapist.gender,
+      );
 
-    // Tant que le genre n'est pas enregistré en base,
-    // on ne masque pas automatiquement le thérapeute.
     if (!therapistGender) {
       return true;
     }
 
-    return therapistGender === therapistPreference;
+    return (
+      therapistGender ===
+      therapistPreference
+    );
   };
 
-  const matchingTherapists = useMemo(() => {
-    let results = therapists.filter((therapist) => {
-      const therapistSlots = allSlots.filter(
-        (slot) => slot.therapist_id === therapist.id,
-      );
+  const matchingTherapists =
+    useMemo(() => {
+      let results =
+        therapists.filter(
+          (therapist) => {
+            const therapistSlots =
+              allSlots.filter(
+                (slot) =>
+                  slot.therapist_id ===
+                  therapist.id,
+              );
 
-      const hasMatchingSlot = therapistSlots.some(slotMatchesAvailability);
+            const hasMatchingSlot =
+              therapistSlots.some(
+                slotMatchesAvailability,
+              );
 
-      return (
-        therapistMatchesSupport(therapist) &&
-        therapistMatchesGender(therapist) &&
-        hasMatchingSlot
-      );
-    });
+            return (
+              therapistMatchesSupport(
+                therapist,
+              ) &&
+              therapistMatchesGender(
+                therapist,
+              ) &&
+              hasMatchingSlot
+            );
+          },
+        );
 
-    if (results.length === 0) {
-      results = therapists.filter((therapist) =>
-        allSlots.some((slot) => slot.therapist_id === therapist.id),
-      );
-    }
+      if (
+        results.length === 0
+      ) {
+        results =
+          therapists.filter(
+            (therapist) =>
+              allSlots.some(
+                (slot) =>
+                  slot.therapist_id ===
+                  therapist.id,
+              ),
+          );
+      }
 
-    return results;
-  }, [
-    therapists,
-    allSlots,
-    selectedSupport,
-    therapistPreference,
-    availabilityPreference,
-  ]);
+      return results;
+    }, [
+      therapists,
+      allSlots,
+      selectedSupport,
+      therapistPreference,
+      availabilityPreference,
+    ]);
 
-  const selectedTherapistSlots = useMemo(() => {
-    if (!selectedTherapist) {
-      return [];
-    }
+  const selectedTherapistSlots =
+    useMemo(() => {
+      if (!selectedTherapist) {
+        return [];
+      }
 
-    let slots = allSlots.filter(
-      (slot) => slot.therapist_id === selectedTherapist.id,
+      let slots =
+        allSlots.filter(
+          (slot) =>
+            slot.therapist_id ===
+            selectedTherapist.id,
+        );
+
+      if (
+        availabilityPreference &&
+        availabilityPreference !==
+          "none" &&
+        availabilityPreference !==
+          "earliest"
+      ) {
+        const preferredSlots =
+          slots.filter(
+            slotMatchesAvailability,
+          );
+
+        if (
+          preferredSlots.length > 0
+        ) {
+          slots =
+            preferredSlots;
+        }
+      }
+
+      return slots;
+    }, [
+      allSlots,
+      selectedTherapist,
+      availabilityPreference,
+    ]);
+
+  const toggleSupport = (
+    value: string,
+  ) => {
+    setSelectedSupport(
+      (current) => {
+        if (
+          value === "unsure" ||
+          value === "other"
+        ) {
+          return current.includes(
+            value,
+          )
+            ? []
+            : [value];
+        }
+
+        const withoutGenericChoices =
+          current.filter(
+            (item) =>
+              item !== "unsure" &&
+              item !== "other",
+          );
+
+        if (
+          withoutGenericChoices.includes(
+            value,
+          )
+        ) {
+          return withoutGenericChoices.filter(
+            (item) =>
+              item !== value,
+          );
+        }
+
+        return [
+          ...withoutGenericChoices,
+          value,
+        ];
+      },
     );
-
-    if (
-      availabilityPreference &&
-      availabilityPreference !== "none" &&
-      availabilityPreference !== "earliest"
-    ) {
-      const preferredSlots = slots.filter(slotMatchesAvailability);
-
-      if (preferredSlots.length > 0) {
-        slots = preferredSlots;
-      }
-    }
-
-    return slots;
-  }, [allSlots, selectedTherapist, availabilityPreference]);
-
-  const toggleSupport = (value: string) => {
-    setSelectedSupport((current) => {
-      if (value === "unsure" || value === "other") {
-        return current.includes(value) ? [] : [value];
-      }
-
-      const withoutGenericChoices = current.filter(
-        (item) => item !== "unsure" && item !== "other",
-      );
-
-      if (withoutGenericChoices.includes(value)) {
-        return withoutGenericChoices.filter((item) => item !== value);
-      }
-
-      return [...withoutGenericChoices, value];
-    });
   };
 
   const canContinue =
-    (step === 1 && selectedSupport.length > 0) ||
-    (step === 2 && therapistPreference !== "") ||
-    (step === 3 && availabilityPreference !== "");
+    (step === 1 &&
+      selectedSupport.length > 0) ||
+    (step === 2 &&
+      therapistPreference !== "") ||
+    (step === 3 &&
+      availabilityPreference !== "");
 
   const goNext = () => {
     if (!canContinue) {
@@ -454,7 +983,11 @@ function BookingContent() {
     }
 
     if (step < 3) {
-      setStep((current) => (current + 1) as BookingStep);
+      setStep(
+        (current) =>
+          (current + 1) as BookingStep,
+      );
+
       return;
     }
 
@@ -465,110 +998,220 @@ function BookingContent() {
 
   const goBack = () => {
     if (directTherapistId) {
-      window.location.href = "/therapists";
+      window.location.href =
+        "/therapists";
+
       return;
     }
 
-    if (step === 4 && selectedTherapist) {
-      setSelectedTherapist(null);
+    if (
+      step === 4 &&
+      selectedTherapist
+    ) {
+      setSelectedTherapist(
+        null,
+      );
+
       setSelectedSlot(null);
+
       return;
     }
 
     if (step > 1) {
-      setStep((current) => (current - 1) as BookingStep);
+      setStep(
+        (current) =>
+          (current - 1) as BookingStep,
+      );
     }
   };
 
-  const selectTherapist = (therapist: Therapist) => {
-    setSelectedTherapist(therapist);
+  const selectTherapist = (
+    therapist: Therapist,
+  ) => {
+    setSelectedTherapist(
+      therapist,
+    );
+
     setSelectedSlot(null);
 
     window.setTimeout(() => {
-      bookingSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      bookingSectionRef.current?.scrollIntoView(
+        {
+          behavior: "smooth",
+          block: "start",
+        },
+      );
     }, 100);
   };
 
-  const confirmBooking = async () => {
-    if (!selectedSlot || !selectedTherapist || bookingLoading) {
-      return;
-    }
-
-    setBookingLoading(true);
-
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        console.error("User error:", userError);
-      }
-
-      if (!user) {
-        const returnUrl =
-          window.location.pathname + window.location.search;
-
-        sessionStorage.setItem(
-          "pendingBooking",
-          JSON.stringify({
-            therapistId: selectedTherapist.id,
-            slotId: selectedSlot.id,
-            returnUrl,
-          }),
-        );
-
-        window.location.href = `/login?redirect=${encodeURIComponent(
-          `/booking?therapistId=${selectedTherapist.id}&slotId=${selectedSlot.id}`,
-        )}`;
-
+  const confirmBooking =
+    async () => {
+      if (
+        !selectedSlot ||
+        !selectedTherapist ||
+        bookingLoading
+      ) {
         return;
       }
 
-      const therapistName = getTherapistName(selectedTherapist);
+      setBookingLoading(true);
 
-      const { data: bookingData, error: bookingError } = await supabase
-        .from("bookings")
-        .insert({
-          patient_id: user.id,
-          patient_email: user.email,
-          therapist_id: selectedTherapist.id,
-          slot_id: selectedSlot.id,
-          therapist_name: therapistName,
-          slot_day: selectedSlot.day,
-          slot_time: selectedSlot.time,
-          price: selectedTherapist.price,
-          status: "pending",
-        })
-        .select()
-        .single();
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } =
+          await supabase.auth.getUser();
 
-      if (bookingError) {
-        console.error("Booking error:", bookingError);
+        if (userError) {
+          console.error(
+            "User error:",
+            userError,
+          );
+        }
 
-        alert(t("booking.errors.create"));
+        if (!user) {
+          const returnUrl =
+            window.location.pathname +
+            window.location.search;
 
-        return;
+          sessionStorage.setItem(
+            "pendingBooking",
+            JSON.stringify({
+              therapistId:
+                selectedTherapist.id,
+              slotId:
+                selectedSlot.id,
+              returnUrl,
+            }),
+          );
+
+          window.location.href =
+            `/login?redirect=${encodeURIComponent(
+              `/booking?therapistId=${selectedTherapist.id}&slotId=${selectedSlot.id}`,
+            )}`;
+
+          return;
+        }
+
+        const therapistName =
+          getTherapistName(
+            selectedTherapist,
+          );
+
+        const scheduledStart =
+          getScheduledStart(
+            selectedSlot,
+          );
+
+        if (!scheduledStart) {
+          console.error(
+            "Unable to calculate booking start date.",
+            selectedSlot,
+          );
+
+          alert(
+            isArabic
+              ? "تعذر تحديد تاريخ ووقت الجلسة. يرجى اختيار موعد آخر."
+              : "Unable to determine the session date and time. Please choose another slot.",
+          );
+
+          return;
+        }
+
+        /*
+         * Durée provisoire de deux heures.
+         * Elle pourra être rendue configurable plus tard.
+         */
+        const scheduledEnd =
+          new Date(
+            scheduledStart.getTime() +
+              2 * 60 * 60 * 1000,
+          );
+
+        const {
+          data: bookingData,
+          error: bookingError,
+        } = await supabase
+          .from("bookings")
+          .insert({
+            patient_id:
+              user.id,
+
+            patient_email:
+              user.email,
+
+            therapist_id:
+              selectedTherapist.id,
+
+            slot_id:
+              selectedSlot.id,
+
+            therapist_name:
+              therapistName,
+
+            slot_day:
+              selectedSlot.day,
+
+            slot_time:
+              selectedSlot.time,
+
+            scheduled_start:
+              scheduledStart.toISOString(),
+
+            scheduled_end:
+              scheduledEnd.toISOString(),
+
+            price:
+              selectedTherapist.price,
+
+            status:
+              "pending",
+          })
+          .select()
+          .single();
+
+        if (bookingError) {
+          console.error(
+            "Booking error:",
+            bookingError,
+          );
+
+          alert(
+            t(
+              "booking.errors.create",
+            ),
+          );
+
+          return;
+        }
+
+        const paymentParams =
+          new URLSearchParams({
+            bookingId:
+              bookingData.id,
+
+            therapist:
+              therapistName,
+
+            price:
+              String(
+                selectedTherapist.price,
+              ),
+
+            slot:
+              `${formatSlotDate(
+                selectedSlot,
+              )} ${selectedSlot.time}`,
+          });
+
+        window.location.href =
+          `/payment?${paymentParams.toString()}`;
+      } finally {
+        setBookingLoading(false);
       }
-
-      const paymentParams = new URLSearchParams({
-        bookingId: bookingData.id,
-        therapist: therapistName,
-        price: String(selectedTherapist.price),
-        slot: `${translateDay(selectedSlot.day)} ${selectedSlot.time}`,
-      });
-
-      window.location.href = `/payment?${paymentParams.toString()}`;
-    } finally {
-      setBookingLoading(false);
-    }
-  };
-
-  return (
+    };
+      return (
     <>
       <Navbar />
 
@@ -585,14 +1228,22 @@ function BookingContent() {
 
               <h1 className="mt-4 text-4xl font-bold leading-tight sm:text-5xl">
                 {directTherapistId
-                  ? t("booking.hero.directTitle")
-                  : t("booking.hero.title")}
+                  ? t(
+                      "booking.hero.directTitle",
+                    )
+                  : t(
+                      "booking.hero.title",
+                    )}
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#66727a]">
                 {directTherapistId
-                  ? t("booking.hero.directDescription")
-                  : t("booking.hero.description")}
+                  ? t(
+                      "booking.hero.directDescription",
+                    )
+                  : t(
+                      "booking.hero.description",
+                    )}
               </p>
             </div>
 
@@ -600,18 +1251,35 @@ function BookingContent() {
               <div className="mx-auto mt-10 max-w-5xl">
                 <div className="flex items-center justify-between text-sm font-semibold text-[#69747a]">
                   <span>
-                    {t("booking.progress")
-                      .replace("{step}", String(step))
-                      .replace("{total}", "4")}
+                    {t(
+                      "booking.progress",
+                    )
+                      .replace(
+                        "{step}",
+                        String(step),
+                      )
+                      .replace(
+                        "{total}",
+                        "4",
+                      )}
                   </span>
 
-                  <span>{Math.round(Number.parseFloat(progress))}%</span>
+                  <span>
+                    {Math.round(
+                      Number.parseFloat(
+                        progress,
+                      ),
+                    )}
+                    %
+                  </span>
                 </div>
 
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e5dccd]">
                   <div
                     className="h-full rounded-full bg-[#415a72] transition-all duration-300"
-                    style={{ width: progress }}
+                    style={{
+                      width: progress,
+                    }}
                   />
                 </div>
               </div>
@@ -620,429 +1288,687 @@ function BookingContent() {
             {loading ? (
               <div className="mt-10 rounded-[2rem] bg-white p-12 text-center shadow-sm">
                 <p className="text-lg text-[#66727a]">
-                  {t("booking.loading")}
+                  {t(
+                    "booking.loading",
+                  )}
                 </p>
               </div>
             ) : dataError ? (
               <div className="mt-10 rounded-[2rem] border border-red-200 bg-white p-10 text-center shadow-sm">
-                <p className="text-lg text-red-700">{dataError}</p>
+                <p className="text-lg text-red-700">
+                  {dataError}
+                </p>
               </div>
             ) : (
               <div className="mt-10 rounded-[2.25rem] border border-[#e3d8c7] bg-white p-6 shadow-sm sm:p-10">
+                {/* Step 1 */}
+
                 {step === 1 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {t("booking.steps.support.eyebrow")}
+                      {t(
+                        "booking.steps.support.eyebrow",
+                      )}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {t("booking.steps.support.title")}
+                      {t(
+                        "booking.steps.support.title",
+                      )}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {t("booking.steps.support.description")}
+                      {t(
+                        "booking.steps.support.description",
+                      )}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                      {supportOptions.map((option) => {
-                        const selected = selectedSupport.includes(option.value);
+                      {supportOptions.map(
+                        (option) => {
+                          const selected =
+                            selectedSupport.includes(
+                              option.value,
+                            );
 
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => toggleSupport(option.value)}
-                            className={`rounded-2xl border px-5 py-4 text-start font-semibold transition ${
-                              selected
-                                ? "border-[#415a72] bg-[#eef2f5] text-[#223748]"
-                                : "border-[#e3dbcf] text-[#4f5e68] hover:border-[#b39668]"
-                            }`}
-                          >
-                            <span className="flex items-center justify-between gap-4">
-                              <span>{translate(`booking.supportOptions.${option.value}`)}</span>
+                          return (
+                            <button
+                              key={
+                                option.value
+                              }
+                              type="button"
+                              onClick={() =>
+                                toggleSupport(
+                                  option.value,
+                                )
+                              }
+                              className={`rounded-2xl border px-5 py-4 text-start font-semibold transition ${
+                                selected
+                                  ? "border-[#415a72] bg-[#eef2f5] text-[#223748]"
+                                  : "border-[#e3dbcf] text-[#4f5e68] hover:border-[#b39668]"
+                              }`}
+                            >
+                              <span className="flex items-center justify-between gap-4">
+                                <span>
+                                  {translate(
+                                    `booking.supportOptions.${option.value}`,
+                                  )}
+                                </span>
 
-                              <span
-                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-sm ${
-                                  selected
-                                    ? "border-[#415a72] bg-[#415a72] text-white"
-                                    : "border-[#c9c0b2]"
-                                }`}
-                              >
-                                {selected ? "✓" : ""}
+                                <span
+                                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-sm ${
+                                    selected
+                                      ? "border-[#415a72] bg-[#415a72] text-white"
+                                      : "border-[#c9c0b2]"
+                                  }`}
+                                >
+                                  {selected
+                                    ? "✓"
+                                    : ""}
+                                </span>
                               </span>
-                            </span>
-                          </button>
-                        );
-                      })}
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
                   </div>
                 )}
+
+                {/* Step 2 */}
 
                 {step === 2 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {t("booking.steps.therapist.eyebrow")}
+                      {t(
+                        "booking.steps.therapist.eyebrow",
+                      )}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {t("booking.steps.therapist.title")}
+                      {t(
+                        "booking.steps.therapist.title",
+                      )}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {t("booking.steps.therapist.description")}
+                      {t(
+                        "booking.steps.therapist.description",
+                      )}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                      {therapistPreferences.map((option) => {
-                        const selected =
-                          therapistPreference === option.value;
+                      {therapistPreferences.map(
+                        (option) => {
+                          const selected =
+                            therapistPreference ===
+                            option.value;
 
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() =>
-                              setTherapistPreference(option.value)
-                            }
-                            className={`rounded-2xl border px-5 py-7 text-center font-semibold transition ${
-                              selected
-                                ? "border-[#415a72] bg-[#eef2f5] text-[#223748]"
-                                : "border-[#e3dbcf] text-[#4f5e68] hover:border-[#b39668]"
-                            }`}
-                          >
-                            {translate(`booking.therapistPreferences.${option.value}`)}
-                          </button>
-                        );
-                      })}
+                          return (
+                            <button
+                              key={
+                                option.value
+                              }
+                              type="button"
+                              onClick={() =>
+                                setTherapistPreference(
+                                  option.value,
+                                )
+                              }
+                              className={`rounded-2xl border px-5 py-7 text-center font-semibold transition ${
+                                selected
+                                  ? "border-[#415a72] bg-[#eef2f5] text-[#223748]"
+                                  : "border-[#e3dbcf] text-[#4f5e68] hover:border-[#b39668]"
+                              }`}
+                            >
+                              {translate(
+                                `booking.therapistPreferences.${option.value}`,
+                              )}
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
                   </div>
                 )}
+
+                {/* Step 3 */}
 
                 {step === 3 && (
                   <div>
                     <p className="text-sm font-semibold text-[#b39668]">
-                      {t("booking.steps.availability.eyebrow")}
+                      {t(
+                        "booking.steps.availability.eyebrow",
+                      )}
                     </p>
 
                     <h2 className="mt-3 text-3xl font-bold">
-                      {t("booking.steps.availability.title")}
+                      {t(
+                        "booking.steps.availability.title",
+                      )}
                     </h2>
 
                     <p className="mt-3 text-[#69747a]">
-                      {t("booking.steps.availability.description")}
+                      {t(
+                        "booking.steps.availability.description",
+                      )}
                     </p>
 
                     <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                      {availabilityOptions.map((option) => {
-                        const selected =
-                          availabilityPreference === option.value;
+                      {availabilityOptions.map(
+                        (option) => {
+                          const selected =
+                            availabilityPreference ===
+                            option.value;
 
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() =>
-                              setAvailabilityPreference(option.value)
-                            }
-                            className={`rounded-2xl border px-5 py-5 text-start transition ${
-                              selected
-                                ? "border-[#415a72] bg-[#eef2f5]"
-                                : "border-[#e3dbcf] hover:border-[#b39668]"
-                            }`}
-                          >
-                            <span className="block font-semibold text-[#223748]">
-                              {translate(`booking.availabilityOptions.${option.value}.title`)}
-                            </span>
+                          return (
+                            <button
+                              key={
+                                option.value
+                              }
+                              type="button"
+                              onClick={() =>
+                                setAvailabilityPreference(
+                                  option.value,
+                                )
+                              }
+                              className={`rounded-2xl border px-5 py-5 text-start transition ${
+                                selected
+                                  ? "border-[#415a72] bg-[#eef2f5]"
+                                  : "border-[#e3dbcf] hover:border-[#b39668]"
+                              }`}
+                            >
+                              <span className="block font-semibold text-[#223748]">
+                                {translate(
+                                  `booking.availabilityOptions.${option.value}.title`,
+                                )}
+                              </span>
 
-                            <span className="mt-1 block text-sm text-[#69747a]">
-                              {translate(
-                                `booking.availabilityOptions.${option.value}.description`,
-                              )}
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <span className="mt-1 block text-sm text-[#69747a]">
+                                {translate(
+                                  `booking.availabilityOptions.${option.value}.description`,
+                                )}
+                              </span>
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
                   </div>
                 )}
 
-                {step === 4 && !selectedTherapist && (
-                  <div>
-                    <p className="text-sm font-semibold text-[#b39668]">
-                      {t("booking.results.eyebrow")}
-                    </p>
+                {/* Therapist results */}
 
-                    <h2 className="mt-3 text-3xl font-bold">
-                      {t("booking.results.title")}
-                    </h2>
+                {step === 4 &&
+                  !selectedTherapist && (
+                    <div>
+                      <p className="text-sm font-semibold text-[#b39668]">
+                        {t(
+                          "booking.results.eyebrow",
+                        )}
+                      </p>
 
-                    <p className="mt-3 text-[#69747a]">
-                      {t("booking.results.description")}
-                    </p>
+                      <h2 className="mt-3 text-3xl font-bold">
+                        {t(
+                          "booking.results.title",
+                        )}
+                      </h2>
 
-                    {matchingTherapists.length === 0 ? (
-                      <div className="mt-8 rounded-2xl bg-[#f8f4ee] p-8 text-center">
-                        <p className="text-[#66727a]">
-                          {t("booking.results.empty")}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-                        {matchingTherapists.map((therapist) => {
-                          const therapistSlots = allSlots.filter(
-                            (slot) =>
-                              slot.therapist_id === therapist.id &&
-                              slotMatchesAvailability(slot),
-                          );
+                      <p className="mt-3 text-[#69747a]">
+                        {t(
+                          "booking.results.description",
+                        )}
+                      </p>
 
-                          const nextSlot =
-                            therapistSlots[0] ||
-                            allSlots.find(
-                              (slot) =>
-                                slot.therapist_id === therapist.id,
-                            );
+                      {matchingTherapists.length ===
+                      0 ? (
+                        <div className="mt-8 rounded-2xl bg-[#f8f4ee] p-8 text-center">
+                          <p className="text-[#66727a]">
+                            {t(
+                              "booking.results.empty",
+                            )}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+                          {matchingTherapists.map(
+                            (therapist) => {
+                              const therapistSlots =
+                                allSlots.filter(
+                                  (
+                                    slot,
+                                  ) =>
+                                    slot.therapist_id ===
+                                      therapist.id &&
+                                    slotMatchesAvailability(
+                                      slot,
+                                    ),
+                                );
 
-                          return (
-                            <article
-                              key={therapist.id}
-                              className="flex h-full flex-col rounded-[1.75rem] border border-[#e4dacb] bg-[#fffdf9] p-6 transition hover:-translate-y-1 hover:shadow-lg"
-                            >
-                              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#e8decd] text-2xl font-bold text-[#415a72]">
-                                {therapist.full_name
-                                  .trim()
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </div>
+                              const nextSlot =
+                                therapistSlots[0] ||
+                                allSlots.find(
+                                  (
+                                    slot,
+                                  ) =>
+                                    slot.therapist_id ===
+                                    therapist.id,
+                                );
 
-                              <h3 className="mt-5 text-2xl font-bold">
-                                {getTherapistName(therapist)}
-                              </h3>
-
-                              <p className="mt-2 font-semibold text-[#9e8156]">
-                                {getTherapistSpecialty(therapist)}
-                              </p>
-
-                              <p className="mt-4 line-clamp-3 leading-7 text-[#68747b]">
-                                {getTherapistBio(therapist)}
-                              </p>
-
-                              {nextSlot && (
-                                <div className="mt-5 rounded-2xl bg-[#f3eee6] p-4">
-                                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#8f744d]">
-                                    {t("booking.results.nextAvailable")}
-                                  </p>
-
-                                  <p className="mt-2 font-semibold">
-                                    {translateDay(nextSlot.day)} ·{" "}
-                                    {nextSlot.time}
-                                  </p>
-                                </div>
-                              )}
-
-                              <div className="mt-auto flex items-end justify-between gap-4 pt-6">
-                                <p className="text-xl font-bold">
-                                  ${therapist.price}
-                                  <span className="text-sm font-normal text-[#69747a]">
-                                    {t("booking.sessionPriceSuffix")}
-                                  </span>
-                                </p>
-
-                                <button
-                                  type="button"
-                                  onClick={() => selectTherapist(therapist)}
-                                  className="rounded-xl bg-[#415a72] px-5 py-3 font-semibold text-white transition hover:bg-[#32495f]"
+                              return (
+                                <article
+                                  key={
+                                    therapist.id
+                                  }
+                                  className="flex h-full flex-col rounded-[1.75rem] border border-[#e4dacb] bg-[#fffdf9] p-6 transition hover:-translate-y-1 hover:shadow-lg"
                                 >
-                                  {t("booking.results.selectSession")}
-                                </button>
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+                                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#e8decd] text-2xl font-bold text-[#415a72]">
+                                    {therapist.full_name
+                                      .trim()
+                                      .charAt(
+                                        0,
+                                      )
+                                      .toUpperCase()}
+                                  </div>
 
-                {step === 4 && selectedTherapist && (
-                  <div ref={bookingSectionRef}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedTherapist(null);
-                        setSelectedSlot(null);
-                      }}
-                      className="text-sm font-semibold text-[#8f744d] hover:underline"
+                                  <h3 className="mt-5 text-2xl font-bold">
+                                    {getTherapistName(
+                                      therapist,
+                                    )}
+                                  </h3>
+
+                                  <p className="mt-2 font-semibold text-[#9e8156]">
+                                    {getTherapistSpecialty(
+                                      therapist,
+                                    )}
+                                  </p>
+
+                                  <p className="mt-4 line-clamp-3 leading-7 text-[#68747b]">
+                                    {getTherapistBio(
+                                      therapist,
+                                    )}
+                                  </p>
+
+                                  {nextSlot && (
+                                    <div className="mt-5 rounded-2xl bg-[#f3eee6] p-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#8f744d]">
+                                        {t(
+                                          "booking.results.nextAvailable",
+                                        )}
+                                      </p>
+
+                                      <p className="mt-2 font-semibold">
+                                        {formatSlotDate(
+                                          nextSlot,
+                                        )}{" "}
+                                        ·{" "}
+                                        {
+                                          nextSlot.time
+                                        }
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  <div className="mt-auto flex items-end justify-between gap-4 pt-6">
+                                    <p className="text-xl font-bold">
+                                      $
+                                      {
+                                        therapist.price
+                                      }
+
+                                      <span className="text-sm font-normal text-[#69747a]">
+                                        {t(
+                                          "booking.sessionPriceSuffix",
+                                        )}
+                                      </span>
+                                    </p>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        selectTherapist(
+                                          therapist,
+                                        )
+                                      }
+                                      className="rounded-xl bg-[#415a72] px-5 py-3 font-semibold text-white transition hover:bg-[#32495f]"
+                                    >
+                                      {t(
+                                        "booking.results.selectSession",
+                                      )}
+                                    </button>
+                                  </div>
+                                </article>
+                              );
+                            },
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                                  {/* Selected therapist + available sessions */}
+
+                {step === 4 &&
+                  selectedTherapist && (
+                    <div
+                      ref={
+                        bookingSectionRef
+                      }
                     >
-                      {t("booking.therapistDetail.back")}
-                    </button>
+                      <div className="flex flex-col gap-6 rounded-[1.75rem] bg-[#f8f4ee] p-6 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#e8decd] text-2xl font-bold text-[#415a72]">
+                            {selectedTherapist.full_name
+                              .trim()
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
 
-                    <div className="mt-6 grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
-                      <aside className="rounded-[1.75rem] bg-[#f4eee5] p-6">
-                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-bold text-[#415a72]">
-                          {selectedTherapist.full_name
-                            .trim()
-                            .charAt(0)
-                            .toUpperCase()}
+                          <div>
+                            <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#9e8156]">
+                              {t(
+                                "booking.session.selectedTherapist",
+                              )}
+                            </p>
+
+                            <h2 className="mt-1 text-2xl font-bold">
+                              {getTherapistName(
+                                selectedTherapist,
+                              )}
+                            </h2>
+
+                            <p className="mt-1 text-[#69747a]">
+                              {getTherapistSpecialty(
+                                selectedTherapist,
+                              )}
+                            </p>
+                          </div>
                         </div>
 
-                        <h2 className="mt-5 text-3xl font-bold">
-                          {getTherapistName(selectedTherapist)}
-                        </h2>
+                        {!directTherapistId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTherapist(
+                                null,
+                              );
 
-                        <p className="mt-2 font-semibold text-[#9e8156]">
-                          {getTherapistSpecialty(selectedTherapist)}
-                        </p>
+                              setSelectedSlot(
+                                null,
+                              );
+                            }}
+                            className="rounded-xl border border-[#d9cebd] bg-white px-5 py-3 font-semibold text-[#415a72] transition hover:bg-[#f3eee6]"
+                          >
+                            {t(
+                              "booking.session.changeTherapist",
+                            )}
+                          </button>
+                        )}
+                      </div>
 
-                        <p className="mt-5 leading-7 text-[#68747b]">
-                          {getTherapistBio(selectedTherapist)}
-                        </p>
-
-                        <div className="mt-6 border-t border-[#d9cdbb] pt-5">
-                          <p className="text-sm text-[#69747a]">
-                            {t("booking.therapistDetail.sessionType")}
-                          </p>
-
-                          <p className="mt-2 text-3xl font-bold">
-                            ${selectedTherapist.price}
-                          </p>
-                        </div>
-                      </aside>
-
-                      <section>
-                        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#b39668]">
-                          {t("booking.therapistDetail.eyebrow")}
+                      <div className="mt-8">
+                        <p className="text-sm font-semibold text-[#b39668]">
+                          {t(
+                            "booking.session.eyebrow",
+                          )}
                         </p>
 
                         <h2 className="mt-3 text-3xl font-bold">
-                          {t("booking.therapistDetail.title")}
+                          {t(
+                            "booking.session.title",
+                          )}
                         </h2>
 
-                        {selectedTherapistSlots.length === 0 ? (
-                          <div className="mt-6 rounded-2xl bg-[#f8f4ee] p-7">
-                            <p className="text-[#66727a]">
-                              {t("booking.therapistDetail.empty")}
+                        <p className="mt-3 text-[#69747a]">
+                          {t(
+                            "booking.session.description",
+                          )}
+                        </p>
+
+                        {selectedTherapistSlots.length ===
+                        0 ? (
+                          <div className="mt-8 rounded-2xl border border-dashed border-[#d8cebf] bg-[#faf7f2] p-8 text-center">
+                            <p className="text-[#69747a]">
+                              {t(
+                                "booking.session.noSlots",
+                              )}
                             </p>
                           </div>
                         ) : (
-                          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                            {selectedTherapistSlots.map((slot) => {
-                              const selected =
-                                selectedSlot?.id === slot.id;
+                          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {selectedTherapistSlots.map(
+                              (slot) => {
+                                const selected =
+                                  selectedSlot?.id ===
+                                  slot.id;
 
-                              return (
-                                <button
-                                  key={slot.id}
-                                  type="button"
-                                  onClick={() => setSelectedSlot(slot)}
-                                  className={`rounded-2xl border px-5 py-4 text-start font-semibold transition ${
-                                    selected
-                                      ? "border-[#415a72] bg-[#415a72] text-white"
-                                      : "border-[#ddd2c2] text-[#415a72] hover:border-[#b39668] hover:bg-[#f8f4ee]"
-                                  }`}
-                                >
-                                  <span className="block">
-                                    {translateDay(slot.day)}
-                                  </span>
+                                const start =
+                                  getScheduledStart(
+                                    slot,
+                                  );
 
-                                  <span
-                                    className={`mt-1 block text-sm ${
+                                const end =
+                                  start
+                                    ? new Date(
+                                        start.getTime() +
+                                          2 *
+                                            60 *
+                                            60 *
+                                            1000,
+                                      )
+                                    : null;
+
+                                return (
+                                  <button
+                                    key={
+                                      slot.id
+                                    }
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedSlot(
+                                        slot,
+                                      )
+                                    }
+                                    className={`rounded-2xl border p-5 text-start transition ${
                                       selected
-                                        ? "text-white/75"
-                                        : "text-[#69747a]"
+                                        ? "border-[#415a72] bg-[#eef2f5] shadow-sm"
+                                        : "border-[#e3dbcf] bg-[#fffdf9] hover:border-[#b39668]"
                                     }`}
                                   >
-                                    {slot.time}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div>
+                                        <p className="font-bold text-[#223748]">
+                                          {formatSlotDate(
+                                            slot,
+                                          )}
+                                        </p>
+
+                                        <p className="mt-2 text-lg font-semibold text-[#415a72]">
+                                          {
+                                            slot.time
+                                          }
+                                        </p>
+                                      </div>
+
+                                      <div
+                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                                          selected
+                                            ? "border-[#415a72] bg-[#415a72] text-white"
+                                            : "border-[#c9c0b2]"
+                                        }`}
+                                      >
+                                        {selected
+                                          ? "✓"
+                                          : ""}
+                                      </div>
+                                    </div>
+
+                                    {start &&
+                                      end && (
+                                        <p className="mt-4 text-xs leading-5 text-[#7a858b]">
+                                          {isArabic
+                                            ? "مدة محجوزة مؤقتاً: حتى ساعتين"
+                                            : "Reserved window: up to 2 hours"}
+                                        </p>
+                                      )}
+                                  </button>
+                                );
+                              },
+                            )}
                           </div>
                         )}
+                      </div>
 
-                        {selectedSlot && (
-                          <div className="mt-6 rounded-2xl border border-[#dfd4c4] bg-[#fffdf9] p-5">
-                            <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#8f744d]">
-                              {t("booking.summary.eyebrow")}
-                            </p>
+                      {selectedSlot && (
+                        <div className="mt-8 rounded-[1.75rem] border border-[#dfd5c5] bg-[#faf7f2] p-6 sm:p-8">
+                          <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#9e8156]">
+                            {isArabic
+                              ? "ملخص الحجز"
+                              : "Booking summary"}
+                          </p>
 
-                            <div className="mt-4 space-y-2 text-[#56636c]">
-                              <p>
-                                <strong className="text-[#223748]">
-                                  {t("booking.summary.therapistLabel")}
-                                </strong>
-
-                                {getTherapistName(selectedTherapist)}
+                          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                            <div>
+                              <p className="text-sm text-[#7a858b]">
+                                {isArabic
+                                  ? "المعالج"
+                                  : "Therapist"}
                               </p>
 
-                              <p>
-                                <strong className="text-[#223748]">
-                                  {t("booking.summary.sessionLabel")}
-                                </strong>
+                              <p className="mt-1 font-bold text-[#223748]">
+                                {getTherapistName(
+                                  selectedTherapist,
+                                )}
+                              </p>
+                            </div>
 
-                                {translateDay(selectedSlot.day)} ·{" "}
-                                {selectedSlot.time}
+                            <div>
+                              <p className="text-sm text-[#7a858b]">
+                                {isArabic
+                                  ? "التاريخ"
+                                  : "Date"}
                               </p>
 
-                              <p>
-                                <strong className="text-[#223748]">
-                                  {t("booking.summary.totalLabel")}
-                                </strong>
+                              <p className="mt-1 font-bold text-[#223748]">
+                                {formatSlotDate(
+                                  selectedSlot,
+                                )}
+                              </p>
+                            </div>
 
-                                ${selectedTherapist.price}
+                            <div>
+                              <p className="text-sm text-[#7a858b]">
+                                {isArabic
+                                  ? "الوقت"
+                                  : "Time"}
+                              </p>
+
+                              <p className="mt-1 font-bold text-[#223748]">
+                                {
+                                  selectedSlot.time
+                                }
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-sm text-[#7a858b]">
+                                {isArabic
+                                  ? "السعر"
+                                  : "Price"}
+                              </p>
+
+                              <p className="mt-1 font-bold text-[#223748]">
+                                $
+                                {
+                                  selectedTherapist.price
+                                }
                               </p>
                             </div>
                           </div>
-                        )}
 
-                        <button
-                          type="button"
-                          onClick={confirmBooking}
-                          disabled={!selectedSlot || bookingLoading}
-                          className="mt-7 w-full rounded-2xl bg-[#415a72] px-7 py-4 text-lg font-semibold text-white shadow-md transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {bookingLoading
-                            ? t("booking.actions.continuing")
-                            : t("booking.actions.continueBooking")}
-                        </button>
+                          <div className="mt-6 rounded-2xl border border-[#e3d8c7] bg-white p-4">
+                            <p className="text-sm leading-6 text-[#69747a]">
+                              {isArabic
+                                ? "يتم حالياً حجز نافذة زمنية تصل إلى ساعتين للجلسة. يمكن للمعالج والمريض إنهاء المكالمة في أي وقت عند انتهاء الجلسة."
+                                : "A window of up to 2 hours is currently reserved for the session. The therapist and patient can end the call whenever the session is finished."}
+                            </p>
+                          </div>
 
-                        <p className="mt-4 text-center text-sm leading-6 text-[#69747a]">
-                          {t("booking.therapistDetail.signInNotice")}
-                        </p>
-                      </section>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void confirmBooking()
+                            }
+                            disabled={
+                              bookingLoading
+                            }
+                            className="mt-7 w-full rounded-2xl bg-[#415a72] px-6 py-4 text-lg font-bold text-white transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                          >
+                            {bookingLoading
+                              ? isArabic
+                                ? "جارٍ إنشاء الحجز..."
+                                : "Creating booking..."
+                              : t(
+                                  "booking.session.continueToPayment",
+                                )}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {!directTherapistId && step < 4 && (
-                  <div className="mt-10 flex flex-col-reverse gap-3 border-t border-[#ece4d8] pt-7 sm:flex-row sm:justify-between">
-                    <button
-                      type="button"
-                      onClick={goBack}
-                      disabled={step === 1}
-                      className="rounded-2xl border border-[#cfc4b4] px-7 py-3 font-semibold text-[#415a72] transition hover:bg-[#f6f1e9] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {t("booking.actions.back")}
-                    </button>
+                {/* Navigation */}
 
-                    <button
-                      type="button"
-                      onClick={goNext}
-                      disabled={!canContinue}
-                      className="rounded-2xl bg-[#415a72] px-8 py-3 font-semibold text-white shadow-md transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {step === 3
-                        ? t("booking.actions.viewOptions")
-                        : t("booking.actions.continue")}
-                    </button>
-                  </div>
-                )}
+                {!directTherapistId &&
+                  step < 4 && (
+                    <div className="mt-10 flex flex-col-reverse gap-3 border-t border-[#eee6db] pt-6 sm:flex-row sm:items-center sm:justify-between">
+                      <button
+                        type="button"
+                        onClick={goBack}
+                        disabled={
+                          step === 1
+                        }
+                        className="rounded-xl border border-[#d9cebd] px-6 py-3 font-semibold text-[#415a72] transition hover:bg-[#f8f4ee] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {t(
+                          "booking.actions.back",
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        disabled={
+                          !canContinue
+                        }
+                        className="rounded-xl bg-[#415a72] px-7 py-3 font-semibold text-white transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {step === 3
+                          ? t(
+                              "booking.actions.seeMatches",
+                            )
+                          : t(
+                              "booking.actions.continue",
+                            )}
+                      </button>
+                    </div>
+                  )}
+
+                {step === 4 &&
+                  selectedTherapist &&
+                  !directTherapistId && (
+                    <div className="mt-8 border-t border-[#eee6db] pt-6">
+                      <button
+                        type="button"
+                        onClick={goBack}
+                        className="rounded-xl border border-[#d9cebd] px-6 py-3 font-semibold text-[#415a72] transition hover:bg-[#f8f4ee]"
+                      >
+                        {t(
+                          "booking.actions.back",
+                        )}
+                      </button>
+                    </div>
+                  )}
               </div>
-            )}
-
-            {!directTherapistId && (
-              <p className="mx-auto mt-7 max-w-3xl text-center text-sm leading-7 text-[#6b7479]">
-                {t("booking.disclaimer")}
-              </p>
             )}
           </div>
         </section>
@@ -1052,13 +1978,13 @@ function BookingContent() {
 }
 
 export default function BookingPage() {
-  const { t } = useLanguage();
-
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#f8f4ee] p-10 text-center text-[#223748]">
-          <p className="text-lg">{t("booking.loading")}</p>
+        <main className="flex min-h-screen items-center justify-center bg-[#f8f4ee]">
+          <p className="text-[#66727a]">
+            Loading...
+          </p>
         </main>
       }
     >

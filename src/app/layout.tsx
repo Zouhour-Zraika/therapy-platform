@@ -7,6 +7,8 @@ import {
 import { LanguageProvider } from "@/i18n/LanguageProvider";
 import FeedbackMode from "./components/FeedbackMode";
 import "./globals.css";
+import CookieBanner from "./components/CookieBanner";
+
 
 const inter = Inter({
   subsets: ["latin"],
@@ -60,6 +62,7 @@ export default function RootLayout({
         <LanguageProvider>
           {children}
           <FeedbackMode />
+          <CookieBanner />
         </LanguageProvider>
       </body>
     </html>

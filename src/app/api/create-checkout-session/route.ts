@@ -57,6 +57,18 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
       requestOrigin;
 
+    const successUrl =
+      `${publicSiteUrl}/success` +
+      `?bookingId=${encodeURIComponent(bookingId)}` +
+      `&session_id={CHECKOUT_SESSION_ID}`;
+
+    console.log("STRIPE CHECKOUT DEBUG:", {
+      requestOrigin,
+      publicSiteUrl,
+      bookingId,
+      successUrl,
+    });
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
 
@@ -103,10 +115,7 @@ export async function POST(request: Request) {
         },
       },
 
-      success_url:
-        `${publicSiteUrl}/success` +
-        `?bookingId=${encodeURIComponent(bookingId)}` +
-        `&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: successUrl,
 
       cancel_url:
         `${publicSiteUrl}/payment` +
@@ -114,6 +123,12 @@ export async function POST(request: Request) {
         `&therapist=${encodeURIComponent(therapist)}` +
         `&price=${encodeURIComponent(String(numericPrice))}` +
         `&slot=${encodeURIComponent(slot)}`,
+    });
+
+    console.log("STRIPE SESSION CREATED:", {
+      id: session.id,
+      success_url: session.success_url,
+      url: session.url,
     });
 
     if (!session.url) {
