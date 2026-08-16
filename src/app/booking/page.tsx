@@ -1130,6 +1130,58 @@ function BookingContent() {
           );
 
         const {
+          data: claimedSlot,
+          error: slotClaimError,
+        } = await supabase
+          .from("availability_slots")
+          .update({
+            is_booked: true,
+          })
+          .eq("id", selectedSlot.id)
+          .eq(
+            "therapist_id",
+            selectedTherapist.id,
+          )
+          .eq("is_booked", false)
+          .select("id")
+          .maybeSingle();
+
+        if (slotClaimError) {
+          console.error(
+            "Slot claim error:",
+            slotClaimError,
+          );
+
+          alert(
+            isArabic
+              ? "تعذر حجز هذا الموعد. يرجى المحاولة مرة أخرى."
+              : "Unable to reserve this slot. Please try again.",
+          );
+
+          return;
+        }
+
+        if (!claimedSlot) {
+          setAllSlots((current) =>
+            current.filter(
+              (slot) =>
+                slot.id !==
+                selectedSlot.id,
+            ),
+          );
+
+          setSelectedSlot(null);
+
+          alert(
+            isArabic
+              ? "هذا الموعد لم يعد متاحاً. يرجى اختيار موعد آخر."
+              : "This slot is no longer available. Please choose another slot.",
+          );
+
+          return;
+        }
+
+        const {
           data: bookingData,
           error: bookingError,
         } = await supabase
@@ -1177,6 +1229,22 @@ function BookingContent() {
             bookingError,
           );
 
+          const {
+            error: slotReleaseError,
+          } = await supabase
+            .from("availability_slots")
+            .update({
+              is_booked: false,
+            })
+            .eq("id", selectedSlot.id);
+
+          if (slotReleaseError) {
+            console.error(
+              "Slot release error:",
+              slotReleaseError,
+            );
+          }
+
           alert(
             t(
               "booking.errors.create",
@@ -1185,6 +1253,14 @@ function BookingContent() {
 
           return;
         }
+
+        setAllSlots((current) =>
+          current.filter(
+            (slot) =>
+              slot.id !==
+              selectedSlot.id,
+          ),
+        );
 
         const paymentParams =
           new URLSearchParams({
