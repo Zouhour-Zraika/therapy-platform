@@ -275,13 +275,13 @@ const supportTopics: Record<string, SupportTopic> = {
     },
 
     subtitle: {
-      en: "When everyday life begins to feel heavier.",
-      ar: "عندما تبدأ الحياة اليومية في الشعور بأنها أكثر ثقلًا.",
+      en: "When the details of everyday life begin to feel heavier than they used to",
+      ar: "عندما تصبح تفاصيل الحياة اليومية أكثر ثقلًا مما اعتدت عليه",
     },
 
     introduction: {
-      en: "Depression can affect how you feel, think, connect with others, and move through everyday life. It may involve sadness, but it can also appear as emptiness, exhaustion, irritability, numbness, or a loss of interest.",
-      ar: "يمكن أن يؤثر الاكتئاب في مشاعرك وأفكارك وعلاقاتك وطريقة عيشك لحياتك اليومية. وقد يظهر في صورة حزن، لكنه قد يظهر أيضًا كفراغ أو إرهاق أو انفعال أو خدر نفسي أو فقدان للاهتمام.",
+      en: "Depression is not limited to feeling sad. It can affect the way you think, feel, relate to others, and go about your daily life. It may appear as a sense of inner emptiness, persistent exhaustion, loss of interest or motivation, irritability, or emotional numbness, even when everything seems normal from the outside. You do not have to face it alone. Begin your journey toward understanding and recovery through a therapeutic session in a safe and supportive environment.",
+      ar: "الاكتئاب لا يقتصر على الشعور بالحزن، بل قد يؤثر في طريقة تفكيرك، ومشاعرك، وعلاقاتك، وقدرتك على ممارسة حياتك اليومية. وقد يظهر على شكل فراغ داخلي، أو إرهاق مستمر، أو فقدان للشغف، أو انفعال متكرر، أو خدر عاطفي، حتى وإن بدا كل شيء طبيعيًا من الخارج. لست مضطرًا لمواجهة ذلك وحدك. ابدأ رحلتك نحو الفهم والتعافي من خلال جلسة علاجية في بيئة آمنة وداعمة.",
     },
 
     definition: {
