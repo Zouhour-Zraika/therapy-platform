@@ -352,6 +352,51 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+    * Envoyer l'e-mail d'approbation
+    * uniquement après confirmation que
+    * la candidature est réellement approved.
+    */
+    try {
+      const emailResponse =
+        await fetch(
+          `${siteUrl}/api/send-therapist-approval-email`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              email,
+              fullName,
+              loginUrl:
+                `${siteUrl}/clinician`,
+            }),
+          },
+        );
+
+      if (!emailResponse.ok) {
+        console.error(
+          "Therapist approval email failed:",
+          emailResponse.status,
+          await emailResponse.text(),
+        );
+      }
+    } catch (emailError) {
+      /*
+      * La candidature reste approuvée
+      * même si l'e-mail rencontre un problème.
+      */
+      console.error(
+        "Therapist approval email request failed:",
+        emailError,
+      );
+    }
+
+
     console.log(
       "THERAPIST APPLICATION APPROVED:",
       {
