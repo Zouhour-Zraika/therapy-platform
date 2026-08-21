@@ -13,6 +13,8 @@ type NavigationItem = {
   label: string;
 };
 
+type Language = "en" | "fr" | "ar";
+
 export default function Navbar() {
   const pathname = usePathname();
 
@@ -107,7 +109,7 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const handleLanguageChange = (newLanguage: "en" | "ar") => {
+  const handleLanguageChange = (newLanguage: Language) => {
     changeLanguage(newLanguage);
     setMenuOpen(false);
   };
@@ -152,7 +154,22 @@ export default function Navbar() {
         ? "border-aan-gold/50 bg-[#f3ece1] text-aan-heading"
         : "border-transparent text-aan-navy hover:border-aan-border hover:bg-aan-background hover:text-aan-heading"
     }`;
-      return (
+
+  const languageButtonClass = (currentLanguage: Language) =>
+    `rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
+      language === currentLanguage
+        ? "bg-aan-button text-white shadow-sm"
+        : "text-aan-navy hover:bg-white hover:text-aan-heading"
+    }`;
+
+  const mobileLanguageButtonClass = (currentLanguage: Language) =>
+    `rounded-xl px-3 py-3 font-bold transition duration-200 ${
+      language === currentLanguage
+        ? "bg-aan-button text-white shadow-sm"
+        : "text-aan-navy hover:bg-white hover:text-aan-heading"
+    }`;
+
+  return (
     <header className="sticky top-0 z-50 border-b border-aan-border bg-[#fffdf9]/97 shadow-[0_4px_18px_rgba(39,59,82,0.06)] backdrop-blur-md">
       <nav
         dir={isArabic ? "rtl" : "ltr"}
@@ -199,24 +216,25 @@ export default function Navbar() {
               type="button"
               onClick={() => handleLanguageChange("en")}
               aria-pressed={language === "en"}
-              className={`rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
-                language === "en"
-                  ? "bg-aan-button text-white shadow-sm"
-                  : "text-aan-navy hover:bg-white hover:text-aan-heading"
-              }`}
+              className={languageButtonClass("en")}
             >
               EN
             </button>
 
             <button
               type="button"
+              onClick={() => handleLanguageChange("fr")}
+              aria-pressed={language === "fr"}
+              className={languageButtonClass("fr")}
+            >
+              FR
+            </button>
+
+            <button
+              type="button"
               onClick={() => handleLanguageChange("ar")}
               aria-pressed={language === "ar"}
-              className={`rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
-                language === "ar"
-                  ? "bg-aan-button text-white shadow-sm"
-                  : "text-aan-navy hover:bg-white hover:text-aan-heading"
-              }`}
+              className={languageButtonClass("ar")}
             >
               العربية
             </button>
@@ -268,7 +286,8 @@ export default function Navbar() {
           )}
         </button>
       </nav>
-            {menuOpen && (
+
+      {menuOpen && (
         <div
           dir={isArabic ? "rtl" : "ltr"}
           className="border-t border-aan-border bg-[#fffdf9] px-4 py-5 shadow-lg lg:hidden"
@@ -287,29 +306,30 @@ export default function Navbar() {
 
             <div className="my-3 h-px bg-aan-border" />
 
-            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-aan-border bg-aan-background p-2">
+            <div className="grid grid-cols-3 gap-3 rounded-2xl border border-aan-border bg-aan-background p-2">
               <button
                 type="button"
                 onClick={() => handleLanguageChange("en")}
                 aria-pressed={language === "en"}
-                className={`rounded-xl px-3 py-3 font-bold transition duration-200 ${
-                  language === "en"
-                    ? "bg-aan-button text-white shadow-sm"
-                    : "text-aan-navy hover:bg-white hover:text-aan-heading"
-                }`}
+                className={mobileLanguageButtonClass("en")}
               >
                 EN
               </button>
 
               <button
                 type="button"
+                onClick={() => handleLanguageChange("fr")}
+                aria-pressed={language === "fr"}
+                className={mobileLanguageButtonClass("fr")}
+              >
+                FR
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleLanguageChange("ar")}
                 aria-pressed={language === "ar"}
-                className={`rounded-xl px-3 py-3 font-bold transition duration-200 ${
-                  language === "ar"
-                    ? "bg-aan-button text-white shadow-sm"
-                    : "text-aan-navy hover:bg-white hover:text-aan-heading"
-                }`}
+                className={mobileLanguageButtonClass("ar")}
               >
                 العربية
               </button>

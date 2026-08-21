@@ -1,8 +1,10 @@
 import englishTranslations from "./generated/en.json";
+import frenchTranslations from "./generated/fr.json";
 import arabicTranslations from "./generated/ar.json";
 
 export const supportedLanguages = [
   "en",
+  "fr",
   "ar",
 ] as const;
 
@@ -14,6 +16,7 @@ export const defaultLanguage: Language =
 
 export const translations = {
   en: englishTranslations,
+  fr: frenchTranslations,
   ar: arabicTranslations,
 } as const;
 
@@ -26,7 +29,7 @@ type GeneratedTranslationKey =
 /*
  * Clés récemment ajoutées au système de réservation.
  *
- * Elles sont aussi présentes dans en.json et ar.json,
+ * Elles sont aussi présentes dans en.json, fr.json et ar.json,
  * mais on les déclare ici explicitement pour que
  * TypeScript les reconnaisse immédiatement.
  */

@@ -22,6 +22,8 @@ import {
 type LanguageContextValue = {
   language: Language;
   isArabic: boolean;
+  isFrench: boolean;
+  isEnglish: boolean;
   changeLanguage: (language: Language) => void;
   t: (key: TranslationKey) => string;
 };
@@ -87,6 +89,8 @@ export function LanguageProvider({
     () => ({
       language,
       isArabic: language === "ar",
+      isFrench: language === "fr",
+      isEnglish: language === "en",
       changeLanguage,
       t,
     }),
