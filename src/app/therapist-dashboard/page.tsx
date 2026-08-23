@@ -1,11 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { ChangeEvent, useEffect, useState } from "react";
+import {
+  ChangeEvent,
+  useEffect,
+  useState,
+} from "react";
+
 import { supabase } from "@/lib/supabase";
 import Navbar from "../components/Navbar";
-import { Language } from "../lib/translations";
 import ProtectedRoute from "../components/ProtectedRoute";
+import { useLanguage } from "@/i18n/LanguageProvider";
+
+type Language = "en" | "fr" | "ar";
 
 type AvailabilitySlot = {
   id: string;
@@ -22,479 +29,1797 @@ type Booking = {
   status: string;
   created_at: string;
   patient_email: string | null;
+
   zoom_start_url: string | null;
+
+  meeting_url?: string | null;
+  meeting_provider?: string | null;
 };
 
 type TherapistProfile = {
   full_name: string | null;
+  full_name_ar: string | null;
+
   specialty: string | null;
+  specialty_fr: string | null;
+  specialty_ar: string | null;
+
   professional_title: string | null;
+  professional_title_fr: string | null;
+  professional_title_ar: string | null;
+
   experience_years: number | null;
+
   bio: string | null;
+  bio_fr: string | null;
+  bio_ar: string | null;
+
   education: string | null;
+  education_fr: string | null;
+  education_ar: string | null;
+
   certifications: string | null;
+  certifications_fr: string | null;
+  certifications_ar: string | null;
+
   therapeutic_approach: string | null;
+  therapeutic_approach_fr: string | null;
+  therapeutic_approach_ar: string | null;
+
   services: string | null;
+  services_fr: string | null;
+  services_ar: string | null;
+
   languages: string | null;
+  languages_fr: string | null;
+  languages_ar: string | null;
+
   price: number | null;
   photo_url: string | null;
 };
 
-const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
+type TranslationFields = {
+  fullName?: string;
+  professionalTitle: string;
+  specialty: string;
+  bio: string;
+  education: string;
+  certifications: string;
+  therapeuticApproach: string;
+  services: string;
+  languages: string;
+};
+
+const MAX_PHOTO_SIZE =
+  5 * 1024 * 1024;
 
 export default function TherapistDashboard() {
-  const [language, setLanguage] = useState<Language>("en");
+  const {
+    language,
+    isArabic,
+  } = useLanguage();
 
-  const [fullName, setFullName] = useState("");
-  const [professionalTitle, setProfessionalTitle] = useState("");
-  const [specialty, setSpecialty] = useState("");
-  const [experienceYears, setExperienceYears] = useState("");
-  const [bio, setBio] = useState("");
-  const [education, setEducation] = useState("");
-  const [certifications, setCertifications] = useState("");
-  const [therapeuticApproach, setTherapeuticApproach] = useState("");
-  const [services, setServices] = useState("");
-  const [languages, setLanguages] = useState("");
-  const [price, setPrice] = useState("");
+  const [fullName, setFullName] =
+    useState("");
 
-  const [photoUrl, setPhotoUrl] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState("");
+  const [
+    professionalTitle,
+    setProfessionalTitle,
+  ] = useState("");
 
-  const [slotDate, setSlotDate] = useState("");
-  const [time, setTime] = useState("");
-  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [specialty, setSpecialty] =
+    useState("");
 
-  const [loading, setLoading] = useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [
+    experienceYears,
+    setExperienceYears,
+  ] = useState("");
 
-  const isArabic = language === "ar";
+  const [bio, setBio] =
+    useState("");
 
+  const [education, setEducation] =
+    useState("");
+
+  const [
+    certifications,
+    setCertifications,
+  ] = useState("");
+
+  const [
+    therapeuticApproach,
+    setTherapeuticApproach,
+  ] = useState("");
+
+  const [services, setServices] =
+    useState("");
+
+  const [languages, setLanguages] =
+    useState("");
+
+  const [price, setPrice] =
+    useState("");
+
+  const [photoUrl, setPhotoUrl] =
+    useState("");
+
+  const [photoFile, setPhotoFile] =
+    useState<File | null>(null);
+
+  const [
+    photoPreview,
+    setPhotoPreview,
+  ] = useState("");
+
+  const [slotDate, setSlotDate] =
+    useState("");
+
+  const [time, setTime] =
+    useState("");
+
+  const [slots, setSlots] =
+    useState<AvailabilitySlot[]>([]);
+
+  const [bookings, setBookings] =
+    useState<Booking[]>([]);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [
+    uploadingPhoto,
+    setUploadingPhoto,
+  ] = useState(false);
+
+  const [
+    translating,
+    setTranslating,
+  ] = useState(false);
+
+  const text =
+    language === "ar"
+      ? {
+          profileTitle:
+            "الملف المهني للمختص",
+
+          profileDescription:
+            "أكمل معلوماتك المهنية باللغة التي تفضلها. ستقوم المنصة بإنشاء النسخ الإنجليزية والفرنسية والعربية تلقائياً عند الحفظ.",
+
+          basic:
+            "الصورة والمعلومات الأساسية",
+
+          choosePhoto:
+            "اختيار صورة",
+
+          photoHelp:
+            "JPG أو PNG أو WebP، بحد أقصى 5 ميغابايت.",
+
+          photoAlt:
+            "صورة المختص",
+
+          fullName:
+            "الاسم الكامل",
+
+          professionalTitle:
+            "المسمى المهني",
+
+          professionalTitlePlaceholder:
+            "مثال: معالج نفسي سريري",
+
+          specialty:
+            "التخصص",
+
+          specialtyPlaceholder:
+            "مثال: العلاج النفسي التكاملي",
+
+          experience:
+            "سنوات الخبرة",
+
+          biographySection:
+            "التعريف والخبرة المهنية",
+
+          biography:
+            "نبذة مهنية",
+
+          biographyPlaceholder:
+            "اكتب نبذة مفصلة عن خبرتك والفئات التي تعمل معها والمجالات التي تدعمها.",
+
+          education:
+            "التعليم والمؤهلات",
+
+          educationPlaceholder:
+            "مثال: ماجستير في علم النفس السريري...",
+
+          certifications:
+            "التدريبات والشهادات",
+
+          certificationsPlaceholder:
+            "اكتب كل تدريب أو شهادة في سطر منفصل.",
+
+          approach:
+            "النهج العلاجي",
+
+          approachPlaceholder:
+            "اشرح أسلوبك العلاجي وكيف تعمل مع العملاء.",
+
+          servicesLanguages:
+            "الخدمات واللغات",
+
+          services:
+            "الخدمات",
+
+          servicesPlaceholder:
+            "اكتب كل خدمة في سطر منفصل.",
+
+          languages:
+            "اللغات",
+
+          languagesPlaceholder:
+            "اكتب كل لغة في سطر منفصل.",
+
+          sessionPrice:
+            "سعر الجلسة",
+
+          adminPrice:
+            "يتم تحديد السعر بواسطة الإدارة.",
+
+          save:
+            "حفظ الملف المهني",
+
+          saving:
+            "جارٍ الحفظ والترجمة...",
+
+          saved:
+            "تم حفظ الملف وترجمته بنجاح إلى اللغات الثلاث.",
+
+          saveError:
+            "تعذر حفظ الملف الشخصي.",
+
+          translationError:
+            "تعذر إنشاء الترجمات تلقائياً. لم يتم حفظ الملف لتجنب عرض ترجمات غير مكتملة.",
+
+          fullNameRequired:
+            "يرجى إدخال الاسم الكامل.",
+
+          professionalTitleRequired:
+            "يرجى إدخال المسمى المهني.",
+
+          specialtyRequired:
+            "يرجى إدخال التخصص.",
+
+          experienceInvalid:
+            "يرجى إدخال عدد صحيح صالح لسنوات الخبرة.",
+
+          loginRequired:
+            "يجب تسجيل الدخول.",
+
+          availability:
+            "المواعيد المتاحة",
+
+          addAvailability:
+            "إضافة موعد",
+
+          chooseDateTime:
+            "يرجى اختيار التاريخ والوقت.",
+
+          addAvailabilityError:
+            "تعذرت إضافة الموعد.",
+
+          noAvailability:
+            "لا توجد مواعيد متاحة.",
+
+          delete:
+            "حذف",
+
+          deleteConfirm:
+            "هل تريد حذف هذا الموعد؟",
+
+          deleteError:
+            "تعذر حذف الموعد.",
+
+          bookedSessions:
+            "الجلسات المحجوزة",
+
+          noBookings:
+            "لا توجد حجوزات مدفوعة بعد.",
+
+          price:
+            "السعر",
+
+          patientEmail:
+            "بريد المريض",
+
+          unknown:
+            "غير معروف",
+
+          status:
+            "الحالة",
+
+          created:
+            "تم الإنشاء",
+
+          startSession:
+            "بدء الجلسة",
+
+          meetingNotReady:
+            "رابط الجلسة غير جاهز",
+        }
+      : language === "fr"
+        ? {
+            profileTitle:
+              "Profil professionnel du spécialiste",
+
+            profileDescription:
+              "Complétez vos informations professionnelles dans la langue de votre choix. La plateforme générera automatiquement les versions française, anglaise et arabe lors de l’enregistrement.",
+
+            basic:
+              "Photo et informations principales",
+
+            choosePhoto:
+              "Choisir une photo",
+
+            photoHelp:
+              "JPG, PNG ou WebP, maximum 5 Mo.",
+
+            photoAlt:
+              "Photo du spécialiste",
+
+            fullName:
+              "Nom complet",
+
+            professionalTitle:
+              "Titre professionnel",
+
+            professionalTitlePlaceholder:
+              "Exemple : Psychothérapeute clinicien",
+
+            specialty:
+              "Spécialité",
+
+            specialtyPlaceholder:
+              "Exemple : Psychothérapie intégrative",
+
+            experience:
+              "Années d’expérience",
+
+            biographySection:
+              "Biographie et expérience professionnelle",
+
+            biography:
+              "Biographie professionnelle",
+
+            biographyPlaceholder:
+              "Décrivez votre expérience, les personnes que vous accompagnez et vos principaux domaines d’intervention.",
+
+            education:
+              "Formation et qualifications",
+
+            educationPlaceholder:
+              "Exemple : Master en psychologie clinique...",
+
+            certifications:
+              "Formations et certifications",
+
+            certificationsPlaceholder:
+              "Saisissez chaque formation ou certification sur une ligne séparée.",
+
+            approach:
+              "Approche thérapeutique",
+
+            approachPlaceholder:
+              "Expliquez votre approche et votre manière d’accompagner vos clients.",
+
+            servicesLanguages:
+              "Services et langues",
+
+            services:
+              "Services",
+
+            servicesPlaceholder:
+              "Saisissez un service par ligne.",
+
+            languages:
+              "Langues",
+
+            languagesPlaceholder:
+              "Saisissez une langue par ligne.",
+
+            sessionPrice:
+              "Prix de la séance",
+
+            adminPrice:
+              "Le prix est géré par l’administration.",
+
+            save:
+              "Enregistrer le profil professionnel",
+
+            saving:
+              "Enregistrement et traduction...",
+
+            saved:
+              "Le profil a été enregistré et traduit avec succès dans les trois langues.",
+
+            saveError:
+              "Impossible d’enregistrer le profil.",
+
+            translationError:
+              "La traduction automatique n’a pas pu être effectuée. Le profil n’a pas été enregistré afin d’éviter des traductions incomplètes.",
+
+            fullNameRequired:
+              "Veuillez saisir votre nom complet.",
+
+            professionalTitleRequired:
+              "Veuillez saisir votre titre professionnel.",
+
+            specialtyRequired:
+              "Veuillez saisir votre spécialité.",
+
+            experienceInvalid:
+              "Veuillez saisir un nombre entier valide d’années d’expérience.",
+
+            loginRequired:
+              "Vous devez être connecté.",
+
+            availability:
+              "Disponibilités",
+
+            addAvailability:
+              "Ajouter une disponibilité",
+
+            chooseDateTime:
+              "Veuillez choisir une date et une heure.",
+
+            addAvailabilityError:
+              "Impossible d’ajouter la disponibilité.",
+
+            noAvailability:
+              "Aucune disponibilité pour le moment.",
+
+            delete:
+              "Supprimer",
+
+            deleteConfirm:
+              "Supprimer cette disponibilité ?",
+
+            deleteError:
+              "Impossible de supprimer la disponibilité.",
+
+            bookedSessions:
+              "Séances réservées",
+
+            noBookings:
+              "Aucune réservation payée pour le moment.",
+
+            price:
+              "Prix",
+
+            patientEmail:
+              "E-mail du patient",
+
+            unknown:
+              "Inconnu",
+
+            status:
+              "Statut",
+
+            created:
+              "Créé le",
+
+            startSession:
+              "Démarrer la séance",
+
+            meetingNotReady:
+              "Lien de séance non disponible",
+          }
+        : {
+            profileTitle:
+              "Professional Specialist Profile",
+
+            profileDescription:
+              "Complete your professional information in your preferred language. The platform will automatically generate English, French and Arabic versions when you save.",
+
+            basic:
+              "Photo and Basic Information",
+
+            choosePhoto:
+              "Choose Profile Photo",
+
+            photoHelp:
+              "JPG, PNG or WebP, maximum 5 MB.",
+
+            photoAlt:
+              "Specialist photo",
+
+            fullName:
+              "Full name",
+
+            professionalTitle:
+              "Professional title",
+
+            professionalTitlePlaceholder:
+              "Example: Clinical Psychotherapist",
+
+            specialty:
+              "Specialty",
+
+            specialtyPlaceholder:
+              "Example: Integrative psychotherapy",
+
+            experience:
+              "Years of experience",
+
+            biographySection:
+              "Biography and Professional Experience",
+
+            biography:
+              "Professional biography",
+
+            biographyPlaceholder:
+              "Describe your experience, the people you work with and your main areas of support.",
+
+            education:
+              "Education and qualifications",
+
+            educationPlaceholder:
+              "Example: Master's degree in Clinical Psychology...",
+
+            certifications:
+              "Training and certifications",
+
+            certificationsPlaceholder:
+              "Enter each training or certification on a separate line.",
+
+            approach:
+              "Therapeutic approach",
+
+            approachPlaceholder:
+              "Explain your therapeutic style and how you work with clients.",
+
+            servicesLanguages:
+              "Services and Languages",
+
+            services:
+              "Services",
+
+            servicesPlaceholder:
+              "Enter one service per line.",
+
+            languages:
+              "Languages",
+
+            languagesPlaceholder:
+              "Enter one language per line.",
+
+            sessionPrice:
+              "Session Price",
+
+            adminPrice:
+              "Price managed by the administrator.",
+
+            save:
+              "Save Professional Profile",
+
+            saving:
+              "Saving and translating...",
+
+            saved:
+              "Profile saved and translated successfully into all three languages.",
+
+            saveError:
+              "Unable to save the profile.",
+
+            translationError:
+              "Automatic translation could not be completed. The profile was not saved to avoid incomplete translations.",
+
+            fullNameRequired:
+            "Please enter your full name.",
+
+            professionalTitleRequired:
+              "Please enter your professional title.",
+
+            specialtyRequired:
+              "Please enter your specialty.",
+
+            experienceInvalid:
+              "Please enter a valid whole number of experience years.",
+
+            loginRequired:
+              "You must be logged in.",
+
+            availability:
+              "Availability",
+
+            addAvailability:
+              "Add Availability",
+
+            chooseDateTime:
+              "Please choose a date and time.",
+
+            addAvailabilityError:
+              "Unable to add availability.",
+
+            noAvailability:
+              "No availability yet.",
+
+            delete:
+              "Delete",
+
+            deleteConfirm:
+              "Delete this availability?",
+
+            deleteError:
+              "Unable to delete the availability.",
+
+            bookedSessions:
+              "Booked Sessions",
+
+            noBookings:
+              "No paid bookings yet.",
+
+            price:
+              "Price",
+
+            patientEmail:
+              "Patient Email",
+
+            unknown:
+              "Unknown",
+
+            status:
+              "Status",
+
+            created:
+              "Created",
+
+            startSession:
+              "Start Session",
+
+            meetingNotReady:
+              "Session link not ready",
+          };
+
+  /*
+   * Chargement initial des disponibilités
+   * et des réservations.
+   */
   useEffect(() => {
-    const savedLanguage = localStorage.getItem(
-      "language"
-    ) as Language | null;
-
-    if (savedLanguage) {
-      setLanguage(savedLanguage);
-    }
-
-    void getProfile();
     void getSlots();
     void getBookings();
   }, []);
 
+  /*
+   * Recharge le contenu du profil
+   * chaque fois que la langue de
+   * l'interface change.
+   */
+  useEffect(() => {
+    void getProfile();
+  }, [language]);
+
   useEffect(() => {
     return () => {
-      if (photoPreview.startsWith("blob:")) {
-        URL.revokeObjectURL(photoPreview);
+      if (
+        photoPreview.startsWith(
+          "blob:",
+        )
+      ) {
+        URL.revokeObjectURL(
+          photoPreview,
+        );
       }
     };
   }, [photoPreview]);
 
-  const getCurrentUser = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const getCurrentUser =
+    async () => {
+      const {
+        data: { user },
+      } =
+        await supabase.auth.getUser();
 
-    return user;
-  };
+      return user;
+    };
 
-  const formatDate = (date: string | null) => {
+  const getInitial = () =>
+    fullName
+      .trim()
+      .charAt(0)
+      .toUpperCase() || "A";
+
+  const formatDate = (
+    date: string | null,
+  ) => {
     if (!date) {
-      return isArabic ? "لا يوجد تاريخ" : "No date";
+      return language === "ar"
+        ? "لا يوجد تاريخ"
+        : language === "fr"
+          ? "Aucune date"
+          : "No date";
     }
 
-    return new Date(`${date}T12:00:00`).toLocaleDateString(
-      isArabic ? "ar" : "en-US",
+    return new Date(
+      `${date}T12:00:00`,
+    ).toLocaleDateString(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-US",
       {
         weekday: "long",
         year: "numeric",
         month: "short",
         day: "numeric",
-      }
+      },
     );
   };
 
-  const getDayFromDate = (date: string) => {
-    return new Date(`${date}T12:00:00`).toLocaleDateString(
+  const getDayFromDate = (
+    date: string,
+  ) =>
+    new Date(
+      `${date}T12:00:00`,
+    ).toLocaleDateString(
       "en-US",
       {
         weekday: "long",
-      }
+      },
     );
-  };
 
-  const getInitial = () => {
-    return fullName.trim().charAt(0).toUpperCase() || "A";
-  };
+  const getProfile =
+    async () => {
+      const user =
+        await getCurrentUser();
 
-  const getProfile = async () => {
-    const user = await getCurrentUser();
+      if (!user) {
+        return;
+      }
 
-    if (!user) {
-      return;
-    }
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("therapists")
+        .select(
+          `
+            full_name,
+            full_name_ar,
 
-    const { data, error } = await supabase
-      .from("therapists")
-      .select(
-        `
-          full_name,
-          specialty,
-          professional_title,
-          experience_years,
-          bio,
-          education,
-          certifications,
-          therapeutic_approach,
-          services,
-          languages,
-          price,
-          photo_url
-        `
-      )
-      .eq("id", user.id)
-      .single<TherapistProfile>();
+            specialty,
+            specialty_fr,
+            specialty_ar,
 
-    if (error) {
-      console.error("Profile error:", error);
-      return;
-    }
+            professional_title,
+            professional_title_fr,
+            professional_title_ar,
 
-    if (!data) {
-      return;
-    }
+            experience_years,
 
-    setFullName(data.full_name || "");
-    setSpecialty(data.specialty || "");
-    setProfessionalTitle(data.professional_title || "");
-    setExperienceYears(data.experience_years?.toString() || "");
-    setBio(data.bio || "");
-    setEducation(data.education || "");
-    setCertifications(data.certifications || "");
-    setTherapeuticApproach(data.therapeutic_approach || "");
-    setServices(data.services || "");
-    setLanguages(data.languages || "");
-    setPrice(data.price?.toString() || "0");
-    setPhotoUrl(data.photo_url || "");
-  };
-    const handlePhotoChange = (
-    event: ChangeEvent<HTMLInputElement>
+            bio,
+            bio_fr,
+            bio_ar,
+
+            education,
+            education_fr,
+            education_ar,
+
+            certifications,
+            certifications_fr,
+            certifications_ar,
+
+            therapeutic_approach,
+            therapeutic_approach_fr,
+            therapeutic_approach_ar,
+
+            services,
+            services_fr,
+            services_ar,
+
+            languages,
+            languages_fr,
+            languages_ar,
+
+            price,
+            photo_url
+          `,
+        )
+        .eq("id", user.id)
+        .single<TherapistProfile>();
+
+      if (error) {
+        console.error(
+          "Profile error:",
+          error,
+        );
+
+        return;
+      }
+
+      if (!data) {
+        return;
+      }
+
+      /*
+       * Le formulaire est automatiquement
+       * rempli dans la langue actuellement
+       * sélectionnée.
+       */
+      if (language === "ar") {
+        setFullName(
+          data.full_name_ar ||
+            data.full_name ||
+            "",
+        );
+
+        setProfessionalTitle(
+          data.professional_title_ar ||
+            data.professional_title ||
+            "",
+        );
+
+        setSpecialty(
+          data.specialty_ar ||
+            data.specialty ||
+            "",
+        );
+
+        setBio(
+          data.bio_ar ||
+            data.bio ||
+            "",
+        );
+
+        setEducation(
+          data.education_ar ||
+            data.education ||
+            "",
+        );
+
+        setCertifications(
+          data.certifications_ar ||
+            data.certifications ||
+            "",
+        );
+
+        setTherapeuticApproach(
+          data.therapeutic_approach_ar ||
+            data.therapeutic_approach ||
+            "",
+        );
+
+        setServices(
+          data.services_ar ||
+            data.services ||
+            "",
+        );
+
+        setLanguages(
+          data.languages_ar ||
+            data.languages ||
+            "",
+        );
+      } else if (
+        language === "fr"
+      ) {
+        setFullName(
+          data.full_name || "",
+        );
+
+        setProfessionalTitle(
+          data.professional_title_fr ||
+            data.professional_title ||
+            "",
+        );
+
+        setSpecialty(
+          data.specialty_fr ||
+            data.specialty ||
+            "",
+        );
+
+        setBio(
+          data.bio_fr ||
+            data.bio ||
+            "",
+        );
+
+        setEducation(
+          data.education_fr ||
+            data.education ||
+            "",
+        );
+
+        setCertifications(
+          data.certifications_fr ||
+            data.certifications ||
+            "",
+        );
+
+        setTherapeuticApproach(
+          data.therapeutic_approach_fr ||
+            data.therapeutic_approach ||
+            "",
+        );
+
+        setServices(
+          data.services_fr ||
+            data.services ||
+            "",
+        );
+
+        setLanguages(
+          data.languages_fr ||
+            data.languages ||
+            "",
+        );
+      } else {
+        setFullName(
+          data.full_name || "",
+        );
+
+        setProfessionalTitle(
+          data.professional_title ||
+            "",
+        );
+
+        setSpecialty(
+          data.specialty || "",
+        );
+
+        setBio(
+          data.bio || "",
+        );
+
+        setEducation(
+          data.education || "",
+        );
+
+        setCertifications(
+          data.certifications ||
+            "",
+        );
+
+        setTherapeuticApproach(
+          data.therapeutic_approach ||
+            "",
+        );
+
+        setServices(
+          data.services || "",
+        );
+
+        setLanguages(
+          data.languages || "",
+        );
+      }
+
+      setExperienceYears(
+        data.experience_years?.toString() ||
+          "",
+      );
+
+      setPrice(
+        data.price?.toString() ||
+          "0",
+      );
+
+      setPhotoUrl(
+        data.photo_url || "",
+      );
+    };
+      const handlePhotoChange = (
+    event: ChangeEvent<HTMLInputElement>,
   ) => {
-    const selectedFile = event.target.files?.[0];
+    const selectedFile =
+      event.target.files?.[0];
 
     if (!selectedFile) {
       return;
     }
 
-    if (!selectedFile.type.startsWith("image/")) {
-      alert(
-        isArabic
-          ? "يرجى اختيار ملف صورة."
-          : "Please select an image file."
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    if (selectedFile.size > MAX_PHOTO_SIZE) {
-      alert(
-        isArabic
-          ? "يجب ألا يتجاوز حجم الصورة 5 ميغابايت."
-          : "The photo must be smaller than 5 MB."
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    if (photoPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(photoPreview);
-    }
-
-    setPhotoFile(selectedFile);
-    setPhotoPreview(URL.createObjectURL(selectedFile));
-  };
-
-  const uploadProfilePhoto = async (userId: string) => {
-    if (!photoFile) {
-      return photoUrl || null;
-    }
-
-    setUploadingPhoto(true);
-
-    try {
-      const extension =
-        photoFile.name.split(".").pop()?.toLowerCase() || "jpg";
-
-      const filePath = `${userId}/profile-${Date.now()}.${extension}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("therapist-photos")
-        .upload(filePath, photoFile, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: photoFile.type,
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage
-        .from("therapist-photos")
-        .getPublicUrl(filePath);
-
-      return publicUrl;
-    } finally {
-      setUploadingPhoto(false);
-    }
-  };
-
-  const saveProfile = async () => {
-    if (!fullName.trim()) {
-      alert(
-        isArabic
-          ? "يرجى إدخال الاسم الكامل."
-          : "Please enter your full name."
-      );
-      return;
-    }
-
-    if (!professionalTitle.trim()) {
-      alert(
-        isArabic
-          ? "يرجى إدخال المسمى المهني."
-          : "Please enter your professional title."
-      );
-      return;
-    }
-
-    if (!specialty.trim()) {
-      alert(
-        isArabic
-          ? "يرجى إدخال التخصص."
-          : "Please enter your specialty."
-      );
-      return;
-    }
-
-    const parsedExperience = experienceYears.trim()
-      ? Number(experienceYears)
-      : null;
-
     if (
-      parsedExperience !== null &&
-      (!Number.isInteger(parsedExperience) ||
-        parsedExperience < 0 ||
-        parsedExperience > 80)
+      !selectedFile.type.startsWith(
+        "image/",
+      )
     ) {
       alert(
-        isArabic
-          ? "يرجى إدخال عدد صحيح صالح لسنوات الخبرة."
-          : "Please enter a valid whole number of experience years."
+        language === "ar"
+          ? "يرجى اختيار ملف صورة."
+          : language === "fr"
+            ? "Veuillez sélectionner une image."
+            : "Please select an image file.",
       );
+
+      event.target.value = "";
       return;
     }
 
-    setLoading(true);
+    if (
+      selectedFile.size >
+      MAX_PHOTO_SIZE
+    ) {
+      alert(
+        language === "ar"
+          ? "يجب ألا يتجاوز حجم الصورة 5 ميغابايت."
+          : language === "fr"
+            ? "La photo doit faire moins de 5 Mo."
+            : "The photo must be smaller than 5 MB.",
+      );
 
-    try {
-      const user = await getCurrentUser();
+      event.target.value = "";
+      return;
+    }
 
-      if (!user) {
+    if (
+      photoPreview.startsWith(
+        "blob:",
+      )
+    ) {
+      URL.revokeObjectURL(
+        photoPreview,
+      );
+    }
+
+    setPhotoFile(
+      selectedFile,
+    );
+
+    setPhotoPreview(
+      URL.createObjectURL(
+        selectedFile,
+      ),
+    );
+  };
+
+  const uploadProfilePhoto =
+    async (
+      userId: string,
+    ) => {
+      if (!photoFile) {
+        return (
+          photoUrl || null
+        );
+      }
+
+      setUploadingPhoto(true);
+
+      try {
+        const extension =
+          photoFile.name
+            .split(".")
+            .pop()
+            ?.toLowerCase() ||
+          "jpg";
+
+        const filePath =
+          `${userId}/profile-${Date.now()}.${extension}`;
+
+        const {
+          error: uploadError,
+        } =
+          await supabase.storage
+            .from(
+              "therapist-photos",
+            )
+            .upload(
+              filePath,
+              photoFile,
+              {
+                cacheControl:
+                  "3600",
+
+                upsert:
+                  false,
+
+                contentType:
+                  photoFile.type,
+              },
+            );
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const {
+          data: {
+            publicUrl,
+          },
+        } =
+          supabase.storage
+            .from(
+              "therapist-photos",
+            )
+            .getPublicUrl(
+              filePath,
+            );
+
+        return publicUrl;
+      } finally {
+        setUploadingPhoto(
+          false,
+        );
+      }
+    };
+
+  const requestTranslation =
+    async (
+      sourceLanguage: Language,
+      targetLanguage: Language,
+      fields: TranslationFields,
+    ) => {
+      if (
+        sourceLanguage ===
+        targetLanguage
+      ) {
+        return fields;
+      }
+
+      const response =
+        await fetch(
+          "/api/translate-content",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                sourceLanguage,
+                targetLanguage,
+                fields,
+              }),
+          },
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.translations
+      ) {
+        throw new Error(
+          result.error ||
+            "Translation failed.",
+        );
+      }
+
+      return result.translations as TranslationFields;
+    };
+
+  const saveProfile =
+    async () => {
+      if (
+        !fullName.trim()
+      ) {
         alert(
-          isArabic
-            ? "يجب تسجيل الدخول."
-            : "You must be logged in."
+          text.fullNameRequired,
         );
         return;
       }
 
-      const uploadedPhotoUrl = await uploadProfilePhoto(user.id);
+      if (
+        !professionalTitle.trim()
+      ) {
+        alert(
+          text.professionalTitleRequired,
+        );
+        return;
+      }
 
-      const { error } = await supabase
-        .from("therapists")
-        .update({
-          full_name: fullName.trim(),
-          professional_title: professionalTitle.trim(),
-          specialty: specialty.trim(),
-          experience_years: parsedExperience,
-          bio: bio.trim(),
-          education: education.trim(),
-          certifications: certifications.trim(),
-          therapeutic_approach: therapeuticApproach.trim(),
-          services: services.trim(),
-          languages: languages.trim(),
-          photo_url: uploadedPhotoUrl,
-        })
-        .eq("id", user.id);
+      if (
+        !specialty.trim()
+      ) {
+        alert(
+          text.specialtyRequired,
+        );
+        return;
+      }
+
+      const parsedExperience =
+        experienceYears.trim()
+          ? Number(
+              experienceYears,
+            )
+          : null;
+     if (
+        parsedExperience !==
+          null &&
+        (!Number.isInteger(
+          parsedExperience,
+        ) ||
+          parsedExperience <
+            0 ||
+          parsedExperience >
+            80)
+      ) {
+        alert(
+          text.experienceInvalid,
+        );
+        return;
+      }
+
+      setLoading(true);
+      setTranslating(true);
+
+      try {
+        const user =
+          await getCurrentUser();
+
+        if (!user) {
+          alert(
+            text.loginRequired,
+          );
+
+          return;
+        }
+
+        const uploadedPhotoUrl =
+          await uploadProfilePhoto(
+            user.id,
+          );
+
+        /*
+         * Tous les champs saisis sont considérés
+         * comme étant dans la langue active.
+         */
+        const sourceFields: TranslationFields =
+          {
+            fullName:
+              fullName.trim(),
+
+            professionalTitle:
+              professionalTitle.trim(),
+
+            specialty:
+              specialty.trim(),
+
+            bio:
+              bio.trim(),
+
+            education:
+              education.trim(),
+
+            certifications:
+              certifications.trim(),
+
+            therapeuticApproach:
+              therapeuticApproach.trim(),
+
+            services:
+              services.trim(),
+
+            languages:
+              languages.trim(),
+          };
+
+        const normalizeTranslation = (
+          translated: TranslationFields,
+        ): TranslationFields => ({
+          fullName:
+            translated.fullName ??
+            "",
+
+          professionalTitle:
+            translated.professionalTitle ??
+            "",
+
+          specialty:
+            translated.specialty ??
+            "",
+
+          bio:
+            translated.bio ??
+            "",
+
+          education:
+            translated.education ??
+            "",
+
+          certifications:
+            translated.certifications ??
+            "",
+
+          therapeuticApproach:
+            translated.therapeuticApproach ??
+            "",
+
+          services:
+            translated.services ??
+            "",
+
+          languages:
+            translated.languages ??
+            "",
+        });
+
+        let englishFields: TranslationFields;
+        let frenchFields: TranslationFields;
+        let arabicFields: TranslationFields;
+
+        if (language === "en") {
+          englishFields =
+            normalizeTranslation(
+              sourceFields,
+            );
+
+          const [
+            frenchTranslation,
+            arabicTranslation,
+          ] = await Promise.all([
+            requestTranslation(
+              "en",
+              "fr",
+              sourceFields,
+            ),
+
+            requestTranslation(
+              "en",
+              "ar",
+              sourceFields,
+            ),
+          ]);
+
+          frenchFields =
+            normalizeTranslation(
+              frenchTranslation,
+            );
+
+          arabicFields =
+            normalizeTranslation(
+              arabicTranslation,
+            );
+        } else if (
+          language === "fr"
+        ) {
+          frenchFields =
+            normalizeTranslation(
+              sourceFields,
+            );
+
+          const [
+            englishTranslation,
+            arabicTranslation,
+          ] = await Promise.all([
+            requestTranslation(
+              "fr",
+              "en",
+              sourceFields,
+            ),
+
+            requestTranslation(
+              "fr",
+              "ar",
+              sourceFields,
+            ),
+          ]);
+
+          englishFields =
+            normalizeTranslation(
+              englishTranslation,
+            );
+
+          arabicFields =
+            normalizeTranslation(
+              arabicTranslation,
+            );
+        } else {
+          arabicFields =
+            normalizeTranslation(
+              sourceFields,
+            );
+
+          const [
+            englishTranslation,
+            frenchTranslation,
+          ] = await Promise.all([
+            requestTranslation(
+              "ar",
+              "en",
+              sourceFields,
+            ),
+
+            requestTranslation(
+              "ar",
+              "fr",
+              sourceFields,
+            ),
+          ]);
+
+          englishFields =
+            normalizeTranslation(
+              englishTranslation,
+            );
+
+          frenchFields =
+            normalizeTranslation(
+              frenchTranslation,
+            );
+        }
+
+        /*
+         * Nom :
+         *
+         * - full_name = version latine principale
+         * - full_name_ar = translittération arabe
+         *
+         * Pas besoin de full_name_fr.
+         */
+        const latinFullName =
+          language === "ar"
+            ? englishFields.fullName ||
+              fullName.trim()
+            : fullName.trim();
+
+        const arabicFullName =
+          language === "ar"
+            ? fullName.trim()
+            : arabicFields.fullName ||
+              "";
+
+        const {
+          error,
+        } = await supabase
+          .from("therapists")
+          .update({
+            full_name:
+              latinFullName,
+
+            full_name_ar:
+              arabicFullName,
+
+            professional_title:
+              englishFields.professionalTitle,
+
+            professional_title_fr:
+              frenchFields.professionalTitle,
+
+            professional_title_ar:
+              arabicFields.professionalTitle,
+
+            specialty:
+              englishFields.specialty,
+
+            specialty_fr:
+              frenchFields.specialty,
+
+            specialty_ar:
+              arabicFields.specialty,
+
+            experience_years:
+              parsedExperience,
+
+            bio:
+              englishFields.bio,
+
+            bio_fr:
+              frenchFields.bio,
+
+            bio_ar:
+              arabicFields.bio,
+
+            education:
+              englishFields.education,
+
+            education_fr:
+              frenchFields.education,
+
+            education_ar:
+              arabicFields.education,
+
+            certifications:
+              englishFields.certifications,
+
+            certifications_fr:
+              frenchFields.certifications,
+
+            certifications_ar:
+              arabicFields.certifications,
+
+            therapeutic_approach:
+              englishFields.therapeuticApproach,
+
+            therapeutic_approach_fr:
+              frenchFields.therapeuticApproach,
+
+            therapeutic_approach_ar:
+              arabicFields.therapeuticApproach,
+
+            services:
+              englishFields.services,
+
+            services_fr:
+              frenchFields.services,
+
+            services_ar:
+              arabicFields.services,
+
+            languages:
+              englishFields.languages,
+
+            languages_fr:
+              frenchFields.languages,
+
+            languages_ar:
+              arabicFields.languages,
+
+            photo_url:
+              uploadedPhotoUrl,
+          })
+          .eq(
+            "id",
+            user.id,
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        setPhotoUrl(
+          uploadedPhotoUrl ||
+            "",
+        );
+
+        setPhotoFile(null);
+
+        if (
+          photoPreview.startsWith(
+            "blob:",
+          )
+        ) {
+          URL.revokeObjectURL(
+            photoPreview,
+          );
+        }
+
+        setPhotoPreview("");
+
+        alert(
+          text.saved,
+        );
+
+        await getProfile();
+      } catch (error) {
+        console.error(
+          "Profile save/translation error:",
+          error,
+        );
+
+        alert(
+          error instanceof Error &&
+            error.message
+              .toLowerCase()
+              .includes(
+                "translation",
+              )
+            ? text.translationError
+            : text.saveError,
+        );
+      } finally {
+        setLoading(false);
+        setUploadingPhoto(
+          false,
+        );
+        setTranslating(false);
+      }
+    };
+
+  const getSlots =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .select("*")
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .order(
+          "slot_date",
+          {
+            ascending: true,
+          },
+        )
+        .order("time", {
+          ascending: true,
+        });
 
       if (error) {
-        throw error;
+        console.error(
+          "Slots error:",
+          error,
+        );
+
+        return;
       }
 
-      setPhotoUrl(uploadedPhotoUrl || "");
-      setPhotoFile(null);
+      setSlots(
+        (data as AvailabilitySlot[]) ||
+          [],
+      );
+    };
 
-      if (photoPreview.startsWith("blob:")) {
-        URL.revokeObjectURL(photoPreview);
+  const addSlot =
+    async () => {
+      if (
+        !slotDate ||
+        !time
+      ) {
+        alert(
+          text.chooseDateTime,
+        );
+        return;
       }
 
-      setPhotoPreview("");
+      const user =
+        await getCurrentUser();
 
-      alert(
-        isArabic
-          ? "تم حفظ الملف الشخصي بنجاح."
-          : "Profile saved successfully."
+      if (!user) {
+        return;
+      }
+
+      const {
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .insert({
+          therapist_id:
+            user.id,
+
+          slot_date:
+            slotDate,
+
+          day:
+            getDayFromDate(
+              slotDate,
+            ),
+
+          time,
+
+          is_booked: false,
+        });
+
+      if (error) {
+        console.error(
+          "Availability creation error:",
+          error,
+        );
+
+        alert(
+          text.addAvailabilityError,
+        );
+
+        return;
+      }
+
+      setSlotDate("");
+      setTime("");
+
+      await getSlots();
+    };
+
+  const deleteSlot =
+    async (
+      id: string,
+    ) => {
+      const confirmed =
+        window.confirm(
+          text.deleteConfirm,
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const {
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error(
+          "Slot deletion error:",
+          error,
+        );
+
+        alert(
+          text.deleteError,
+        );
+
+        return;
+      }
+
+      await getSlots();
+    };
+
+  const getBookings =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .eq(
+          "status",
+          "paid",
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          },
+        );
+
+      if (error) {
+        console.error(
+          "Bookings error:",
+          error,
+        );
+
+        return;
+      }
+
+      setBookings(
+        (data as Booking[]) ||
+          [],
       );
+    };
 
-      await getProfile();
-    } catch (error) {
-      console.error("Profile save error:", error);
+  const displayedPhoto =
+    photoPreview ||
+    photoUrl;
 
-      alert(
-        isArabic
-          ? "تعذر حفظ الملف الشخصي."
-          : "Unable to save the profile."
-      );
-    } finally {
-      setLoading(false);
-      setUploadingPhoto(false);
-    }
-  };
-
-  const getSlots = async () => {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("availability_slots")
-      .select("*")
-      .eq("therapist_id", user.id)
-      .order("slot_date", { ascending: true })
-      .order("time", { ascending: true });
-
-    if (error) {
-      console.error("Slots error:", error);
-      return;
-    }
-
-    setSlots((data as AvailabilitySlot[]) || []);
-  };
-
-  const addSlot = async () => {
-    if (!slotDate || !time) {
-      alert(
-        isArabic
-          ? "يرجى اختيار التاريخ والوقت."
-          : "Please choose a date and time."
-      );
-      return;
-    }
-
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("availability_slots")
-      .insert({
-        therapist_id: user.id,
-        slot_date: slotDate,
-        day: getDayFromDate(slotDate),
-        time,
-        is_booked: false,
-      });
-
-    if (error) {
-      console.error("Availability creation error:", error);
-
-      alert(
-        isArabic
-          ? "تعذرت إضافة الموعد."
-          : "Unable to add availability."
-      );
-      return;
-    }
-
-    setSlotDate("");
-    setTime("");
-
-    await getSlots();
-  };
-    const deleteSlot = async (id: string) => {
-    const confirmed = window.confirm(
-      isArabic
-        ? "هل تريد حذف هذا الموعد؟"
-        : "Delete this availability?"
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("availability_slots")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      console.error("Slot deletion error:", error);
-
-      alert(
-        isArabic
-          ? "تعذر حذف الموعد."
-          : "Unable to delete the availability."
-      );
-      return;
-    }
-
-    await getSlots();
-  };
-
-  const getBookings = async () => {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("therapist_id", user.id)
-      .eq("status", "paid")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Bookings error:", error);
-      return;
-    }
-
-    setBookings((data as Booking[]) || []);
-  };
-
-  const displayedPhoto = photoPreview || photoUrl;
-  const isSaving = loading || uploadingPhoto;
-
-  return (
-    <ProtectedRoute allowedRoles={["therapist"]}>
+  const isSaving =
+    loading ||
+    uploadingPhoto ||
+    translating;
+      return (
+    <ProtectedRoute
+      allowedRoles={[
+        "therapist",
+      ]}
+    >
       <>
         <Navbar />
 
         <main
-          dir={isArabic ? "rtl" : "ltr"}
+          dir={
+            isArabic
+              ? "rtl"
+              : "ltr"
+          }
           className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
         >
           <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
@@ -504,214 +1829,288 @@ export default function TherapistDashboard() {
               </p>
 
               <h1 className="aan-heading mt-4 text-4xl sm:text-5xl">
-                {isArabic
-                  ? "الملف المهني للمعالج"
-                  : "Professional Therapist Profile"}
+                {
+                  text.profileTitle
+                }
               </h1>
 
               <p className="mt-5 max-w-3xl leading-8 text-aan-secondary">
-                {isArabic
-                  ? "أكمل معلوماتك المهنية. ستظهر هذه المعلومات للزوار في صفحة المعالجين."
-                  : "Complete your professional information. These details will appear on the public therapists page."}
+                {
+                  text.profileDescription
+                }
               </p>
+              <div className="mt-5 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-secondary">
+                {language ===
+                "ar"
+                  ? "✓ ستتم الترجمة تلقائياً إلى الإنجليزية والفرنسية عند الحفظ."
+                  : language ===
+                      "fr"
+                    ? "✓ Les versions anglaise et arabe seront générées automatiquement lors de l’enregistrement."
+                    : "✓ French and Arabic versions will be generated automatically when you save."}
+              </div>
             </section>
 
             <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl">
-                {isArabic ? "الصورة والمعلومات الأساسية" : "Photo and Basic Information"}
+                {text.basic}
               </h2>
 
               <div className="mt-8 flex flex-col items-center">
                 <div className="relative h-40 w-40 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee] shadow-[var(--aan-shadow-md)]">
                   {displayedPhoto ? (
                     <Image
-                      src={displayedPhoto}
+                      src={
+                        displayedPhoto
+                      }
                       alt={
                         fullName ||
-                        (isArabic
-                          ? "صورة المعالج"
-                          : "Therapist photo")
+                        text.photoAlt
                       }
                       fill
                       sizes="160px"
                       className="object-cover"
-                      unoptimized={displayedPhoto.startsWith("blob:")}
+                      unoptimized={displayedPhoto.startsWith(
+                        "blob:",
+                      )}
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#f8f4ee_0%,#edf3f9_100%)]">
                       <span className="text-5xl font-bold text-aan-button">
-                        {getInitial()}
+                        {
+                          getInitial()
+                        }
                       </span>
                     </div>
                   )}
                 </div>
 
                 <label className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-xl border-2 border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-aan-gold hover:text-white">
-                  {isArabic
-                    ? "اختيار صورة"
-                    : "Choose Profile Photo"}
+                  {
+                    text.choosePhoto
+                  }
 
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
-                    onChange={handlePhotoChange}
+                    onChange={
+                      handlePhotoChange
+                    }
                     className="hidden"
                   />
                 </label>
 
                 <p className="mt-3 text-center text-sm text-aan-secondary">
-                  {isArabic
-                    ? "JPG أو PNG أو WebP، بحد أقصى 5 ميغابايت."
-                    : "JPG, PNG or WebP, maximum 5 MB."}
+                  {
+                    text.photoHelp
+                  }
                 </p>
               </div>
 
               <div className="mt-8 space-y-5">
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic ? "الاسم الكامل" : "Full name"}
+                  {
+                    text.fullName
+                  }
 
                   <input
                     type="text"
-                    value={fullName}
-                    onChange={(event) =>
-                      setFullName(event.target.value)
+                    value={
+                      fullName
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setFullName(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     className="aan-field p-4 font-normal"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic
-                    ? "المسمى المهني"
-                    : "Professional title"}
+                  {
+                    text.professionalTitle
+                  }
 
                   <input
                     type="text"
-                    value={professionalTitle}
-                    onChange={(event) =>
-                      setProfessionalTitle(event.target.value)
+                    value={
+                      professionalTitle
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setProfessionalTitle(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "مثال: معالج نفسي سريري"
-                        : "Example: Clinical Psychotherapist"
+                      text.professionalTitlePlaceholder
                     }
                     className="aan-field p-4 font-normal"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic ? "التخصص" : "Specialty"}
+                  {
+                    text.specialty
+                  }
 
                   <input
                     type="text"
-                    value={specialty}
-                    onChange={(event) =>
-                      setSpecialty(event.target.value)
+                    value={
+                      specialty
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setSpecialty(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "مثال: العلاج النفسي التكاملي"
-                        : "Example: Integrative psychotherapy"
+                      text.specialtyPlaceholder
                     }
                     className="aan-field p-4 font-normal"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic
-                    ? "سنوات الخبرة"
-                    : "Years of experience"}
+                  {
+                    text.experience
+                  }
 
                   <input
                     type="number"
                     min="0"
                     max="80"
                     step="1"
-                    value={experienceYears}
-                    onChange={(event) =>
-                      setExperienceYears(event.target.value)
+                    value={
+                      experienceYears
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setExperienceYears(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     className="aan-field p-4 font-normal"
                   />
                 </label>
               </div>
             </section>
-                        <section className="aan-card p-7 sm:p-10">
+
+            <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl">
-                {isArabic
-                  ? "التعريف والخبرة المهنية"
-                  : "Biography and Professional Experience"}
+                {
+                  text.biographySection
+                }
               </h2>
 
               <div className="mt-8 space-y-6">
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic ? "نبذة مهنية" : "Professional biography"}
+                  {
+                    text.biography
+                  }
 
                   <textarea
                     value={bio}
-                    onChange={(event) => setBio(event.target.value)}
+                    onChange={(
+                      event,
+                    ) =>
+                      setBio(
+                        event
+                          .target
+                          .value,
+                      )
+                    }
                     placeholder={
-                      isArabic
-                        ? "اكتب نبذة مفصلة عن خبرتك، والفئات التي تعمل معها، والمشكلات التي تعالجها..."
-                        : "Describe your experience, the people you work with and the challenges you treat..."
+                      text.biographyPlaceholder
                     }
                     className="aan-field min-h-64 resize-y p-4 font-normal leading-7"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic
-                    ? "التعليم والمؤهلات"
-                    : "Education and qualifications"}
+                  {
+                    text.education
+                  }
 
                   <textarea
-                    value={education}
-                    onChange={(event) =>
-                      setEducation(event.target.value)
+                    value={
+                      education
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setEducation(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "مثال: ماجستير في علم النفس السريري..."
-                        : "Example: Master's degree in Clinical Psychology..."
+                      text.educationPlaceholder
                     }
                     className="aan-field min-h-32 resize-y p-4 font-normal leading-7"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic
-                    ? "التدريبات والشهادات"
-                    : "Training and certifications"}
+                  {
+                    text.certifications
+                  }
 
                   <textarea
-                    value={certifications}
-                    onChange={(event) =>
-                      setCertifications(event.target.value)
+                    value={
+                      certifications
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setCertifications(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "اكتب كل تدريب أو شهادة في سطر منفصل."
-                        : "Enter each training or certification on a separate line."
+                      text.certificationsPlaceholder
                     }
                     className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic
-                    ? "النهج العلاجي"
-                    : "Therapeutic approach"}
+                  {
+                    text.approach
+                  }
 
                   <textarea
-                    value={therapeuticApproach}
-                    onChange={(event) =>
-                      setTherapeuticApproach(event.target.value)
+                    value={
+                      therapeuticApproach
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setTherapeuticApproach(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "اشرح أسلوبك العلاجي وكيف تعمل مع العملاء."
-                        : "Explain your therapeutic style and how you work with clients."
+                      text.approachPlaceholder
                     }
                     className="aan-field min-h-48 resize-y p-4 font-normal leading-7"
                   />
@@ -721,41 +2120,57 @@ export default function TherapistDashboard() {
 
             <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl">
-                {isArabic
-                  ? "الخدمات واللغات"
-                  : "Services and Languages"}
+                {
+                  text.servicesLanguages
+                }
               </h2>
 
               <div className="mt-8 space-y-6">
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic ? "الخدمات" : "Services"}
+                  {
+                    text.services
+                  }
 
                   <textarea
-                    value={services}
-                    onChange={(event) =>
-                      setServices(event.target.value)
+                    value={
+                      services
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setServices(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "اكتب كل خدمة في سطر منفصل، مثل:\nالعلاج الفردي\nعلاج الأزواج\nالعلاج الأسري"
-                        : "Enter one service per line, for example:\nIndividual Therapy\nCouples Therapy\nFamily Therapy"
+                      text.servicesPlaceholder
                     }
                     className="aan-field min-h-52 resize-y p-4 font-normal leading-8"
                   />
                 </label>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
-                  {isArabic ? "اللغات" : "Languages"}
+                  {
+                    text.languages
+                  }
 
                   <textarea
-                    value={languages}
-                    onChange={(event) =>
-                      setLanguages(event.target.value)
+                    value={
+                      languages
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setLanguages(
+                        event
+                          .target
+                          .value,
+                      )
                     }
                     placeholder={
-                      isArabic
-                        ? "اكتب كل لغة في سطر منفصل."
-                        : "Enter one language per line."
+                      text.languagesPlaceholder
                     }
                     className="aan-field min-h-32 resize-y p-4 font-normal leading-8"
                   />
@@ -763,48 +2178,62 @@ export default function TherapistDashboard() {
 
                 <div className="rounded-2xl border border-aan-border bg-[#f8f4ee] p-5">
                   <p className="text-sm font-bold uppercase tracking-[0.2em] text-aan-gold">
-                    {isArabic ? "سعر الجلسة" : "Session Price"}
+                    {
+                      text.sessionPrice
+                    }
                   </p>
 
                   <p className="mt-2 text-3xl font-bold text-aan-navy">
-                    ${price || 0}
+                    $
+                    {price ||
+                      0}
                   </p>
 
                   <p className="mt-2 text-sm text-aan-secondary">
-                    {isArabic
-                      ? "يتم تحديد السعر بواسطة الإدارة."
-                      : "Price managed by the administrator."}
+                    {
+                      text.adminPrice
+                    }
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={saveProfile}
-                  disabled={isSaving}
+                  onClick={() =>
+                    void saveProfile()
+                  }
+                  disabled={
+                    isSaving
+                  }
                   className="aan-button w-full py-4 text-lg disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSaving
-                    ? isArabic
-                      ? "جارٍ الحفظ..."
-                      : "Saving..."
-                    : isArabic
-                      ? "حفظ الملف المهني"
-                      : "Save Professional Profile"}
+                    ? text.saving
+                    : text.save}
                 </button>
               </div>
             </section>
 
             <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl sm:text-4xl">
-                {isArabic ? "المواعيد المتاحة" : "Availability"}
+                {
+                  text.availability
+                }
               </h2>
 
               <div className="mt-8 space-y-4">
                 <input
                   type="date"
-                  value={slotDate}
-                  onChange={(event) =>
-                    setSlotDate(event.target.value)
+                  value={
+                    slotDate
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setSlotDate(
+                      event
+                        .target
+                        .value,
+                    )
                   }
                   className="aan-field p-4"
                 />
@@ -812,132 +2241,208 @@ export default function TherapistDashboard() {
                 <input
                   type="time"
                   value={time}
-                  onChange={(event) => setTime(event.target.value)}
+                  onChange={(
+                    event,
+                  ) =>
+                    setTime(
+                      event
+                        .target
+                        .value,
+                    )
+                  }
                   className="aan-field p-4"
                 />
 
                 <button
                   type="button"
-                  onClick={addSlot}
+                  onClick={() =>
+                    void addSlot()
+                  }
                   className="aan-button w-full py-4 text-lg"
                 >
-                  {isArabic
-                    ? "إضافة موعد"
-                    : "Add Availability"}
+                  {
+                    text.addAvailability
+                  }
                 </button>
               </div>
 
               <div className="mt-8 space-y-4">
-                {slots.length === 0 ? (
+                {slots.length ===
+                0 ? (
                   <p className="text-aan-secondary">
-                    {isArabic
-                      ? "لا توجد مواعيد متاحة."
-                      : "No availability yet."}
+                    {
+                      text.noAvailability
+                    }
                   </p>
                 ) : (
-                  slots.map((slot) => (
-                    <div
-                      key={slot.id}
-                      className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
-                    >
-                      <div>
-                        <p className="font-bold text-aan-navy">
-                          {formatDate(slot.slot_date)}
-                        </p>
-
-                        <p className="mt-1 text-aan-secondary">
-                          {slot.time}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteSlot(slot.id)}
-                        className="rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50"
+                  slots.map(
+                    (
+                      slot,
+                    ) => (
+                      <div
+                        key={
+                          slot.id
+                        }
+                        className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
                       >
-                        {isArabic ? "حذف" : "Delete"}
-                      </button>
-                    </div>
-                  ))
+                        <div>
+                          <p className="font-bold text-aan-navy">
+                            {formatDate(
+                              slot.slot_date,
+                            )}
+                          </p>
+
+                          <p className="mt-1 text-aan-secondary">
+                            {
+                              slot.time
+                            }
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void deleteSlot(
+                              slot.id,
+                            )
+                          }
+                          className="rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50"
+                        >
+                          {
+                            text.delete
+                          }
+                        </button>
+                      </div>
+                    ),
+                  )
                 )}
               </div>
             </section>
-                        <section className="aan-card p-7 sm:p-10">
+
+            <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl sm:text-4xl">
-                {isArabic ? "الجلسات المحجوزة" : "Booked Sessions"}
+                {
+                  text.bookedSessions
+                }
               </h2>
 
-              {bookings.length === 0 ? (
+              {bookings.length ===
+              0 ? (
                 <p className="mt-8 text-aan-secondary">
-                  {isArabic
-                    ? "لا توجد حجوزات مدفوعة بعد."
-                    : "No paid bookings yet."}
+                  {
+                    text.noBookings
+                  }
                 </p>
               ) : (
                 <div className="mt-8 grid gap-6">
-                  {bookings.map((booking) => (
-                    <article
-                      key={booking.id}
-                      className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
-                    >
-                      <h3 className="text-2xl font-bold text-aan-navy">
-                        {booking.slot_day} at {booking.slot_time}
-                      </h3>
+                  {bookings.map(
+                    (
+                      booking,
+                    ) => {
+                      const sessionUrl =
+                        booking.meeting_url ||
+                        booking.zoom_start_url;
 
-                      <p className="mt-4 text-aan-secondary">
-                        {isArabic ? "السعر" : "Price"}: $
-                        {booking.price}
-                      </p>
-
-                      <p className="mt-2 break-words text-aan-secondary">
-                        {isArabic
-                          ? "بريد المريض"
-                          : "Patient Email"}
-                        :{" "}
-                        <span className="font-semibold text-aan-navy">
-                          {booking.patient_email ||
-                            (isArabic ? "غير معروف" : "Unknown")}
-                        </span>
-                      </p>
-
-                      <p className="mt-2 font-bold text-green-700">
-                        {isArabic ? "الحالة" : "Status"}:{" "}
-                        {booking.status}
-                      </p>
-
-                      <p className="mt-2 text-sm text-aan-secondary">
-                        {isArabic ? "تم الإنشاء" : "Created"}:{" "}
-                        {new Date(
-                          booking.created_at
-                        ).toLocaleString(
-                          isArabic ? "ar" : "en-US"
-                        )}
-                      </p>
-
-                      {booking.zoom_start_url ? (
-                        <a
-                          href={booking.zoom_start_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="aan-button mt-5 flex w-full py-3"
+                      return (
+                        <article
+                          key={
+                            booking.id
+                          }
+                          className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
                         >
-                          {isArabic
-                            ? "بدء جلسة زووم"
-                            : "Start Zoom Session"}
-                        </a>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="mt-5 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
-                        >
-                          {isArabic
-                            ? "زووم غير جاهز"
-                            : "Zoom Not Ready"}
-                        </button>
-                      )}
-                    </article>
-                  ))}
+                          <h3 className="text-2xl font-bold text-aan-navy">
+                            {
+                              booking.slot_day
+                            }{" "}
+                            {language ===
+                            "fr"
+                              ? "à"
+                              : language ===
+                                  "ar"
+                                ? "في"
+                                : "at"}{" "}
+                            {
+                              booking.slot_time
+                            }
+                          </h3>
+
+                          <p className="mt-4 text-aan-secondary">
+                            {
+                              text.price
+                            }
+                            : $
+                            {
+                              booking.price
+                            }
+                          </p>
+
+                          <p className="mt-2 break-words text-aan-secondary">
+                            {
+                              text.patientEmail
+                            }
+                            :{" "}
+                            <span className="font-semibold text-aan-navy">
+                              {booking.patient_email ||
+                                text.unknown}
+                            </span>
+                          </p>
+
+                          <p className="mt-2 font-bold text-green-700">
+                            {
+                              text.status
+                            }
+                            :{" "}
+                            {
+                              booking.status
+                            }
+                          </p>
+
+                          <p className="mt-2 text-sm text-aan-secondary">
+                            {
+                              text.created
+                            }
+                            :{" "}
+                            {new Date(
+                              booking.created_at,
+                            ).toLocaleString(
+                              language ===
+                              "ar"
+                                ? "ar-LB"
+                                : language ===
+                                    "fr"
+                                  ? "fr-FR"
+                                  : "en-US",
+                            )}
+                          </p>
+
+                          {sessionUrl ? (
+                            <a
+                              href={
+                                sessionUrl
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="aan-button mt-5 flex w-full py-3"
+                            >
+                              {
+                                text.startSession
+                              }
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="mt-5 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
+                            >
+                              {
+                                text.meetingNotReady
+                              }
+                            </button>
+                          )}
+                        </article>
+                      );
+                    },
+                  )}
                 </div>
               )}
             </section>
