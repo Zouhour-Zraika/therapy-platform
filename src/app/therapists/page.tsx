@@ -62,6 +62,8 @@ interface Therapist {
   price: number;
 
   photo_url: string | null;
+
+  work_status: "active" | "leaving" | "inactive";
 }
 
 interface Availability {
@@ -163,31 +165,24 @@ export default function TherapistsPage() {
       async () => {
         setLoading(true);
 
-        const [
-          therapistsResult,
-          availabilitiesResult,
-        ] =
-          await Promise.all([
-            supabase
-              .from("therapists")
-              .select("*")
-              .order(
-                "full_name",
-              ),
-
-            supabase
-              .from(
-                "availability_slots",
-              )
-              .select(
-                `
-                  id,
-                  therapist_id,
-                  day,
-                  time
-                `,
-              ),
-          ]);
+        /*
+         * La page publique ne doit afficher
+         * que les spécialistes encore actifs.
+         *
+         * leaving  -> plus de nouvelles réservations
+         * inactive -> invisible sur la plateforme
+         */
+        const therapistsResult =
+          await supabase
+            .from("therapists")
+            .select("*")
+            .eq(
+              "work_status",
+              "active",
+            )
+            .order(
+              "full_name",
+            );
 
         if (
           therapistsResult.error
@@ -198,13 +193,70 @@ export default function TherapistsPage() {
           );
 
           setTherapists([]);
-        } else {
-          setTherapists(
-            (therapistsResult.data as
-              | Therapist[]
-              | null) || [],
-          );
+          setAvailabilities([]);
+          setLoading(false);
+
+          return;
         }
+
+        const activeTherapists =
+          (therapistsResult.data as
+            | Therapist[]
+            | null) || [];
+
+        setTherapists(
+          activeTherapists,
+        );
+
+        const activeTherapistIds =
+          activeTherapists.map(
+            (
+              therapist,
+            ) => therapist.id,
+          );
+
+        /*
+         * On ne charge que les créneaux
+         * disponibles des spécialistes actifs.
+         *
+         * Cela empêche également les anciennes
+         * disponibilités d'un spécialiste leaving
+         * ou inactive d'apparaître côté patient.
+         */
+        if (
+          activeTherapistIds.length ===
+          0
+        ) {
+          setAvailabilities(
+            [],
+          );
+
+          setLoading(false);
+
+          return;
+        }
+
+        const availabilitiesResult =
+          await supabase
+            .from(
+              "availability_slots",
+            )
+            .select(
+              `
+                id,
+                therapist_id,
+                day,
+                time
+              `,
+            )
+            .in(
+              "therapist_id",
+              activeTherapistIds,
+            )
+            .eq(
+              "is_booked",
+              false,
+            );
 
         if (
           availabilitiesResult.error
@@ -1348,4 +1400,3 @@ export default function TherapistsPage() {
     </>
   );
 }
-           
