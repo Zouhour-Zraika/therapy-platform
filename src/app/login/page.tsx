@@ -7,6 +7,7 @@ import {
 import Link from "next/link";
 import {
   useRouter,
+  useSearchParams,
 } from "next/navigation";
 
 import {
@@ -26,6 +27,12 @@ type LoginMode =
 export default function LoginPage() {
   const router =
     useRouter();
+
+  const searchParams =
+    useSearchParams();
+
+  const reason =
+    searchParams.get("reason");
 
   const {
     language,
@@ -135,6 +142,9 @@ export default function LoginPage() {
 
           therapistHelp:
             "للوصول إلى الملف المهني والمواعيد والجلسات.",
+
+          inactiveSpecialist:
+            "تم تعطيل وصولك كأخصائي. لأي استفسار يتعلق بحسابك أو جلساتك السابقة، يرجى التواصل مع الإدارة.",
         }
       : language === "fr"
         ? {
@@ -209,6 +219,9 @@ export default function LoginPage() {
 
             therapistHelp:
               "Pour accéder à votre profil professionnel, vos disponibilités et vos séances.",
+
+            inactiveSpecialist:
+              "Votre accès spécialiste a été désactivé. Pour toute question concernant votre compte ou vos anciennes séances, veuillez contacter l’administration.",
           }
         : {
             eyebrow:
@@ -255,8 +268,7 @@ export default function LoginPage() {
 
             signUp:
               "Create account",
-
-            emailRequired:
+                          emailRequired:
               "Please enter your email address.",
 
             passwordRequired:
@@ -282,6 +294,9 @@ export default function LoginPage() {
 
             therapistHelp:
               "Access your professional profile, availability and sessions.",
+
+            inactiveSpecialist:
+              "Your specialist access has been deactivated. For any questions about your account or previous sessions, please contact the administration.",
           };
 
   const handleLogin =
@@ -524,8 +539,19 @@ export default function LoginPage() {
               {text.subtitle}
             </p>
           </div>
+                    <div className="border-t border-aan-border px-7 py-8 sm:px-12 sm:py-10">
+            {reason ===
+              "inactive-specialist" && (
+              <div
+                role="alert"
+                className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold leading-6 text-amber-800"
+              >
+                {
+                  text.inactiveSpecialist
+                }
+              </div>
+            )}
 
-          <div className="border-t border-aan-border px-7 py-8 sm:px-12 sm:py-10">
             <p className="mb-4 text-center text-sm font-bold text-aan-navy">
               {text.loginAs}
             </p>
