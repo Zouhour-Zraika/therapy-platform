@@ -15,6 +15,7 @@ type Booking = {
   price: number;
   status: string;
   created_at: string;
+  scheduled_start: string | null;
   zoom_join_url: string | null;
 };
 
@@ -33,56 +34,86 @@ export default function PatientDashboard() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   useEffect(() => {
     void getBookings();
   }, []);
 
-  const copy = isArabic
-    ? {
-        eyebrow: "مساحتك الخاصة",
-        title: "لوحة تحكم المريض",
-        description:
-          "اطّلع على جلساتك القادمة، وأكمل الدفع، وانضم إلى الجلسات عبر الإنترنت.",
-        appointments: "مواعيدي",
-        loading: "جارٍ تحميل المواعيد...",
-        empty: "لا توجد لديك مواعيد حتى الآن.",
-        findTherapist: "البحث عن معالج",
-        price: "السعر",
-        status: "الحالة",
-        booked: "تاريخ الحجز",
-        paid: "مدفوع",
-        pending: "بانتظار الدفع",
-        cancelled: "ملغى",
-        joinZoom: "الانضمام إلى جلسة Zoom",
-        zoomNotReady: "رابط Zoom غير جاهز",
-        completePayment: "إكمال الدفع",
-        sessionDetails: "تفاصيل الجلسة",
-        unableToLoad: "تعذر تحميل المواعيد. يرجى المحاولة مرة أخرى.",
-      }
-    : {
-        eyebrow: "Your private space",
-        title: "Patient Dashboard",
-        description:
-          "Review your upcoming sessions, complete payments and join your online appointments.",
-        appointments: "My Appointments",
-        loading: "Loading appointments...",
-        empty: "You do not have any appointments yet.",
-        findTherapist: "Find a Therapist",
-        price: "Price",
-        status: "Status",
-        booked: "Booked",
-        paid: "Paid",
-        pending: "Payment pending",
-        cancelled: "Cancelled",
-        joinZoom: "Join Zoom Session",
-        zoomNotReady: "Zoom link not ready",
-        completePayment: "Complete Payment",
-        sessionDetails: "Session details",
-        unableToLoad:
-          "Unable to load appointments. Please try again.",
-      };
+  const copy =
+    language === "ar"
+      ? {
+          eyebrow: "مساحتك الخاصة",
+          title: "لوحة تحكم المريض",
+          description:
+            "اطّلع على جلساتك القادمة، وأكمل الدفع، وانضم إلى الجلسات عبر الإنترنت.",
+          appointments: "مواعيدي",
+          loading: "جارٍ تحميل المواعيد...",
+          empty: "لا توجد لديك مواعيد حتى الآن.",
+          findTherapist: "البحث عن معالج",
+          date: "التاريخ",
+          time: "الوقت",
+          price: "السعر",
+          status: "الحالة",
+          booked: "تم الحجز في",
+          paid: "مدفوع",
+          pending: "بانتظار الدفع",
+          cancelled: "ملغى",
+          joinZoom: "الانضمام إلى جلسة Zoom",
+          zoomNotReady: "رابط Zoom غير جاهز",
+          completePayment: "إكمال الدفع",
+          sessionDetails: "تفاصيل الجلسة",
+          unableToLoad: "تعذر تحميل المواعيد. يرجى المحاولة مرة أخرى.",
+        }
+      : language === "fr"
+        ? {
+            eyebrow: "Votre espace privé",
+            title: "Tableau de bord patient",
+            description:
+              "Consultez vos prochaines séances, finalisez vos paiements et rejoignez vos rendez-vous en ligne.",
+            appointments: "Mes rendez-vous",
+            loading: "Chargement des rendez-vous...",
+            empty: "Vous n’avez aucun rendez-vous pour le moment.",
+            findTherapist: "Trouver un spécialiste",
+            date: "Date",
+            time: "Heure",
+            price: "Prix",
+            status: "Statut",
+            booked: "Réservé le",
+            paid: "Payé",
+            pending: "Paiement en attente",
+            cancelled: "Annulé",
+            joinZoom: "Rejoindre la séance Zoom",
+            zoomNotReady: "Lien Zoom pas encore disponible",
+            completePayment: "Finaliser le paiement",
+            sessionDetails: "Détails de la séance",
+            unableToLoad:
+              "Impossible de charger les rendez-vous. Veuillez réessayer.",
+          }
+        : {
+            eyebrow: "Your private space",
+            title: "Patient Dashboard",
+            description:
+              "Review your upcoming sessions, complete payments and join your online appointments.",
+            appointments: "My Appointments",
+            loading: "Loading appointments...",
+            empty: "You do not have any appointments yet.",
+            findTherapist: "Find a Therapist",
+            date: "Date",
+            time: "Time",
+            price: "Price",
+            status: "Status",
+            booked: "Booked on",
+            paid: "Paid",
+            pending: "Payment pending",
+            cancelled: "Cancelled",
+            joinZoom: "Join Zoom Session",
+            zoomNotReady: "Zoom link not ready",
+            completePayment: "Complete Payment",
+            sessionDetails: "Session details",
+            unableToLoad:
+              "Unable to load appointments. Please try again.",
+          };
 
   const getBookings = async () => {
     setLoading(true);
@@ -143,10 +174,61 @@ export default function PatientDashboard() {
   };
 
   const formatBookedDate = (date: string) => {
-    return new Intl.DateTimeFormat(isArabic ? "ar-LB" : "en-GB", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(date));
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(new Date(date));
+  };
+
+  const formatAppointmentDate = (
+    booking: Booking,
+  ) => {
+    if (booking.scheduled_start) {
+      const scheduledDate =
+        new Date(
+          booking.scheduled_start,
+        );
+
+      if (
+        !Number.isNaN(
+          scheduledDate.getTime(),
+        )
+      ) {
+        return new Intl.DateTimeFormat(
+          language === "ar"
+            ? "ar-LB"
+            : language === "fr"
+              ? "fr-FR"
+              : "en-GB",
+          {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            timeZone: "Asia/Beirut",
+          },
+        ).format(
+          scheduledDate,
+        );
+      }
+    }
+
+    /*
+     * Anciennes réservations :
+     * si scheduled_start n'existe pas,
+     * on garde au minimum le jour enregistré.
+     */
+    return formatDay(
+      booking.slot_day,
+    );
   };
 
   const getStatusLabel = (status: string) => {
@@ -292,17 +374,19 @@ export default function PatientDashboard() {
                           <div className="mt-7 grid gap-4 sm:grid-cols-3">
                             <div className="rounded-2xl bg-[#fbf8f3] p-4">
                               <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                {isArabic ? "اليوم" : "Day"}
+                                {copy.date}
                               </p>
 
-                              <p className="mt-2 font-bold text-aan-navy">
-                                {formatDay(booking.slot_day)}
+                              <p className="mt-2 font-bold capitalize text-aan-navy">
+                                {formatAppointmentDate(
+                                  booking,
+                                )}
                               </p>
                             </div>
 
                             <div className="rounded-2xl bg-[#fbf8f3] p-4">
                               <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                {isArabic ? "الوقت" : "Time"}
+                                {copy.time}
                               </p>
 
                               <p className="mt-2 font-bold text-aan-navy">
