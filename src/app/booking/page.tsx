@@ -23,6 +23,11 @@ type Therapist = {
   specialty_ar: string | null;
   price: number;
 
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive";
+
   gender?: string | null;
   bio?: string | null;
   bio_ar?: string | null;
@@ -259,6 +264,7 @@ function BookingContent() {
         supabase
           .from("therapists")
           .select("*")
+          .eq("work_status", "active")
           .order("full_name"),
 
         supabase
@@ -1129,6 +1135,78 @@ function BookingContent() {
               2 * 60 * 60 * 1000,
           );
 
+        /*
+         * Vérification de dernière seconde :
+         * le spécialiste doit toujours accepter
+         * de nouvelles réservations.
+         *
+         * Cela protège également contre une ancienne
+         * page laissée ouverte ou une URL directe.
+         */
+        const {
+          data: currentTherapistStatus,
+          error: therapistStatusError,
+        } = await supabase
+          .from("therapists")
+          .select("id, work_status, price")
+          .eq("id", selectedTherapist.id)
+          .maybeSingle<{
+            id: string;
+            work_status:
+              | "active"
+              | "leaving"
+              | "inactive";
+            price: number | null;
+          }>();
+
+        if (therapistStatusError) {
+          console.error(
+            "Therapist status check error:",
+            therapistStatusError,
+          );
+
+          alert(
+            isArabic
+              ? "تعذر التحقق من توفر المختص. يرجى المحاولة مرة أخرى."
+              : "Unable to verify specialist availability. Please try again.",
+          );
+
+          return;
+        }
+
+        if (
+          !currentTherapistStatus ||
+          currentTherapistStatus.work_status !== "active"
+        ) {
+          setSelectedTherapist(null);
+          setSelectedSlot(null);
+
+          alert(
+            isArabic
+              ? "هذا المختص لم يعد متاحاً للحجوزات الجديدة. يرجى اختيار مختص آخر."
+              : "This specialist is no longer accepting new bookings. Please choose another specialist.",
+          );
+
+          return;
+        }
+
+        const currentPrice = Number(
+          currentTherapistStatus.price ?? 0,
+        );
+
+        if (
+          !Number.isFinite(currentPrice) ||
+          currentPrice <= 0
+        ) {
+          alert(
+            isArabic
+              ? "سعر الجلسة غير متوفر حالياً. يرجى التواصل مع العيادة."
+              : "The session price is currently unavailable. Please contact the clinic.",
+          );
+
+          return;
+        }
+
         const {
           data: claimedSlot,
           error: slotClaimError,
@@ -1215,7 +1293,7 @@ function BookingContent() {
               scheduledEnd.toISOString(),
 
             price:
-              selectedTherapist.price,
+              currentPrice,
 
             status:
               "pending",
@@ -1272,7 +1350,7 @@ function BookingContent() {
 
             price:
               String(
-                selectedTherapist.price,
+                currentPrice,
               ),
 
             slot:

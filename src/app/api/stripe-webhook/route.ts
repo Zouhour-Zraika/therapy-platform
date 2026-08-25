@@ -1,30 +1,92 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import {
+  createClient,
+} from "@supabase/supabase-js";
+
+import {
+  NextResponse,
+} from "next/server";
+
 import Stripe from "stripe";
 
-export const runtime = "nodejs";
+export const runtime =
+  "nodejs";
 
-type Language = "en" | "fr" | "ar";
+type Language =
+  | "en"
+  | "fr"
+  | "ar";
 
 type BookingRecord = {
   id: string;
   status: string;
+
   price: number;
+
+  patient_email:
+    | string
+    | null;
+
+  therapist_id:
+    | string
+    | null;
+
+  therapist_name:
+    | string
+    | null;
+
+  slot_id:
+    | string
+    | null;
+
+  slot_day:
+    | string
+    | null;
+
+  slot_time:
+    | string
+    | null;
+
+  scheduled_start:
+    | string
+    | null;
+
+  scheduled_end:
+    | string
+    | null;
+
+  payment_provider:
+    | string
+    | null;
+
+  payment_method:
+    | string
+    | null;
+
+  payment_transaction_id:
+    | string
+    | null;
 };
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request,
+) {
   const stripeSecretKey =
-    process.env.STRIPE_SECRET_KEY;
+    process.env
+      .STRIPE_SECRET_KEY;
 
   const webhookSecret =
-    process.env.STRIPE_WEBHOOK_SECRET;
+    process.env
+      .STRIPE_WEBHOOK_SECRET;
 
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env
+      .NEXT_PUBLIC_SUPABASE_URL;
 
   const supabaseServerKey =
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env
+      .SUPABASE_SECRET_KEY ||
+    process.env
+      .SUPABASE_SERVICE_ROLE_KEY;
 
   if (!stripeSecretKey) {
     return NextResponse.json(
@@ -50,7 +112,10 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!supabaseUrl || !supabaseServerKey) {
+  if (
+    !supabaseUrl ||
+    !supabaseServerKey
+  ) {
     return NextResponse.json(
       {
         error:
@@ -63,7 +128,9 @@ export async function POST(request: Request) {
   }
 
   const stripe =
-    new Stripe(stripeSecretKey);
+    new Stripe(
+      stripeSecretKey,
+    );
 
   const supabaseAdmin =
     createClient(
@@ -71,12 +138,23 @@ export async function POST(request: Request) {
       supabaseServerKey,
       {
         auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false,
+          autoRefreshToken:
+            false,
+
+          persistSession:
+            false,
+
+          detectSessionInUrl:
+            false,
         },
       },
     );
+
+  /*
+   * =========================================================
+   * Vérification de la signature Stripe
+   * =========================================================
+   */
 
   const signature =
     request.headers.get(
@@ -95,12 +173,17 @@ export async function POST(request: Request) {
     );
   }
 
-  let event: Stripe.Event;
+  let event:
+    Stripe.Event;
 
   try {
     /*
-     * Stripe exige le corps brut afin de
-     * vérifier correctement la signature.
+     * IMPORTANT :
+     * Stripe exige le corps brut.
+     *
+     * Ne jamais remplacer
+     * request.text()
+     * par request.json().
      */
     const rawBody =
       await request.text();
@@ -131,13 +214,22 @@ export async function POST(request: Request) {
   }
 
   try {
+    /*
+     * =======================================================
+     * Nous traitons uniquement
+     * les paiements Checkout réussis.
+     * =======================================================
+     */
+
     const isSuccessfulCheckout =
       event.type ===
         "checkout.session.completed" ||
       event.type ===
         "checkout.session.async_payment_succeeded";
 
-    if (!isSuccessfulCheckout) {
+    if (
+      !isSuccessfulCheckout
+    ) {
       return NextResponse.json({
         received: true,
         ignored: true,
@@ -149,12 +241,12 @@ export async function POST(request: Request) {
         .object as Stripe.Checkout.Session;
 
     /*
-     * La réservation n'est confirmée
-     * que lorsque Stripe indique réellement
-     * que le paiement est payé.
+     * La réservation ne devient payée
+     * que si Stripe indique réellement "paid".
      */
     if (
-      session.payment_status !== "paid"
+      session.payment_status !==
+      "paid"
     ) {
       console.log(
         "Stripe session received but not paid:",
@@ -165,35 +257,22 @@ export async function POST(request: Request) {
       return NextResponse.json({
         received: true,
         ignored: true,
+
         reason:
           "Payment is not paid yet.",
       });
     }
 
+    /*
+     * =======================================================
+     * Identifier la réservation
+     * =======================================================
+     */
+
     const bookingId =
-      session.metadata?.bookingId?.trim();
-
-    const therapist =
-      session.metadata?.therapist?.trim() ||
-      "Specialist";
-
-    const slot =
-      session.metadata?.slot?.trim() ||
-      "";
-
-    const language: Language =
-      session.metadata?.language === "ar"
-        ? "ar"
-        : session.metadata?.language ===
-            "fr"
-          ? "fr"
-          : "en";
-
-    const customerEmail =
-      session.customer_details?.email ||
-      session.customer_email ||
-      session.metadata?.email ||
-      "";
+      session.metadata
+        ?.bookingId
+        ?.trim();
 
     if (!bookingId) {
       console.error(
@@ -212,26 +291,65 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * On récupère aussi le prix officiel
-     * enregistré dans la réservation.
-     */
-    const {
-      data: existingBooking,
-      error: bookingReadError,
-    } = await supabaseAdmin
-      .from("bookings")
-      .select(
-        `
-          id,
-          status,
-          price
-        `,
-      )
-      .eq("id", bookingId)
-      .maybeSingle<BookingRecord>();
+    const language:
+      Language =
+      session.metadata
+        ?.language ===
+      "ar"
+        ? "ar"
+        : session.metadata
+              ?.language ===
+            "fr"
+          ? "fr"
+          : "en";
 
-    if (bookingReadError) {
+    /*
+     * =======================================================
+     * Récupérer LA réservation depuis Supabase.
+     *
+     * Supabase devient la source de vérité :
+     * - prix
+     * - thérapeute
+     * - horaire
+     * - e-mail patient
+     * =======================================================
+     */
+
+    const {
+      data:
+        existingBooking,
+      error:
+        bookingReadError,
+    } =
+      await supabaseAdmin
+        .from("bookings")
+        .select(
+          `
+            id,
+            status,
+            price,
+            patient_email,
+            therapist_id,
+            therapist_name,
+            slot_id,
+            slot_day,
+            slot_time,
+            scheduled_start,
+            scheduled_end,
+            payment_provider,
+            payment_method,
+            payment_transaction_id
+          `,
+        )
+        .eq(
+          "id",
+          bookingId,
+        )
+        .maybeSingle<BookingRecord>();
+
+    if (
+      bookingReadError
+    ) {
       throw bookingReadError;
     }
 
@@ -252,46 +370,66 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+     * =======================================================
+     * Informations Stripe
+     * =======================================================
+     */
+
     const paymentIntentId =
-      typeof session.payment_intent ===
+      typeof session
+        .payment_intent ===
       "string"
         ? session.payment_intent
-        : session.payment_intent?.id;
+        : session
+            .payment_intent
+            ?.id;
 
     /*
-     * PaymentIntent est préféré comme
-     * référence de transaction.
+     * Pour les remboursements futurs,
+     * le PaymentIntent est particulièrement utile.
      */
     const transactionId =
       paymentIntentId ||
       session.id;
 
     const amount =
-      typeof session.amount_total ===
+      typeof session
+        .amount_total ===
       "number"
-        ? session.amount_total / 100
+        ? session.amount_total /
+          100
         : 0;
 
     const currency =
-      session.currency?.toUpperCase() ||
+      session.currency
+        ?.toUpperCase() ||
       "USD";
 
     /*
-     * Sécurité :
-     * le montant Stripe doit correspondre
-     * au prix officiel de la réservation.
+     * =======================================================
+     * Vérification du prix
+     * =======================================================
      */
+
     const bookingPrice =
-      Number(existingBooking.price);
+      Number(
+        existingBooking.price,
+      );
 
     if (
-      !Number.isFinite(bookingPrice) ||
+      !Number.isFinite(
+        bookingPrice,
+      ) ||
       bookingPrice <= 0
     ) {
       console.error(
         "Invalid booking price:",
-        bookingId,
-        existingBooking.price,
+        {
+          bookingId,
+          bookingPrice:
+            existingBooking.price,
+        },
       );
 
       return NextResponse.json(
@@ -307,16 +445,21 @@ export async function POST(request: Request) {
 
     if (
       Math.abs(
-        amount - bookingPrice,
+        amount -
+          bookingPrice,
       ) > 0.001
     ) {
       console.error(
         "Stripe payment amount mismatch:",
         {
           bookingId,
+
           expectedAmount:
             bookingPrice,
-          paidAmount: amount,
+
+          paidAmount:
+            amount,
+
           sessionId:
             session.id,
         },
@@ -334,53 +477,68 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Paiement enregistré de manière
-     * idempotente.
-     *
-     * Si Stripe renvoie le même webhook,
-     * transaction_id évite la création
-     * d'un deuxième paiement.
+     * =======================================================
+     * Paiement idempotent
+     * =======================================================
      */
-    const { error: paymentError } =
+
+    const {
+      error:
+        paymentError,
+    } =
       await supabaseAdmin
         .from("payments")
         .upsert(
           {
-            booking_id: bookingId,
-            provider: "stripe",
+            booking_id:
+              bookingId,
+
+            provider:
+              "stripe",
+
             amount,
+
             currency,
-            status: "paid",
+
+            status:
+              "paid",
+
             transaction_id:
               transactionId,
           },
           {
             onConflict:
               "transaction_id",
-            ignoreDuplicates: false,
+
+            ignoreDuplicates:
+              false,
           },
         );
 
     if (paymentError) {
       throw paymentError;
     }
+        /*
+     * =======================================================
+     * Mettre la réservation à PAID
+     * =======================================================
+     */
 
     const bookingWasAlreadyPaid =
       existingBooking.status ===
       "paid";
 
-    /*
-     * On renseigne également directement
-     * la réservation.
-     *
-     * Ces colonnes seront utilisées plus tard
-     * de la même façon pour Stripe, Whish et OMT.
-     */
-    const { error: updateError } =
+    const {
+      data:
+        updatedBooking,
+      error:
+        bookingUpdateError,
+    } =
       await supabaseAdmin
         .from("bookings")
         .update({
-          status: "paid",
+          status:
+            "paid",
 
           payment_provider:
             "stripe",
@@ -391,76 +549,186 @@ export async function POST(request: Request) {
           payment_transaction_id:
             transactionId,
         })
-        .eq("id", bookingId);
+        .eq(
+          "id",
+          bookingId,
+        )
+        .select(
+          `
+            id,
+            status,
+            price,
+            patient_email,
+            therapist_id,
+            therapist_name,
+            slot_id,
+            slot_day,
+            slot_time,
+            scheduled_start,
+            scheduled_end,
+            payment_provider,
+            payment_method,
+            payment_transaction_id
+          `,
+        )
+        .maybeSingle<BookingRecord>();
 
-    if (updateError) {
-      throw updateError;
+    if (
+      bookingUpdateError
+    ) {
+      throw bookingUpdateError;
+    }
+
+    if (!updatedBooking) {
+      throw new Error(
+        "Booking was not updated after successful payment.",
+      );
+    }
+
+    if (
+      updatedBooking.status !==
+      "paid"
+    ) {
+      throw new Error(
+        "Booking was not marked as paid.",
+      );
     }
 
     /*
-     * L'e-mail est envoyé uniquement
-     * lors du premier passage à paid.
-     *
-     * Un webhook Stripe répété
-     * ne renverra donc pas l'e-mail.
+     * =======================================================
+     * Construire l'horaire pour l'e-mail
+     * depuis les données Supabase.
+     * =======================================================
      */
+
+    const therapistName =
+      updatedBooking
+        .therapist_name ||
+      "Specialist";
+
+    const slotParts: string[] =
+      [];
+
+    if (
+      updatedBooking
+        .slot_day
+    ) {
+      slotParts.push(
+        updatedBooking
+          .slot_day,
+      );
+    }
+
+    if (
+      updatedBooking
+        .slot_time
+    ) {
+      slotParts.push(
+        updatedBooking
+          .slot_time,
+      );
+    }
+
+    const slotDescription =
+      slotParts
+        .join(" ")
+        .trim();
+
+    /*
+     * L'e-mail enregistré dans bookings
+     * est prioritaire.
+     *
+     * Stripe sert uniquement de fallback.
+     */
+    const customerEmail =
+      updatedBooking
+        .patient_email
+        ?.trim() ||
+      session
+        .customer_details
+        ?.email ||
+      session.customer_email ||
+      session.metadata
+        ?.email ||
+      "";
+
+    /*
+     * =======================================================
+     * Envoyer l'e-mail une seule fois
+     * =======================================================
+     */
+
     if (
       !bookingWasAlreadyPaid &&
       customerEmail
     ) {
       const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL?.replace(
-          /\/$/,
-          "",
-        ) ||
-        new URL(request.url).origin;
+        process.env
+          .NEXT_PUBLIC_SITE_URL
+          ?.replace(
+            /\/$/,
+            "",
+          ) ||
+        new URL(
+          request.url,
+        ).origin;
 
       try {
         const emailResponse =
           await fetch(
             `${siteUrl}/api/send-booking-email`,
             {
-              method: "POST",
+              method:
+                "POST",
 
               headers: {
                 "Content-Type":
                   "application/json",
               },
 
-              body: JSON.stringify({
-                email:
-                  customerEmail,
+              body:
+                JSON.stringify({
+                  email:
+                    customerEmail,
 
-                therapist,
+                  therapist:
+                    therapistName,
 
-                slot,
+                  slot:
+                    slotDescription,
 
-                price: amount,
+                  price:
+                    amount,
 
-                language,
+                  language,
 
-                bookingId,
+                  bookingId,
 
-                paymentProvider:
-                  "stripe",
+                  paymentProvider:
+                    "stripe",
 
-                transactionId,
-              }),
+                  transactionId,
+                }),
             },
           );
 
-        if (!emailResponse.ok) {
+        if (
+          !emailResponse.ok
+        ) {
           console.error(
             "Booking confirmation email failed:",
             emailResponse.status,
             await emailResponse.text(),
           );
         }
-      } catch (emailError) {
+      } catch (
+        emailError
+      ) {
         /*
-         * Un problème d'e-mail
-         * ne doit jamais annuler
-         * un paiement déjà réussi.
+         * Très important :
+         * un échec d'e-mail
+         * ne remet jamais en cause
+         * un paiement réussi.
          */
         console.error(
           "Booking confirmation email request failed:",
@@ -469,6 +737,32 @@ export async function POST(request: Request) {
       }
     }
 
+    /*
+     * =======================================================
+     * Log serveur utile pour administration/debug.
+     * =======================================================
+     */
+
+    console.log(
+      "STRIPE PAYMENT CONFIRMED:",
+      {
+        bookingId,
+
+        therapistId:
+          updatedBooking
+            .therapist_id,
+
+        transactionId,
+
+        amount,
+
+        currency,
+
+        alreadyProcessed:
+          bookingWasAlreadyPaid,
+      },
+    );
+
     return NextResponse.json({
       received: true,
 
@@ -476,6 +770,9 @@ export async function POST(request: Request) {
 
       paymentStatus:
         "paid",
+
+      bookingStatus:
+        updatedBooking.status,
 
       paymentProvider:
         "stripe",
@@ -499,8 +796,8 @@ export async function POST(request: Request) {
     );
 
     /*
-     * 500 indique à Stripe qu'il doit
-     * réessayer ultérieurement le webhook.
+     * HTTP 500 demande à Stripe
+     * de réessayer le webhook.
      */
     return NextResponse.json(
       {
