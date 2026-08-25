@@ -21,6 +21,7 @@ type DepartureRequest = {
 
 type BookingRow = {
   id: string;
+
   patient_id: string | null;
   patient_email: string | null;
 
@@ -188,7 +189,10 @@ async function verifyAdmin(
     };
   }
 
-  if (profile?.role !== "admin") {
+  if (
+    profile?.role !==
+    "admin"
+  ) {
     return {
       supabaseAdmin,
       user: null,
@@ -237,17 +241,6 @@ const bookingSelect = `
   refunded_at
 `;
 
-/*
- * ==========================================================
- * GET
- *
- * Retourne :
- * - spécialiste concerné
- * - réservations futures payées
- * - autres spécialistes actifs
- * - leurs créneaux disponibles
- * ==========================================================
- */
 export async function GET(
   request: Request,
 ) {
@@ -259,8 +252,9 @@ export async function GET(
       return verification.error;
     }
 
-    const { supabaseAdmin } =
-      verification;
+    const {
+      supabaseAdmin,
+    } = verification;
 
     const url =
       new URL(request.url);
@@ -295,7 +289,10 @@ export async function GET(
           work_status
         `,
       )
-      .eq("id", therapistId)
+      .eq(
+        "id",
+        therapistId,
+      )
       .maybeSingle();
 
     if (therapistError) {
@@ -322,12 +319,17 @@ export async function GET(
       error: bookingError,
     } = await supabaseAdmin
       .from("bookings")
-      .select(bookingSelect)
+      .select(
+        bookingSelect,
+      )
       .eq(
         "therapist_id",
         therapistId,
       )
-      .eq("status", "paid")
+      .eq(
+        "status",
+        "paid",
+      )
       .gt(
         "scheduled_start",
         now,
@@ -378,14 +380,16 @@ export async function GET(
 
     const alternativeIds =
       (alternatives || []).map(
-        (item) => item.id,
+        (item) =>
+          item.id,
       );
 
-    let availableSlots: any[] =
-      [];
+    let availableSlots:
+      any[] = [];
 
     if (
-      alternativeIds.length > 0
+      alternativeIds.length >
+      0
     ) {
       const {
         data: slots,
@@ -460,19 +464,6 @@ export async function GET(
     );
   }
 }
-/*
- * ==========================================================
- * POST
- *
- * Actions :
- *
- * start_departure
- * maintain
- * transfer
- * refund
- * finalize
- * ==========================================================
- */
 export async function POST(
   request: Request,
 ) {
@@ -484,8 +475,9 @@ export async function POST(
       return verification.error;
     }
 
-    const { supabaseAdmin } =
-      verification;
+    const {
+      supabaseAdmin,
+    } = verification;
 
     const body =
       (await request.json()) as DepartureRequest;
@@ -520,16 +512,6 @@ export async function POST(
       );
     }
 
-    /*
-     * ======================================================
-     * 1. START DEPARTURE
-     *
-     * Le spécialiste devient "leaving".
-     *
-     * Il ne doit plus recevoir de nouvelles réservations,
-     * mais garde son accès pour les séances déjà maintenues.
-     * ======================================================
-     */
     if (
       action ===
       "start_departure"
@@ -617,12 +599,9 @@ export async function POST(
     const bookingId =
       body.bookingId?.trim();
 
-    /*
-     * Toutes les actions suivantes
-     * sauf finalize nécessitent une réservation.
-     */
     if (
-      action !== "finalize" &&
+      action !==
+        "finalize" &&
       !bookingId
     ) {
       return NextResponse.json(
@@ -636,16 +615,9 @@ export async function POST(
       );
     }
 
-    /*
-     * ======================================================
-     * 2. MAINTAIN
-     *
-     * La séance reste chez le spécialiste sortant.
-     * Aucun paiement n'est modifié.
-     * ======================================================
-     */
     if (
-      action === "maintain"
+      action ===
+      "maintain"
     ) {
       const {
         data: booking,
@@ -694,18 +666,15 @@ export async function POST(
 
       return NextResponse.json({
         success: true,
-        action: "maintain",
+        action:
+          "maintain",
         booking,
       });
     }
 
-    /*
-     * ======================================================
-     * 3. TRANSFER
-     * ======================================================
-     */
     if (
-      action === "transfer"
+      action ===
+      "transfer"
     ) {
       const newTherapistId =
         body.newTherapistId?.trim();
@@ -743,9 +712,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Réservation existante.
-       */
       const {
         data: currentBooking,
         error: currentBookingError,
@@ -786,10 +752,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Nouveau spécialiste :
-       * doit être ACTIVE.
-       */
       const {
         data: newTherapist,
         error: newTherapistError,
@@ -831,12 +793,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Réserver atomiquement autant que possible
-       * le nouveau créneau :
-       *
-       * il doit encore être is_booked = false.
-       */
       const {
         data: claimedSlot,
         error: slotClaimError,
@@ -894,9 +850,6 @@ export async function POST(
       if (
         !claimedSlot.starts_at
       ) {
-        /*
-         * Rollback du nouveau slot.
-         */
         await supabaseAdmin
           .from(
             "availability_slots",
@@ -935,13 +888,6 @@ export async function POST(
               1000,
         ).toISOString();
 
-      /*
-       * IMPORTANT :
-       *
-       * Le patient ne paie PAS une deuxième fois.
-       * Le prix original payé reste attaché
-       * à cette réservation.
-       */
       const {
         data: transferredBooking,
         error: transferError,
@@ -976,11 +922,6 @@ export async function POST(
           departure_action:
             "transferred",
 
-          /*
-           * Une réunion associée à l'ancien
-           * spécialiste ne doit surtout pas
-           * être réutilisée.
-           */
           meeting_url: null,
           meeting_provider: null,
           calendar_event_id: null,
@@ -1009,9 +950,6 @@ export async function POST(
         transferError ||
         !transferredBooking
       ) {
-        /*
-         * Rollback du nouveau créneau.
-         */
         await supabaseAdmin
           .from(
             "availability_slots",
@@ -1039,16 +977,14 @@ export async function POST(
         );
       }
 
-      /*
-       * L'ancien créneau redevient disponible.
-       */
       if (
         currentBooking.slot_id &&
         currentBooking.slot_id !==
           newSlotId
       ) {
         const {
-          error: releaseError,
+          error:
+            releaseError,
         } = await supabaseAdmin
           .from(
             "availability_slots",
@@ -1061,7 +997,9 @@ export async function POST(
             currentBooking.slot_id,
           );
 
-        if (releaseError) {
+        if (
+          releaseError
+        ) {
           console.error(
             "Old slot release warning:",
             releaseError,
@@ -1071,21 +1009,12 @@ export async function POST(
 
       return NextResponse.json({
         success: true,
-        action: "transfer",
+        action:
+          "transfer",
         booking:
           transferredBooking,
-
-        /*
-         * On renvoie le prix du nouveau
-         * spécialiste uniquement pour
-         * information administrative.
-         *
-         * La réservation garde le prix
-         * déjà payé par le patient.
-         */
         originalPaidPrice:
           currentBooking.price,
-
         newTherapistPrice:
           Number(
             newTherapist.price ??
@@ -1093,15 +1022,9 @@ export async function POST(
           ),
       });
     }
-        /*
-     * ======================================================
-     * 4. REFUND
-     *
-     * Annulation + remboursement.
-     * ======================================================
-     */
-    if (
-      action === "refund"
+        if (
+      action ===
+      "refund"
     ) {
       const stripeSecretKey =
         process.env
@@ -1194,14 +1117,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Normalement payment_transaction_id
-       * contient un PaymentIntent "pi_...".
-       *
-       * Anciennes réservations peuvent
-       * éventuellement contenir une
-       * Checkout Session "cs_...".
-       */
       if (
         paymentReference.startsWith(
           "cs_",
@@ -1239,13 +1154,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Idempotency key :
-       *
-       * si l'admin clique deux fois
-       * ou si la requête réseau est rejouée,
-       * Stripe ne crée pas deux remboursements.
-       */
       const refund =
         await stripe.refunds.create(
           {
@@ -1271,13 +1179,6 @@ export async function POST(
           },
         );
 
-      /*
-       * Stripe peut renvoyer pending
-       * selon le moyen de paiement.
-       *
-       * Pour les cartes classiques,
-       * succeeded est généralement immédiat.
-       */
       if (
         refund.status !==
           "succeeded" &&
@@ -1310,11 +1211,9 @@ export async function POST(
           ? "refunded"
           : null;
 
-      /*
-       * Mettre à jour le paiement.
-       */
       const {
-        error: paymentUpdateError,
+        error:
+          paymentUpdateError,
       } = await supabaseAdmin
         .from("payments")
         .update({
@@ -1333,10 +1232,6 @@ export async function POST(
       if (
         paymentUpdateError
       ) {
-        /*
-         * Le remboursement Stripe est déjà parti.
-         * On log très clairement l'incohérence.
-         */
         console.error(
           "CRITICAL: Stripe refund succeeded but payment DB update failed:",
           {
@@ -1353,7 +1248,8 @@ export async function POST(
 
       const {
         data: updatedBooking,
-        error: bookingUpdateError,
+        error:
+          bookingUpdateError,
       } = await supabaseAdmin
         .from("bookings")
         .update({
@@ -1369,10 +1265,6 @@ export async function POST(
               ? refundedAt
               : null,
 
-          /*
-           * Une séance remboursée
-           * n'a plus de réunion active.
-           */
           meeting_url: null,
           meeting_provider: null,
           calendar_event_id: null,
@@ -1405,10 +1297,6 @@ export async function POST(
         throw bookingUpdateError;
       }
 
-      /*
-       * Le créneau redevient disponible
-       * après remboursement réussi.
-       */
       if (
         refund.status ===
           "succeeded" &&
@@ -1441,7 +1329,8 @@ export async function POST(
 
       return NextResponse.json({
         success: true,
-        action: "refund",
+        action:
+          "refund",
 
         refund: {
           id:
@@ -1452,8 +1341,7 @@ export async function POST(
             refund.amount /
             100,
           currency:
-            refund.currency
-              .toUpperCase(),
+            refund.currency.toUpperCase(),
         },
 
         booking:
@@ -1461,17 +1349,9 @@ export async function POST(
       });
     }
 
-    /*
-     * ======================================================
-     * 5. FINALIZE
-     *
-     * Passe de LEAVING à INACTIVE
-     * uniquement si aucune séance future payée
-     * ne reste encore affectée au spécialiste.
-     * ======================================================
-     */
     if (
-      action === "finalize"
+      action ===
+      "finalize"
     ) {
       const now =
         new Date().toISOString();
@@ -1486,8 +1366,10 @@ export async function POST(
         .select(
           "id",
           {
-            count: "exact",
-            head: true,
+            count:
+              "exact",
+            head:
+              true,
           },
         )
         .eq(
@@ -1569,52 +1451,13 @@ export async function POST(
       }
 
       /*
-       * On retire également son rôle
-       * therapist afin que ProtectedRoute
-       * lui refuse le dashboard.
+       * IMPORTANT :
+       * on garde profiles.role = "therapist".
        *
-       * Le compte Auth et l'historique
-       * restent conservés.
+       * L'état de travail est géré uniquement
+       * par therapists.work_status.
        */
-      const {
-        error:
-          profileUpdateError,
-      } = await supabaseAdmin
-        .from("profiles")
-        .update({
-          role:
-            "inactive_therapist",
-        })
-        .eq(
-          "id",
-          therapistId,
-        );
 
-      if (
-        profileUpdateError
-      ) {
-        /*
-         * Rollback du work_status
-         * si le rôle n'a pas pu être modifié.
-         */
-        await supabaseAdmin
-          .from("therapists")
-          .update({
-            work_status:
-              "leaving",
-          })
-          .eq(
-            "id",
-            therapistId,
-          );
-
-        throw profileUpdateError;
-      }
-
-      /*
-       * Les disponibilités futures
-       * non réservées ne servent plus.
-       */
       const {
         error:
           availabilityDeleteError,
