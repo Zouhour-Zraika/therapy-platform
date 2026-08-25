@@ -349,16 +349,25 @@ export default function AdminTherapistsPage() {
             "إدارة مغادرة المختص",
 
           startDeparture:
-            "بدء مغادرة المختص",
+            "إدارة المغادرة",
+
+          confirmStartDeparture:
+            "تأكيد بدء المغادرة",
 
           resumeDeparture:
             "متابعة معالجة المغادرة",
 
+          departurePreparationIntro:
+            "أنت الآن في مرحلة مراجعة المغادرة فقط. لم يتغير وضع المختص بعد، وسيبقى ظاهراً للمرضى ويمكنه استقبال حجوزات جديدة إلى أن تؤكد بدء المغادرة.",
+
           departureIntro:
-            "لن يقبل المختص حجوزات جديدة فور بدء المغادرة. يجب معالجة كل جلسة مستقبلية مدفوعة قبل إغلاق حساب المختص.",
+            "بدأت المغادرة بالفعل. لم يعد المختص يقبل حجوزات جديدة، ويجب معالجة كل جلسة مستقبلية مدفوعة قبل إغلاق وصوله نهائياً.",
+
+          departureNotStarted:
+            "لم تبدأ المغادرة بعد. يمكنك مراجعة الحجوزات أدناه ثم تأكيد بدء المغادرة عندما تكون جاهزاً.",
 
           confirmDeparture:
-            "هل تريد بدء مغادرة هذا المختص؟ سيتوقف فوراً عن استقبال حجوزات جديدة، لكن سجله والحجوزات المدفوعة ستبقى محفوظة.",
+            "هل تريد تأكيد بدء مغادرة هذا المختص؟ بعد التأكيد سيتوقف فوراً عن استقبال حجوزات جديدة، مع الاحتفاظ بالسجل والحجوزات المدفوعة.",
 
           departureLoading:
             "جارٍ تحميل الحجوزات المدفوعة...",
@@ -564,16 +573,25 @@ export default function AdminTherapistsPage() {
               "Gérer le départ",
 
             startDeparture:
-              "Retirer le spécialiste",
+              "Gérer le départ",
+
+            confirmStartDeparture:
+              "Confirmer le début du départ",
 
             resumeDeparture:
               "Continuer la gestion du départ",
 
+            departurePreparationIntro:
+              "Vous êtes seulement dans l’étape de préparation. Rien n’a encore changé pour ce spécialiste : il reste visible pour les patients et peut encore recevoir de nouvelles réservations tant que vous n’avez pas confirmé le début du départ.",
+
             departureIntro:
-              "Dès le début du départ, le spécialiste ne reçoit plus de nouvelles réservations. Chaque séance future déjà payée doit ensuite être traitée avant la désactivation définitive de son accès.",
+              "Le départ a réellement commencé. Le spécialiste ne reçoit plus de nouvelles réservations. Chaque séance future déjà payée doit être traitée avant la désactivation définitive de son accès.",
+
+            departureNotStarted:
+              "Le départ n’a pas encore commencé. Vous pouvez vérifier les réservations ci-dessous, puis confirmer le début du départ lorsque vous êtes prêt.",
 
             confirmDeparture:
-              "Commencer le retrait de ce spécialiste ? Il ne recevra plus de nouvelles réservations immédiatement, mais son historique et ses réservations payées seront conservés.",
+              "Confirmer le début du départ de ce spécialiste ? Après confirmation, il ne recevra plus de nouvelles réservations, mais son historique et ses réservations payées seront conservés.",
 
             departureLoading:
               "Chargement des réservations payées...",
@@ -639,7 +657,7 @@ export default function AdminTherapistsPage() {
               "Choisir le nouveau créneau",
 
             chooseTherapistFirst:
-              "Choisissez d’abord un spécialiste",
+              "Sélectionnez d’abord un spécialiste",
 
             noSlots:
               "Aucun créneau disponible pour ce spécialiste.",
@@ -778,16 +796,25 @@ export default function AdminTherapistsPage() {
               "Manage departure",
 
             startDeparture:
-              "Remove Specialist",
+              "Manage departure",
+
+            confirmStartDeparture:
+              "Confirm departure start",
 
             resumeDeparture:
               "Continue departure management",
 
+            departurePreparationIntro:
+              "You are only reviewing the departure setup. Nothing has changed yet: the specialist remains visible to patients and can still receive new bookings until you confirm the start of the departure.",
+
             departureIntro:
-              "Once departure starts, the specialist stops receiving new bookings. Every future paid session must be handled before access can be fully deactivated.",
+              "The departure has started. The specialist no longer receives new bookings. Every future paid session must be handled before access can be fully deactivated.",
+
+            departureNotStarted:
+              "The departure has not started yet. Review the bookings below, then confirm the departure when you are ready.",
 
             confirmDeparture:
-              "Start this specialist’s departure? New bookings will stop immediately, while booking and payment history will be preserved.",
+              "Confirm the start of this specialist’s departure? After confirmation, new bookings will stop immediately while booking and payment history will be preserved.",
 
             departureLoading:
               "Loading paid bookings...",
@@ -2074,6 +2101,8 @@ export default function AdminTherapistsPage() {
   const canFinalizeDeparture =
     Boolean(
       departureData &&
+        departureData.therapist.work_status ===
+          "leaving" &&
         departureData
           .futurePaidBookings
           .length === 0,
@@ -2329,7 +2358,7 @@ export default function AdminTherapistsPage() {
                             <button
                               type="button"
                               onClick={() =>
-                                void startDeparture(
+                                void loadDepartureData(
                                   therapist,
                                 )
                               }
@@ -2340,7 +2369,7 @@ export default function AdminTherapistsPage() {
                             >
                               {isProcessing
                                 ? text.processing
-                                : text.startDeparture}
+                                : text.manageDeparture}
                             </button>
                           ) : status ===
                             "leaving" ? (
@@ -2406,9 +2435,10 @@ export default function AdminTherapistsPage() {
                   </h2>
 
                   <p className="mt-2 max-w-3xl leading-7 text-aan-secondary">
-                    {
-                      text.departureIntro
-                    }
+                    {departureData?.therapist.work_status ===
+                    "active"
+                      ? text.departurePreparationIntro
+                      : text.departureIntro}
                   </p>
                 </div>
 
@@ -2455,6 +2485,42 @@ export default function AdminTherapistsPage() {
                   </div>
                 ) : departureData ? (
                   <>
+                    {departureData.therapist.work_status ===
+                      "active" && (
+                      <div className="mb-7 rounded-[1.75rem] border border-blue-200 bg-blue-50 p-6">
+                        <h3 className="text-xl font-bold text-blue-900">
+                          {
+                            text.manageDeparture
+                          }
+                        </h3>
+
+                        <p className="mt-2 max-w-4xl leading-7 text-blue-800">
+                          {
+                            text.departureNotStarted
+                          }
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void startDeparture(
+                              departureTherapist,
+                            )
+                          }
+                          disabled={
+                            processingId ===
+                            departureTherapist.id
+                          }
+                          className="mt-5 rounded-xl bg-blue-700 px-6 py-4 font-bold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {processingId ===
+                          departureTherapist.id
+                            ? text.processing
+                            : text.confirmStartDeparture}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-aan-border bg-white p-5">
                       <div>
                         <p className="text-sm font-bold text-aan-secondary">
@@ -2658,7 +2724,9 @@ export default function AdminTherapistsPage() {
                                         )
                                       }
                                       disabled={
-                                        isBookingProcessing
+                                        isBookingProcessing ||
+                                        departureData.therapist.work_status !==
+                                          "leaving"
                                       }
                                       className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white disabled:opacity-50"
                                     >
@@ -2699,7 +2767,9 @@ export default function AdminTherapistsPage() {
                                         )
                                       }
                                       disabled={
-                                        isBookingProcessing
+                                        isBookingProcessing ||
+                                        departureData.therapist.work_status !==
+                                          "leaving"
                                       }
                                       className="aan-field mt-4 w-full p-3"
                                     >
@@ -2754,6 +2824,8 @@ export default function AdminTherapistsPage() {
                                       }
                                       disabled={
                                         isBookingProcessing ||
+                                        departureData.therapist.work_status !==
+                                          "leaving" ||
                                         !currentChoice
                                           ?.therapistId
                                       }
@@ -2802,6 +2874,8 @@ export default function AdminTherapistsPage() {
                                       }
                                       disabled={
                                         isBookingProcessing ||
+                                        departureData.therapist.work_status !==
+                                          "leaving" ||
                                         !currentChoice
                                           ?.therapistId ||
                                         !currentChoice
@@ -2847,6 +2921,8 @@ export default function AdminTherapistsPage() {
                                       }
                                       disabled={
                                         isBookingProcessing ||
+                                        departureData.therapist.work_status !==
+                                          "leaving" ||
                                         booking.payment_provider !==
                                           "stripe"
                                       }
@@ -2865,6 +2941,8 @@ export default function AdminTherapistsPage() {
                       </div>
                     )}
 
+                    {departureData.therapist.work_status !==
+                      "active" && (
                     <div className="mt-8 rounded-[1.75rem] border border-aan-border bg-white p-6">
                       <h3 className="text-xl font-bold text-aan-navy">
                         {
@@ -2904,6 +2982,7 @@ export default function AdminTherapistsPage() {
                         </p>
                       )}
                     </div>
+                    )}
                   </>
                 ) : null}
               </div>
