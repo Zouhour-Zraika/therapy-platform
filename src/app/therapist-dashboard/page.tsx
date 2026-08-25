@@ -612,7 +612,7 @@ export default function TherapistDashboard() {
               "Automatic translation could not be completed. The profile was not saved to avoid incomplete translations.",
 
             fullNameRequired:
-            "Please enter your full name.",
+              "Please enter your full name.",
 
             professionalTitleRequired:
               "Please enter your professional title.",
@@ -1225,7 +1225,8 @@ export default function TherapistDashboard() {
               experienceYears,
             )
           : null;
-     if (
+
+      if (
         parsedExperience !==
           null &&
         (!Number.isInteger(
@@ -1839,6 +1840,7 @@ export default function TherapistDashboard() {
                   text.profileDescription
                 }
               </p>
+
               <div className="mt-5 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-secondary">
                 {language ===
                 "ar"
