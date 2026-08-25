@@ -179,7 +179,7 @@ function BookingContent() {
   const bookingSectionRef =
     useRef<HTMLDivElement | null>(null);
 
-  const { isArabic, t } = useLanguage();
+  const { language, isArabic, t } = useLanguage();
 
   const translate = (key: string) => {
     return t(key as TranslationKey);
@@ -1064,8 +1064,11 @@ function BookingContent() {
 
       try {
         const {
-          data: { user },
-          error: userError,
+          data: {
+            user,
+          },
+          error:
+            userError,
         } =
           await supabase.auth.getUser();
 
@@ -1086,8 +1089,10 @@ function BookingContent() {
             JSON.stringify({
               therapistId:
                 selectedTherapist.id,
+
               slotId:
                 selectedSlot.id,
+
               returnUrl,
             }),
           );
@@ -1100,250 +1105,215 @@ function BookingContent() {
           return;
         }
 
-        const therapistName =
-          getTherapistName(
-            selectedTherapist,
-          );
-
-        const scheduledStart =
-          getScheduledStart(
-            selectedSlot,
-          );
-
-        if (!scheduledStart) {
-          console.error(
-            "Unable to calculate booking start date.",
-            selectedSlot,
-          );
-
-          alert(
-            isArabic
-              ? "تعذر تحديد تاريخ ووقت الجلسة. يرجى اختيار موعد آخر."
-              : "Unable to determine the session date and time. Please choose another slot.",
-          );
-
-          return;
-        }
-
         /*
-         * Durée provisoire de deux heures.
-         * Elle pourra être rendue configurable plus tard.
-         */
-        const scheduledEnd =
-          new Date(
-            scheduledStart.getTime() +
-              2 * 60 * 60 * 1000,
-          );
-
-        /*
-         * Vérification de dernière seconde :
-         * le spécialiste doit toujours accepter
-         * de nouvelles réservations.
+         * IMPORTANT :
          *
-         * Cela protège également contre une ancienne
-         * page laissée ouverte ou une URL directe.
+         * La réservation temporaire n'est plus
+         * créée directement depuis le navigateur.
+         *
+         * L'API serveur /api/booking/hold doit :
+         * - vérifier que le spécialiste est active ;
+         * - relire le vrai prix dans Supabase ;
+         * - vérifier que le créneau est encore libre ;
+         * - créer un hold de paiement de 10 minutes ;
+         * - empêcher deux patients de réserver
+         *   le même créneau en même temps ;
+         * - retourner bookingId + holdExpiresAt.
+         *
+         * Si le paiement n'est pas effectué dans
+         * les 10 minutes, le hold doit expirer et
+         * le créneau doit redevenir disponible.
          */
         const {
-          data: currentTherapistStatus,
-          error: therapistStatusError,
-        } = await supabase
-          .from("therapists")
-          .select("id, work_status, price")
-          .eq("id", selectedTherapist.id)
-          .maybeSingle<{
-            id: string;
-            work_status:
-              | "active"
-              | "leaving"
-              | "inactive";
-            price: number | null;
-          }>();
-
-        if (therapistStatusError) {
-          console.error(
-            "Therapist status check error:",
-            therapistStatusError,
-          );
-
-          alert(
-            isArabic
-              ? "تعذر التحقق من توفر المختص. يرجى المحاولة مرة أخرى."
-              : "Unable to verify specialist availability. Please try again.",
-          );
-
-          return;
-        }
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
 
         if (
-          !currentTherapistStatus ||
-          currentTherapistStatus.work_status !== "active"
+          sessionError ||
+          !session
         ) {
-          setSelectedTherapist(null);
-          setSelectedSlot(null);
-
-          alert(
-            isArabic
-              ? "هذا المختص لم يعد متاحاً للحجوزات الجديدة. يرجى اختيار مختص آخر."
-              : "This specialist is no longer accepting new bookings. Please choose another specialist.",
-          );
-
-          return;
-        }
-
-        const currentPrice = Number(
-          currentTherapistStatus.price ?? 0,
-        );
-
-        if (
-          !Number.isFinite(currentPrice) ||
-          currentPrice <= 0
-        ) {
-          alert(
-            isArabic
-              ? "سعر الجلسة غير متوفر حالياً. يرجى التواصل مع العيادة."
-              : "The session price is currently unavailable. Please contact the clinic.",
-          );
-
-          return;
-        }
-
-        const {
-          data: claimedSlot,
-          error: slotClaimError,
-        } = await supabase
-          .from("availability_slots")
-          .update({
-            is_booked: true,
-          })
-          .eq("id", selectedSlot.id)
-          .eq(
-            "therapist_id",
-            selectedTherapist.id,
-          )
-          .eq("is_booked", false)
-          .select("id")
-          .maybeSingle();
-
-        if (slotClaimError) {
           console.error(
-            "Slot claim error:",
-            slotClaimError,
+            "Session error:",
+            sessionError,
           );
 
           alert(
-            isArabic
-              ? "تعذر حجز هذا الموعد. يرجى المحاولة مرة أخرى."
-              : "Unable to reserve this slot. Please try again.",
+            language === "ar"
+              ? "انتهت جلستك. يرجى تسجيل الدخول من جديد."
+              : language === "fr"
+                ? "Votre session a expiré. Veuillez vous reconnecter."
+                : "Your session has expired. Please sign in again.",
           );
+
+          window.location.href =
+            "/login";
 
           return;
         }
 
-        if (!claimedSlot) {
-          setAllSlots((current) =>
-            current.filter(
-              (slot) =>
-                slot.id !==
-                selectedSlot.id,
-            ),
+        const response =
+          await fetch(
+            "/api/booking/hold",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+
+              body:
+                JSON.stringify({
+                  therapistId:
+                    selectedTherapist.id,
+
+                  slotId:
+                    selectedSlot.id,
+
+                  language,
+                }),
+            },
           );
 
-          setSelectedSlot(null);
+        const result =
+          await response.json();
 
-          alert(
-            isArabic
-              ? "هذا الموعد لم يعد متاحاً. يرجى اختيار موعد آخر."
-              : "This slot is no longer available. Please choose another slot.",
-          );
-
-          return;
-        }
-
-        const {
-          data: bookingData,
-          error: bookingError,
-        } = await supabase
-          .from("bookings")
-          .insert({
-            patient_id:
-              user.id,
-
-            patient_email:
-              user.email,
-
-            therapist_id:
-              selectedTherapist.id,
-
-            slot_id:
-              selectedSlot.id,
-
-            therapist_name:
-              therapistName,
-
-            slot_day:
-              selectedSlot.day,
-
-            slot_time:
-              selectedSlot.time,
-
-            scheduled_start:
-              scheduledStart.toISOString(),
-
-            scheduled_end:
-              scheduledEnd.toISOString(),
-
-            price:
-              currentPrice,
-
-            status:
-              "pending",
-          })
-          .select()
-          .single();
-
-        if (bookingError) {
+        if (!response.ok) {
           console.error(
-            "Booking error:",
-            bookingError,
+            "Booking hold error:",
+            result,
           );
 
-          const {
-            error: slotReleaseError,
-          } = await supabase
-            .from("availability_slots")
-            .update({
-              is_booked: false,
-            })
-            .eq("id", selectedSlot.id);
-
-          if (slotReleaseError) {
-            console.error(
-              "Slot release error:",
-              slotReleaseError,
+          if (
+            response.status ===
+            409
+          ) {
+            setAllSlots(
+              (
+                current,
+              ) =>
+                current.filter(
+                  (
+                    slot,
+                  ) =>
+                    slot.id !==
+                    selectedSlot.id,
+                ),
             );
+
+            setSelectedSlot(
+              null,
+            );
+
+            alert(
+              language === "ar"
+                ? "هذا الموعد لم يعد متاحاً. يرجى اختيار موعد آخر."
+                : language === "fr"
+                  ? "Ce créneau n’est plus disponible. Veuillez en choisir un autre."
+                  : "This slot is no longer available. Please choose another slot.",
+            );
+
+            return;
           }
 
           alert(
-            t(
-              "booking.errors.create",
-            ),
+            result.error ||
+              (language === "ar"
+                ? "تعذر بدء حجز هذا الموعد. يرجى المحاولة مرة أخرى."
+                : language === "fr"
+                  ? "Impossible de préparer cette réservation. Veuillez réessayer."
+                  : "Unable to prepare this booking. Please try again."),
           );
 
           return;
         }
 
-        setAllSlots((current) =>
-          current.filter(
-            (slot) =>
-              slot.id !==
-              selectedSlot.id,
-          ),
+        const bookingId =
+          String(
+            result.bookingId ||
+              result.booking?.id ||
+              "",
+          );
+
+        if (!bookingId) {
+          console.error(
+            "Booking hold response is missing bookingId:",
+            result,
+          );
+
+          alert(
+            language === "ar"
+              ? "تعذر إنشاء الحجز المؤقت."
+              : language === "fr"
+                ? "Impossible de créer la réservation temporaire."
+                : "Unable to create the temporary booking.",
+          );
+
+          return;
+        }
+
+        const therapistName =
+          String(
+            result.therapistName ||
+              result.booking
+                ?.therapist_name ||
+              getTherapistName(
+                selectedTherapist,
+              ),
+          );
+
+        const currentPrice =
+          Number(
+            result.price ??
+              result.booking?.price ??
+              selectedTherapist.price,
+          );
+
+        const slotLabel =
+          String(
+            result.slotLabel ||
+              `${formatSlotDate(
+                selectedSlot,
+              )} ${selectedSlot.time}`,
+          );
+
+        const holdExpiresAt =
+          typeof result.holdExpiresAt ===
+            "string"
+            ? result.holdExpiresAt
+            : "";
+
+        /*
+         * On retire localement le créneau
+         * pendant le hold.
+         *
+         * Le serveur reste la source de vérité.
+         */
+        setAllSlots(
+          (
+            current,
+          ) =>
+            current.filter(
+              (
+                slot,
+              ) =>
+                slot.id !==
+                selectedSlot.id,
+            ),
         );
 
         const paymentParams =
           new URLSearchParams({
-            bookingId:
-              bookingData.id,
+            bookingId,
 
             therapist:
               therapistName,
@@ -1354,15 +1324,35 @@ function BookingContent() {
               ),
 
             slot:
-              `${formatSlotDate(
-                selectedSlot,
-              )} ${selectedSlot.time}`,
+              slotLabel,
           });
+
+        if (holdExpiresAt) {
+          paymentParams.set(
+            "holdUntil",
+            holdExpiresAt,
+          );
+        }
 
         window.location.href =
           `/payment?${paymentParams.toString()}`;
+      } catch (error) {
+        console.error(
+          "Booking hold error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "حدث خطأ أثناء تحضير الحجز. يرجى المحاولة مرة أخرى."
+            : language === "fr"
+              ? "Une erreur est survenue pendant la préparation de la réservation. Veuillez réessayer."
+              : "An error occurred while preparing the booking. Please try again.",
+        );
       } finally {
-        setBookingLoading(false);
+        setBookingLoading(
+          false,
+        );
       }
     };
       return (
@@ -1959,9 +1949,11 @@ function BookingContent() {
                                     {start &&
                                       end && (
                                         <p className="mt-4 text-xs leading-5 text-[#7a858b]">
-                                          {isArabic
-                                            ? "مدة محجوزة مؤقتاً: حتى ساعتين"
-                                            : "Reserved window: up to 2 hours"}
+                                          {language === "ar"
+                                            ? "مدة الجلسة: حتى ساعتين"
+                                            : language === "fr"
+                                              ? "Durée de la séance : jusqu’à 2 heures"
+                                              : "Session duration: up to 2 hours"}
                                         </p>
                                       )}
                                   </button>
@@ -2041,9 +2033,11 @@ function BookingContent() {
 
                           <div className="mt-6 rounded-2xl border border-[#e3d8c7] bg-white p-4">
                             <p className="text-sm leading-6 text-[#69747a]">
-                              {isArabic
-                                ? "يتم حالياً حجز نافذة زمنية تصل إلى ساعتين للجلسة. يمكن للمعالج والمريض إنهاء المكالمة في أي وقت عند انتهاء الجلسة."
-                                : "A window of up to 2 hours is currently reserved for the session. The therapist and patient can end the call whenever the session is finished."}
+                              {language === "ar"
+                                ? "عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد. مدة الجلسة نفسها قد تصل إلى ساعتين."
+                                : language === "fr"
+                                  ? "En continuant vers le paiement, ce créneau vous sera réservé temporairement pendant 10 minutes. Sans paiement dans ce délai, il redeviendra disponible. La séance elle-même peut durer jusqu’à deux heures."
+                                  : "When you continue to payment, this slot will be held for you for 10 minutes. If payment is not completed in that time, the slot will become available again. The session itself may last up to two hours."}
                             </p>
                           </div>
 
