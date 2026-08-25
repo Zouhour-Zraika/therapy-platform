@@ -1,14 +1,14 @@
 "use client";
 
 import {
+  useEffect,
   useState,
 } from "react";
 
 import Link from "next/link";
 import {
   useRouter,
-  useSearchParams,
-} from "next/navigation";
+  } from "next/navigation";
 
 import {
   supabase,
@@ -28,11 +28,25 @@ export default function LoginPage() {
   const router =
     useRouter();
 
-  const searchParams =
-    useSearchParams();
+  const [
+    reason,
+    setReason,
+  ] = useState<
+    string | null
+  >(null);
 
-  const reason =
-    searchParams.get("reason");
+  useEffect(() => {
+    const params =
+      new URLSearchParams(
+        window.location.search,
+      );
+
+    setReason(
+      params.get(
+        "reason",
+      ),
+    );
+  }, []);
 
   const {
     language,
