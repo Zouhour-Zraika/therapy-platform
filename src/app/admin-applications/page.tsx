@@ -35,7 +35,7 @@ export default function AdminApplicationsPage() {
   >(null);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   const copy = isArabic
     ? {
@@ -72,7 +72,42 @@ export default function AdminApplicationsPage() {
         approveError: "تعذر قبول الطلب.",
         rejectError: "تعذر رفض الطلب.",
       }
-    : {
+    : language === "fr"
+      ? {
+          eyebrow: "Gestion des candidatures des thérapeutes",
+          title: "Candidatures des thérapeutes",
+          description:
+            "Examinez les nouvelles demandes de thérapeutes et approuvez ou refusez chaque candidature.",
+
+          all: "Toutes les candidatures",
+          pending: "En attente",
+          approved: "Approuvées",
+          rejected: "Refusées",
+
+          loading: "Chargement des candidatures...",
+          empty: "Aucune candidature n’a encore été soumise.",
+          loadError: "Impossible de charger les candidatures des thérapeutes.",
+
+          specialty: "Spécialité",
+          notProvided: "Non renseignée",
+          message: "Message du candidat",
+          noMessage: "Aucun message fourni.",
+          submitted: "Soumise le",
+          status: "Statut",
+
+          approve: "Approuver la candidature",
+          reject: "Refuser la candidature",
+          processing: "Traitement en cours...",
+
+          approvedInfo: "Cette candidature a été approuvée.",
+          rejectedInfo: "Cette candidature a été refusée.",
+
+          approvedSuccess:
+            "Le thérapeute a été approuvé et l’e-mail d’invitation a été envoyé.",
+          approveError: "Impossible d’approuver la candidature.",
+          rejectError: "Impossible de refuser la candidature.",
+        }
+      : {
         eyebrow: "Therapist application management",
         title: "Therapist Applications",
         description:
@@ -326,7 +361,11 @@ export default function AdminApplicationsPage() {
 
   const formatDate = (date: string) => {
     return new Intl.DateTimeFormat(
-      isArabic ? "ar-LB" : "en-GB",
+      isArabic
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
       {
         dateStyle: "medium",
         timeStyle: "short",
