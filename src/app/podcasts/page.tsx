@@ -8,8 +8,11 @@ import { useLanguage } from "@/i18n/LanguageProvider";
 type Podcast = {
   id: string;
   title: string;
+  title_fr: string | null;
   title_ar: string | null;
+
   description: string;
+  description_fr: string | null;
   description_ar: string | null;
   content_type: "recorded" | "live" | null;
   audio_url: string | null;
@@ -19,12 +22,16 @@ type Podcast = {
   live_starts_at: string | null;
   live_ends_at: string | null;
   host_name: string | null;
+  host_name_fr: string | null;
   host_name_ar: string | null;
+
   guest_names: string | null;
+  guest_names_fr: string | null;
   guest_names_ar: string | null;
   duration: string | null;
   language: string;
   topic: string;
+  topic_fr: string | null;
   topic_ar: string | null;
   created_at: string;
 };
@@ -71,30 +78,59 @@ export default function PodcastsPage() {
 
   const getLocalizedValue = (
     englishValue: string | null | undefined,
+    frenchValue: string | null | undefined,
     arabicValue: string | null | undefined,
   ) => {
-    if (isArabic && arabicValue?.trim()) {
+    if (language === "ar" && arabicValue?.trim()) {
       return arabicValue.trim();
     }
 
-    return englishValue?.trim() || "";
+    if (language === "fr" && frenchValue?.trim()) {
+      return frenchValue.trim();
+    }
+
+    return (
+      englishValue?.trim() ||
+      frenchValue?.trim() ||
+      arabicValue?.trim() ||
+      ""
+    );
   };
 
   const getTitle = (podcast: Podcast) =>
-    getLocalizedValue(podcast.title, podcast.title_ar);
+    getLocalizedValue(
+      podcast.title,
+      podcast.title_fr,
+      podcast.title_ar,
+    );
 
   const getDescription = (podcast: Podcast) =>
-    getLocalizedValue(podcast.description, podcast.description_ar);
+    getLocalizedValue(
+      podcast.description,
+      podcast.description_fr,
+      podcast.description_ar,
+    );
 
   const getTopic = (podcast: Podcast) =>
-    getLocalizedValue(podcast.topic, podcast.topic_ar) ||
-    t("podcasts.general");
+    getLocalizedValue(
+      podcast.topic,
+      podcast.topic_fr,
+      podcast.topic_ar,
+    ) || t("podcasts.general");
 
   const getHostName = (podcast: Podcast) =>
-    getLocalizedValue(podcast.host_name, podcast.host_name_ar);
+    getLocalizedValue(
+      podcast.host_name,
+      podcast.host_name_fr,
+      podcast.host_name_ar,
+    );
 
   const getGuestNames = (podcast: Podcast) =>
-    getLocalizedValue(podcast.guest_names, podcast.guest_names_ar);
+    getLocalizedValue(
+      podcast.guest_names,
+      podcast.guest_names_fr,
+      podcast.guest_names_ar,
+    );
 
   const getLanguageLabel = (language: string) => {
     const normalized = language?.toLowerCase();
