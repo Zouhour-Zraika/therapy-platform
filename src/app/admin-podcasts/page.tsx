@@ -14,7 +14,7 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
 
-type PodcastLanguage = "en" | "ar";
+type PodcastLanguage = "en" | "fr" | "ar";
 type PodcastContentType = "recorded" | "live";
 
 type Podcast = {
@@ -41,7 +41,6 @@ type Podcast = {
   guest_names_ar: string | null;
 
   content_type: PodcastContentType | null;
-
   audio_url: string | null;
   video_url: string | null;
   thumbnail_url: string | null;
@@ -55,1805 +54,1013 @@ type Podcast = {
   created_at: string;
 };
 
+type TranslationResponse = {
+  translations?: Record<string, string>;
+  error?: string;
+  details?: string;
+};
+
 type UploadStatus =
   | "idle"
   | "uploading-thumbnail"
   | "uploading-video"
+  | "translating"
   | "saving";
 
 const VIDEO_BUCKET = "podcast-videos";
 const THUMBNAIL_BUCKET = "podcast-thumbnails";
 
-const MAX_VIDEO_SIZE =
-  500 * 1024 * 1024;
-
-const MAX_THUMBNAIL_SIZE =
-  8 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024;
+const MAX_THUMBNAIL_SIZE = 8 * 1024 * 1024;
 
 export default function AdminPodcastsPage() {
   const router = useRouter();
+  const { language: uiLanguage, isArabic } = useLanguage();
 
-  const {
-    language: uiLanguage,
-    isArabic,
-  } = useLanguage();
+  const [allowed, setAllowed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] =
+    useState<UploadStatus>("idle");
 
-  const [allowed, setAllowed] =
-    useState(false);
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [
-    submitting,
-    setSubmitting,
-  ] = useState(false);
-
-  const [
-    uploadStatus,
-    setUploadStatus,
-  ] =
-    useState<UploadStatus>(
-      "idle",
-    );
-
-  const [
-    podcasts,
-    setPodcasts,
-  ] =
-    useState<Podcast[]>([]);
-
-  const [
-    contentType,
-    setContentType,
-  ] =
-    useState<PodcastContentType>(
-      "recorded",
-    );
+  const [contentType, setContentType] =
+    useState<PodcastContentType>("recorded");
 
   /*
-   * This is the language of the actual
-   * audio/video content, not the interface.
-   *
-   * We keep EN/AR exactly like the current DB
-   * structure to avoid breaking an existing
-   * database constraint.
+   * L'admin écrit le contenu UNE SEULE FOIS.
+   * Cette valeur indique la langue dans laquelle il a écrit.
+   * Les 2 autres langues sont générées automatiquement.
    */
-  const [
-    sourceLanguage,
-    setSourceLanguage,
-  ] =
-    useState<PodcastLanguage>(
-      "en",
-    );
+  const [sourceLanguage, setSourceLanguage] =
+    useState<PodcastLanguage>("en");
 
-  /*
-   * Every new podcast must contain its
-   * public metadata in all 3 languages.
-   */
-  const [
-    titleEn,
-    setTitleEn,
-  ] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [topic, setTopic] = useState("");
+  const [hostName, setHostName] = useState("");
+  const [guestNames, setGuestNames] = useState("");
+  const [duration, setDuration] = useState("");
 
-  const [
-    titleFr,
-    setTitleFr,
-  ] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [thumbnailFile, setThumbnailFile] =
+    useState<File | null>(null);
 
-  const [
-    titleAr,
-    setTitleAr,
-  ] = useState("");
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState("");
+  const [thumbnailPreviewUrl, setThumbnailPreviewUrl] =
+    useState("");
 
-  const [
-    descriptionEn,
-    setDescriptionEn,
-  ] = useState("");
+  const [existingVideoUrl, setExistingVideoUrl] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
 
-  const [
-    descriptionFr,
-    setDescriptionFr,
-  ] = useState("");
-
-  const [
-    descriptionAr,
-    setDescriptionAr,
-  ] = useState("");
-
-  const [
-    topicEn,
-    setTopicEn,
-  ] = useState("");
-
-  const [
-    topicFr,
-    setTopicFr,
-  ] = useState("");
-
-  const [
-    topicAr,
-    setTopicAr,
-  ] = useState("");
-
-  const [
-    hostNameEn,
-    setHostNameEn,
-  ] = useState("");
-
-  const [
-    hostNameFr,
-    setHostNameFr,
-  ] = useState("");
-
-  const [
-    hostNameAr,
-    setHostNameAr,
-  ] = useState("");
-
-  const [
-    guestNamesEn,
-    setGuestNamesEn,
-  ] = useState("");
-
-  const [
-    guestNamesFr,
-    setGuestNamesFr,
-  ] = useState("");
-
-  const [
-    guestNamesAr,
-    setGuestNamesAr,
-  ] = useState("");
-
-  const [
-    duration,
-    setDuration,
-  ] = useState("");
-
-  const [
-    videoFile,
-    setVideoFile,
-  ] =
-    useState<File | null>(
-      null,
-    );
-
-  const [
-    thumbnailFile,
-    setThumbnailFile,
-  ] =
-    useState<File | null>(
-      null,
-    );
-
-  const [
-    videoPreviewUrl,
-    setVideoPreviewUrl,
-  ] = useState("");
-
-  const [
-    thumbnailPreviewUrl,
-    setThumbnailPreviewUrl,
-  ] = useState("");
-
-  const [
-    existingVideoUrl,
-    setExistingVideoUrl,
-  ] = useState("");
-
-  const [
-    audioUrl,
-    setAudioUrl,
-  ] = useState("");
-
-  const [
-    liveUrl,
-    setLiveUrl,
-  ] = useState("");
-
-  const [
-    liveStartsAt,
-    setLiveStartsAt,
-  ] = useState("");
-
-  const [
-    liveEndsAt,
-    setLiveEndsAt,
-  ] = useState("");
+  const [liveUrl, setLiveUrl] = useState("");
+  const [liveStartsAt, setLiveStartsAt] = useState("");
+  const [liveEndsAt, setLiveEndsAt] = useState("");
 
   const copy =
     uiLanguage === "ar"
       ? {
-          pageEyebrow:
-            "إدارة المحتوى",
-
-          pageTitle:
-            "إدارة الفيديو والبودكاست",
-
+          pageEyebrow: "إدارة المحتوى",
+          pageTitle: "إدارة الفيديو والبودكاست",
           pageDescription:
-            "أضف محتوى مسجلاً أو مباشراً مع عنوان ووصف وموضوع بالإنجليزية والفرنسية والعربية.",
+            "أدخل المحتوى بلغة واحدة فقط. سيقوم النظام بإنشاء النسختين الأخريين تلقائياً قبل الحفظ.",
 
-          contentType:
-            "نوع المحتوى",
+          contentType: "نوع المحتوى",
+          recorded: "محتوى مسجل",
+          live: "بث مباشر",
 
-          recorded:
-            "محتوى مسجل",
+          sourceLanguage: "لغة المحتوى الذي ستكتبه",
+          english: "الإنجليزية",
+          french: "الفرنسية",
+          arabic: "العربية",
 
-          live:
-            "بث مباشر",
+          autoTranslationTitle: "ترجمة تلقائية إلى ثلاث لغات",
+          autoTranslationHelp:
+            "اكتب الحقول أدناه بلغة واحدة فقط. عند النشر، سيتم إنشاء الإنجليزية والفرنسية والعربية تلقائياً.",
 
-          sourceLanguage:
-            "لغة الصوت أو الفيديو الأصلية",
+          title: "العنوان",
+          description: "الوصف",
+          topic: "الموضوع",
+          host: "المقدّم",
+          guests: "الضيوف",
+          duration: "المدة، مثال 42:10",
 
-          english:
-            "الإنجليزية",
+          recordedSection: "المحتوى المسجل",
+          chooseVideo: "اختيار ملف الفيديو",
+          videoHelp: "MP4 أو WebM، بحد أقصى 500 ميغابايت.",
+          selectedVideo: "الفيديو المحدد",
+          optionalVideoUrl: "أو أدخل رابط فيديو جاهز",
 
-          french:
-            "الفرنسية",
-
-          arabic:
-            "العربية",
-
-          translationsTitle:
-            "محتوى اللغات الثلاث",
-
-          translationsHelp:
-            "يجب إدخال العنوان والوصف والموضوع باللغات الثلاث قبل النشر.",
-
-          title:
-            "العنوان",
-
-          description:
-            "الوصف",
-
-          topic:
-            "الموضوع",
-
-          host:
-            "المقدّم",
-
-          guests:
-            "الضيوف",
-
-          duration:
-            "المدة، مثال 42:10",
-
-          recordedSection:
-            "المحتوى المسجل",
-
-          chooseVideo:
-            "اختيار ملف الفيديو",
-
-          videoHelp:
-            "MP4 أو WebM، بحد أقصى 500 ميغابايت.",
-
-          selectedVideo:
-            "الفيديو المحدد",
-
-          optionalVideoUrl:
-            "أو أدخل رابط فيديو جاهز",
-
-          thumbnailSection:
-            "الصورة المصغرة",
-
-          chooseThumbnail:
-            "اختيار صورة مصغرة",
-
+          thumbnailSection: "الصورة المصغرة",
+          chooseThumbnail: "اختيار صورة مصغرة",
           thumbnailHelp:
             "JPG أو PNG أو WebP، بحد أقصى 8 ميغابايت.",
+          selectedThumbnail: "الصورة المحددة",
+          thumbnailPreview: "ستظهر معاينة الصورة هنا.",
 
-          selectedThumbnail:
-            "الصورة المحددة",
+          audioUrl: "رابط صوت اختياري",
 
-          audioUrl:
-            "رابط صوت اختياري",
+          liveSection: "إعدادات البث المباشر",
+          liveUrl: "رابط Zoom أو Meet أو YouTube Live أو Jitsi",
+          liveStartsAt: "بداية البث",
+          liveEndsAt: "نهاية البث",
+          liveHelp:
+            "يمكنك استخدام رابط Zoom أو Google Meet أو YouTube Live أو Jitsi.",
 
-          liveSection:
-            "إعدادات البث المباشر",
+          add: "إضافة المحتوى",
+          uploadingThumbnail: "جارٍ رفع الصورة المصغرة...",
+          uploadingVideo: "جارٍ رفع الفيديو...",
+          translating: "جارٍ إنشاء الترجمات الإنجليزية والفرنسية والعربية...",
+          saving: "جارٍ حفظ المحتوى...",
 
-          liveUrl:
-            "رابط Zoom أو Meet أو YouTube Live أو Jitsi",
+          existing: "المحتوى الموجود",
+          empty: "لا يوجد محتوى حتى الآن.",
+          originalLanguage: "اللغة الأصلية",
+          delete: "حذف",
+          deleteQuestion: "هل تريد حذف هذا المحتوى؟",
 
-          liveStartsAt:
-            "بداية البث",
+          loading: "جارٍ التحميل...",
+          loadError: "تعذر تحميل المحتوى.",
 
-          liveEndsAt:
-            "نهاية البث",
-
-          add:
-            "إضافة المحتوى",
-
-          uploadingThumbnail:
-            "جارٍ رفع الصورة المصغرة...",
-
-          uploadingVideo:
-            "جارٍ رفع الفيديو...",
-
-          saving:
-            "جارٍ حفظ المحتوى...",
-
-          existing:
-            "المحتوى الموجود",
-
-          empty:
-            "لا يوجد محتوى حتى الآن.",
-
-          originalLanguage:
-            "لغة المحتوى الأصلية",
-
-          delete:
-            "حذف",
-
-          deleteQuestion:
-            "هل تريد حذف هذا المحتوى؟",
-
-          loading:
-            "جارٍ التحميل...",
-
-          loadError:
-            "تعذر تحميل المحتوى.",
-
-          allLanguagesRequired:
-            "يجب إدخال العنوان والوصف والموضوع بالإنجليزية والفرنسية والعربية قبل النشر.",
-
+          titleRequired: "يرجى إدخال العنوان.",
+          descriptionRequired: "يرجى إدخال الوصف.",
+          topicRequired: "يرجى إدخال الموضوع.",
           recordedRequired:
             "يرجى اختيار فيديو أو إدخال رابط فيديو أو رابط صوت.",
-
           liveRequired:
             "يرجى إدخال رابط البث وتحديد موعد البداية.",
+          endAfterStart:
+            "يجب أن تكون نهاية البث بعد بداية البث.",
 
           invalidVideo:
             "يجب أن يكون الملف فيديو بصيغة MP4 أو WebM.",
-
           videoTooLarge:
             "حجم الفيديو يتجاوز 500 ميغابايت.",
-
           invalidThumbnail:
             "يجب أن تكون الصورة بصيغة JPG أو PNG أو WebP.",
-
           thumbnailTooLarge:
             "حجم الصورة يتجاوز 8 ميغابايت.",
 
-          uploadError:
-            "تعذر رفع الملف.",
-
-          addError:
-            "تعذرت إضافة المحتوى.",
-
-          deleteError:
-            "تعذر حذف المحتوى.",
+          uploadError: "تعذر رفع الملف.",
+          translationError: "تعذرت الترجمة التلقائية.",
+          addError: "تعذرت إضافة المحتوى.",
+          deleteError: "تعذر حذف المحتوى.",
 
           success:
-            "تمت إضافة المحتوى بنجاح باللغات الثلاث.",
+            "تمت إضافة المحتوى وإنشاء النسخ الإنجليزية والفرنسية والعربية تلقائياً.",
 
-          recordedBadge:
-            "مسجل",
-
-          liveBadge:
-            "مباشر",
-
-          noDescription:
-            "لا يوجد وصف.",
-
-          thumbnailPreview:
-            "ستظهر معاينة الصورة هنا.",
-
-          liveHelp:
-            "يمكنك استخدام رابط Zoom أو Google Meet أو YouTube Live أو Jitsi. سيظهر على الصفحة العامة كموعد قادم ثم كمباشر أثناء الفترة المحددة.",
-
-          endAfterStart:
-            "يجب أن تكون نهاية البث بعد بداية البث.",
+          recordedBadge: "مسجل",
+          liveBadge: "مباشر",
+          noDescription: "لا يوجد وصف.",
         }
       : uiLanguage === "fr"
         ? {
-            pageEyebrow:
-              "Gestion du contenu",
-
-            pageTitle:
-              "Gérer les vidéos et podcasts",
-
+            pageEyebrow: "Gestion du contenu",
+            pageTitle: "Gérer les vidéos et podcasts",
             pageDescription:
-              "Ajoutez du contenu enregistré ou en direct avec un titre, une description et un sujet en anglais, français et arabe.",
+              "Saisissez le contenu dans une seule langue. Le système générera automatiquement les deux autres versions avant l’enregistrement.",
 
-            contentType:
-              "Type de contenu",
+            contentType: "Type de contenu",
+            recorded: "Contenu enregistré",
+            live: "Session en direct",
 
-            recorded:
-              "Contenu enregistré",
+            sourceLanguage: "Langue du contenu que vous allez saisir",
+            english: "Anglais",
+            french: "Français",
+            arabic: "Arabe",
 
-            live:
-              "Session en direct",
+            autoTranslationTitle:
+              "Traduction automatique en 3 langues",
+            autoTranslationHelp:
+              "Remplissez les champs ci-dessous dans une seule langue. Lors de la publication, les versions anglaise, française et arabe seront générées automatiquement.",
 
-            sourceLanguage:
-              "Langue originale de l’audio ou de la vidéo",
+            title: "Titre",
+            description: "Description",
+            topic: "Sujet",
+            host: "Présentateur",
+            guests: "Invités",
+            duration: "Durée, par exemple 42:10",
 
-            english:
-              "Anglais",
-
-            french:
-              "Français",
-
-            arabic:
-              "Arabe",
-
-            translationsTitle:
-              "Contenu dans les trois langues",
-
-            translationsHelp:
-              "Le titre, la description et le sujet doivent être renseignés dans les trois langues avant publication.",
-
-            title:
-              "Titre",
-
-            description:
-              "Description",
-
-            topic:
-              "Sujet",
-
-            host:
-              "Présentateur",
-
-            guests:
-              "Invités",
-
-            duration:
-              "Durée, par exemple 42:10",
-
-            recordedSection:
-              "Contenu enregistré",
-
-            chooseVideo:
-              "Choisir un fichier vidéo",
-
-            videoHelp:
-              "MP4 ou WebM, maximum 500 Mo.",
-
-            selectedVideo:
-              "Vidéo sélectionnée",
-
+            recordedSection: "Contenu enregistré",
+            chooseVideo: "Choisir un fichier vidéo",
+            videoHelp: "MP4 ou WebM, maximum 500 Mo.",
+            selectedVideo: "Vidéo sélectionnée",
             optionalVideoUrl:
               "Ou saisir une URL vidéo existante",
 
-            thumbnailSection:
-              "Miniature",
-
-            chooseThumbnail:
-              "Choisir une miniature",
-
+            thumbnailSection: "Miniature",
+            chooseThumbnail: "Choisir une miniature",
             thumbnailHelp:
               "JPG, PNG ou WebP, maximum 8 Mo.",
-
-            selectedThumbnail:
-              "Image sélectionnée",
-
-            audioUrl:
-              "URL audio facultative",
-
-            liveSection:
-              "Paramètres du direct",
-
-            liveUrl:
-              "URL Zoom, Meet, YouTube Live ou Jitsi",
-
-            liveStartsAt:
-              "Début du direct",
-
-            liveEndsAt:
-              "Fin du direct",
-
-            add:
-              "Ajouter le contenu",
-
-            uploadingThumbnail:
-              "Importation de la miniature...",
-
-            uploadingVideo:
-              "Importation de la vidéo...",
-
-            saving:
-              "Enregistrement du contenu...",
-
-            existing:
-              "Contenu existant",
-
-            empty:
-              "Aucun contenu pour le moment.",
-
-            originalLanguage:
-              "Langue originale",
-
-            delete:
-              "Supprimer",
-
-            deleteQuestion:
-              "Supprimer ce contenu ?",
-
-            loading:
-              "Chargement...",
-
-            loadError:
-              "Impossible de charger le contenu.",
-
-            allLanguagesRequired:
-              "Renseignez le titre, la description et le sujet en anglais, français et arabe avant de publier.",
-
-            recordedRequired:
-              "Choisissez une vidéo, saisissez une URL vidéo ou fournissez une URL audio.",
-
-            liveRequired:
-              "Saisissez l’URL du direct et sélectionnez une heure de début.",
-
-            invalidVideo:
-              "Le fichier doit être une vidéo MP4 ou WebM.",
-
-            videoTooLarge:
-              "La vidéo dépasse la limite de 500 Mo.",
-
-            invalidThumbnail:
-              "L’image doit être au format JPG, PNG ou WebP.",
-
-            thumbnailTooLarge:
-              "L’image dépasse la limite de 8 Mo.",
-
-            uploadError:
-              "Impossible d’importer le fichier.",
-
-            addError:
-              "Impossible d’ajouter le contenu.",
-
-            deleteError:
-              "Impossible de supprimer le contenu.",
-
-            success:
-              "Le contenu a été ajouté avec succès dans les trois langues.",
-
-            recordedBadge:
-              "Enregistré",
-
-            liveBadge:
-              "Direct",
-
-            noDescription:
-              "Aucune description.",
-
+            selectedThumbnail: "Image sélectionnée",
             thumbnailPreview:
               "L’aperçu de la miniature apparaîtra ici.",
 
-            liveHelp:
-              "Vous pouvez utiliser une URL Zoom, Google Meet, YouTube Live ou Jitsi. La page publique l’affichera d’abord comme événement à venir, puis comme direct pendant la période prévue.",
+            audioUrl: "URL audio facultative",
 
+            liveSection: "Paramètres du direct",
+            liveUrl:
+              "URL Zoom, Meet, YouTube Live ou Jitsi",
+            liveStartsAt: "Début du direct",
+            liveEndsAt: "Fin du direct",
+            liveHelp:
+              "Vous pouvez utiliser une URL Zoom, Google Meet, YouTube Live ou Jitsi.",
+
+            add: "Ajouter le contenu",
+            uploadingThumbnail:
+              "Importation de la miniature...",
+            uploadingVideo: "Importation de la vidéo...",
+            translating:
+              "Création automatique des versions EN, FR et AR...",
+            saving: "Enregistrement du contenu...",
+
+            existing: "Contenu existant",
+            empty: "Aucun contenu pour le moment.",
+            originalLanguage: "Langue originale",
+            delete: "Supprimer",
+            deleteQuestion: "Supprimer ce contenu ?",
+
+            loading: "Chargement...",
+            loadError: "Impossible de charger le contenu.",
+
+            titleRequired: "Veuillez saisir un titre.",
+            descriptionRequired:
+              "Veuillez saisir une description.",
+            topicRequired: "Veuillez saisir un sujet.",
+            recordedRequired:
+              "Choisissez une vidéo, saisissez une URL vidéo ou fournissez une URL audio.",
+            liveRequired:
+              "Saisissez l’URL du direct et sélectionnez une heure de début.",
             endAfterStart:
               "La fin du direct doit être postérieure au début.",
+
+            invalidVideo:
+              "Le fichier doit être une vidéo MP4 ou WebM.",
+            videoTooLarge:
+              "La vidéo dépasse la limite de 500 Mo.",
+            invalidThumbnail:
+              "L’image doit être au format JPG, PNG ou WebP.",
+            thumbnailTooLarge:
+              "L’image dépasse la limite de 8 Mo.",
+
+            uploadError: "Impossible d’importer le fichier.",
+            translationError:
+              "La traduction automatique a échoué.",
+            addError: "Impossible d’ajouter le contenu.",
+            deleteError: "Impossible de supprimer le contenu.",
+
+            success:
+              "Le contenu a été ajouté et les versions EN, FR et AR ont été générées automatiquement.",
+
+            recordedBadge: "Enregistré",
+            liveBadge: "Direct",
+            noDescription: "Aucune description.",
           }
         : {
-            pageEyebrow:
-              "Content management",
-
-            pageTitle:
-              "Manage Video Podcasts",
-
+            pageEyebrow: "Content management",
+            pageTitle: "Manage Video Podcasts",
             pageDescription:
-              "Add recorded or live content with a title, description and topic in English, French and Arabic.",
+              "Enter the content in one language only. The system will automatically generate the other two versions before saving.",
 
-            contentType:
-              "Content type",
-
-            recorded:
-              "Recorded content",
-
-            live:
-              "Live session",
+            contentType: "Content type",
+            recorded: "Recorded content",
+            live: "Live session",
 
             sourceLanguage:
-              "Original audio or video language",
+              "Language of the content you are entering",
+            english: "English",
+            french: "French",
+            arabic: "Arabic",
 
-            english:
-              "English",
+            autoTranslationTitle:
+              "Automatic translation into 3 languages",
+            autoTranslationHelp:
+              "Complete the fields below in one language only. When publishing, English, French and Arabic versions will be generated automatically.",
 
-            french:
-              "French",
+            title: "Title",
+            description: "Description",
+            topic: "Topic",
+            host: "Host",
+            guests: "Guests",
+            duration: "Duration, for example 42:10",
 
-            arabic:
-              "Arabic",
-
-            translationsTitle:
-              "Content in all three languages",
-
-            translationsHelp:
-              "Title, description and topic must be completed in all three languages before publishing.",
-
-            title:
-              "Title",
-
-            description:
-              "Description",
-
-            topic:
-              "Topic",
-
-            host:
-              "Host",
-
-            guests:
-              "Guests",
-
-            duration:
-              "Duration, for example 42:10",
-
-            recordedSection:
-              "Recorded content",
-
-            chooseVideo:
-              "Choose video file",
-
-            videoHelp:
-              "MP4 or WebM, maximum 500 MB.",
-
-            selectedVideo:
-              "Selected video",
-
+            recordedSection: "Recorded content",
+            chooseVideo: "Choose video file",
+            videoHelp: "MP4 or WebM, maximum 500 MB.",
+            selectedVideo: "Selected video",
             optionalVideoUrl:
               "Or enter an existing video URL",
 
-            thumbnailSection:
-              "Thumbnail",
-
-            chooseThumbnail:
-              "Choose thumbnail",
-
+            thumbnailSection: "Thumbnail",
+            chooseThumbnail: "Choose thumbnail",
             thumbnailHelp:
               "JPG, PNG or WebP, maximum 8 MB.",
-
-            selectedThumbnail:
-              "Selected image",
-
-            audioUrl:
-              "Optional audio URL",
-
-            liveSection:
-              "Live session settings",
-
-            liveUrl:
-              "Zoom, Meet, YouTube Live or Jitsi URL",
-
-            liveStartsAt:
-              "Live start",
-
-            liveEndsAt:
-              "Live end",
-
-            add:
-              "Add content",
-
-            uploadingThumbnail:
-              "Uploading thumbnail...",
-
-            uploadingVideo:
-              "Uploading video...",
-
-            saving:
-              "Saving content...",
-
-            existing:
-              "Existing content",
-
-            empty:
-              "No content yet.",
-
-            originalLanguage:
-              "Original language",
-
-            delete:
-              "Delete",
-
-            deleteQuestion:
-              "Delete this content?",
-
-            loading:
-              "Loading...",
-
-            loadError:
-              "Unable to load content.",
-
-            allLanguagesRequired:
-              "Enter the title, description and topic in English, French and Arabic before publishing.",
-
-            recordedRequired:
-              "Choose a video, enter a video URL or provide an audio URL.",
-
-            liveRequired:
-              "Enter a live session URL and select a start time.",
-
-            invalidVideo:
-              "The file must be an MP4 or WebM video.",
-
-            videoTooLarge:
-              "The video exceeds the 500 MB limit.",
-
-            invalidThumbnail:
-              "The image must be JPG, PNG or WebP.",
-
-            thumbnailTooLarge:
-              "The image exceeds the 8 MB limit.",
-
-            uploadError:
-              "Unable to upload the file.",
-
-            addError:
-              "Unable to add content.",
-
-            deleteError:
-              "Unable to delete content.",
-
-            success:
-              "The content was added successfully in all three languages.",
-
-            recordedBadge:
-              "Recorded",
-
-            liveBadge:
-              "Live",
-
-            noDescription:
-              "No description.",
-
+            selectedThumbnail: "Selected image",
             thumbnailPreview:
               "Thumbnail preview will appear here.",
 
-            liveHelp:
-              "You can use a Zoom, Google Meet, YouTube Live or Jitsi URL. The public page will show it as upcoming, then live during the scheduled period.",
+            audioUrl: "Optional audio URL",
 
+            liveSection: "Live session settings",
+            liveUrl:
+              "Zoom, Meet, YouTube Live or Jitsi URL",
+            liveStartsAt: "Live start",
+            liveEndsAt: "Live end",
+            liveHelp:
+              "You can use a Zoom, Google Meet, YouTube Live or Jitsi URL.",
+
+            add: "Add content",
+            uploadingThumbnail: "Uploading thumbnail...",
+            uploadingVideo: "Uploading video...",
+            translating:
+              "Automatically creating EN, FR and AR versions...",
+            saving: "Saving content...",
+
+            existing: "Existing content",
+            empty: "No content yet.",
+            originalLanguage: "Original language",
+            delete: "Delete",
+            deleteQuestion: "Delete this content?",
+
+            loading: "Loading...",
+            loadError: "Unable to load content.",
+
+            titleRequired: "Please enter a title.",
+            descriptionRequired: "Please enter a description.",
+            topicRequired: "Please enter a topic.",
+            recordedRequired:
+              "Choose a video, enter a video URL or provide an audio URL.",
+            liveRequired:
+              "Enter a live session URL and select a start time.",
             endAfterStart:
               "The live end time must be after the start time.",
+
+            invalidVideo:
+              "The file must be an MP4 or WebM video.",
+            videoTooLarge:
+              "The video exceeds the 500 MB limit.",
+            invalidThumbnail:
+              "The image must be JPG, PNG or WebP.",
+            thumbnailTooLarge:
+              "The image exceeds the 8 MB limit.",
+
+            uploadError: "Unable to upload the file.",
+            translationError: "Automatic translation failed.",
+            addError: "Unable to add content.",
+            deleteError: "Unable to delete content.",
+
+            success:
+              "The content was added and EN, FR and AR versions were generated automatically.",
+
+            recordedBadge: "Recorded",
+            liveBadge: "Live",
+            noDescription: "No description.",
           };
 
-  const submissionLabel =
-    useMemo(() => {
-      if (
-        uploadStatus ===
-        "uploading-thumbnail"
-      ) {
-        return copy.uploadingThumbnail;
-      }
+  const submissionLabel = useMemo(() => {
+    if (uploadStatus === "uploading-thumbnail") {
+      return copy.uploadingThumbnail;
+    }
 
-      if (
-        uploadStatus ===
-        "uploading-video"
-      ) {
-        return copy.uploadingVideo;
-      }
+    if (uploadStatus === "uploading-video") {
+      return copy.uploadingVideo;
+    }
 
-      if (
-        uploadStatus ===
-        "saving"
-      ) {
-        return copy.saving;
-      }
+    if (uploadStatus === "translating") {
+      return copy.translating;
+    }
 
-      return copy.add;
-    }, [
-      copy,
-      uploadStatus,
-    ]);
+    if (uploadStatus === "saving") {
+      return copy.saving;
+    }
 
-  const getPodcasts =
-    useCallback(async () => {
-      const {
-        data,
-        error,
-      } =
-        await supabase
-          .from("podcasts")
-          .select("*")
-          .order(
-            "created_at",
-            {
-              ascending:
-                false,
-            },
-          );
+    return copy.add;
+  }, [copy, uploadStatus]);
 
-      if (error) {
-        console.error(
-          "Podcast fetch error:",
-          error,
-        );
+  const getPodcasts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("podcasts")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-        alert(
-          copy.loadError,
-        );
+    if (error) {
+      console.error("Podcast fetch error:", error);
+      alert(copy.loadError);
+      return;
+    }
 
-        return;
-      }
+    setPodcasts((data as Podcast[]) ?? []);
+  }, [copy.loadError]);
 
-      setPodcasts(
-        (data as Podcast[]) ??
-          [],
-      );
-    }, [
-      copy.loadError,
-    ]);
+  const checkAdmin = useCallback(async () => {
+    setLoading(true);
 
-  const checkAdmin =
-    useCallback(async () => {
-      setLoading(true);
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-      const {
-        data: {
-          user,
-        },
-        error:
-          userError,
-      } =
-        await supabase.auth.getUser();
+    if (userError || !user) {
+      router.push("/login");
+      return;
+    }
 
-      if (
-        userError ||
-        !user
-      ) {
-        router.push(
-          "/login",
-        );
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-        return;
-      }
+    if (profileError || profile?.role !== "admin") {
+      router.push("/");
+      return;
+    }
 
-      const {
-        data: profile,
-        error:
-          profileError,
-      } =
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq(
-            "id",
-            user.id,
-          )
-          .single();
-
-      if (
-        profileError ||
-        profile?.role !==
-          "admin"
-      ) {
-        router.push("/");
-
-        return;
-      }
-
-      setAllowed(true);
-
-      await getPodcasts();
-
-      setLoading(false);
-    }, [
-      getPodcasts,
-      router,
-    ]);
+    setAllowed(true);
+    await getPodcasts();
+    setLoading(false);
+  }, [getPodcasts, router]);
 
   useEffect(() => {
     void checkAdmin();
-  }, [
-    checkAdmin,
-  ]);
+  }, [checkAdmin]);
 
   useEffect(() => {
     return () => {
-      if (
-        videoPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          videoPreviewUrl,
-        );
+      if (videoPreviewUrl) {
+        URL.revokeObjectURL(videoPreviewUrl);
       }
 
-      if (
-        thumbnailPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          thumbnailPreviewUrl,
-        );
+      if (thumbnailPreviewUrl) {
+        URL.revokeObjectURL(thumbnailPreviewUrl);
       }
     };
-  }, [
-    videoPreviewUrl,
-    thumbnailPreviewUrl,
-  ]);
+  }, [videoPreviewUrl, thumbnailPreviewUrl]);
 
-  const sanitizeFileName = (
-    fileName: string,
+  const translateContent = async (
+    source: PodcastLanguage,
+    target: PodcastLanguage,
+    fields: Record<string, string>,
   ) => {
-    return fileName
-      .toLowerCase()
-      .replace(
-        /\s+/g,
-        "-",
-      )
-      .replace(
-        /[^a-z0-9._-]/g,
-        "",
+    const response = await fetch("/api/translate-content", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceLanguage: source,
+        targetLanguage: target,
+        fields,
+      }),
+    });
+
+    const result = (await response.json()) as TranslationResponse;
+
+    if (!response.ok || !result.translations) {
+      throw new Error(
+        result.details ||
+          result.error ||
+          copy.translationError,
       );
+    }
+
+    return result.translations;
   };
 
-  const uploadFile =
-    async (
-      bucket: string,
-      file: File,
-    ) => {
-      const {
-        data: {
-          user,
-        },
-      } =
-        await supabase.auth.getUser();
+  const sanitizeFileName = (fileName: string) => {
+    return fileName
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9._-]/g, "");
+  };
 
-      if (!user) {
-        throw new Error(
-          "User not authenticated.",
-        );
-      }
+  const uploadFile = async (bucket: string, file: File) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-      const cleanName =
-        sanitizeFileName(
-          file.name,
-        ) || "file";
+    if (!user) {
+      throw new Error("User not authenticated.");
+    }
 
-      const filePath =
-        `${user.id}/${Date.now()}-${crypto.randomUUID()}-${cleanName}`;
+    const cleanName = sanitizeFileName(file.name) || "file";
+    const filePath =
+      `${user.id}/${Date.now()}-${crypto.randomUUID()}-${cleanName}`;
 
-      const {
-        error:
-          uploadError,
-      } =
-        await supabase.storage
-          .from(bucket)
-          .upload(
-            filePath,
-            file,
-            {
-              cacheControl:
-                "3600",
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
 
-              upsert:
-                false,
+    if (uploadError) {
+      throw new Error(
+        uploadError.message || copy.uploadError,
+      );
+    }
 
-              contentType:
-                file.type,
-            },
-          );
+    const { data } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(filePath);
 
-      if (uploadError) {
-        throw new Error(
-          uploadError.message ||
-            copy.uploadError,
-        );
-      }
+    if (!data.publicUrl) {
+      throw new Error(copy.uploadError);
+    }
 
-      const {
-        data,
-      } =
-        supabase.storage
-          .from(bucket)
-          .getPublicUrl(
-            filePath,
-          );
-
-      if (
-        !data.publicUrl
-      ) {
-        throw new Error(
-          copy.uploadError,
-        );
-      }
-
-      return data.publicUrl;
-    };
+    return data.publicUrl;
+  };
 
   const handleVideoChange = (
-    event:
-      ChangeEvent<HTMLInputElement>,
+    event: ChangeEvent<HTMLInputElement>,
   ) => {
-    const file =
-      event.target.files?.[0];
+    const file = event.target.files?.[0];
 
-    if (!file) {
+    if (!file) return;
+
+    const validVideoTypes = ["video/mp4", "video/webm"];
+
+    if (!validVideoTypes.includes(file.type)) {
+      alert(copy.invalidVideo);
+      event.target.value = "";
       return;
     }
 
-    const validVideoTypes = [
-      "video/mp4",
-      "video/webm",
-    ];
-
-    if (
-      !validVideoTypes.includes(
-        file.type,
-      )
-    ) {
-      alert(
-        copy.invalidVideo,
-      );
-
-      event.target.value =
-        "";
-
+    if (file.size > MAX_VIDEO_SIZE) {
+      alert(copy.videoTooLarge);
+      event.target.value = "";
       return;
     }
 
-    if (
-      file.size >
-      MAX_VIDEO_SIZE
-    ) {
-      alert(
-        copy.videoTooLarge,
-      );
-
-      event.target.value =
-        "";
-
-      return;
-    }
-
-    if (
-      videoPreviewUrl
-    ) {
-      URL.revokeObjectURL(
-        videoPreviewUrl,
-      );
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
     }
 
     setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+  };
 
-    setVideoPreviewUrl(
-      URL.createObjectURL(
-        file,
-      ),
+  const handleThumbnailChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    const validImageTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!validImageTypes.includes(file.type)) {
+      alert(copy.invalidThumbnail);
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_THUMBNAIL_SIZE) {
+      alert(copy.thumbnailTooLarge);
+      event.target.value = "";
+      return;
+    }
+
+    if (thumbnailPreviewUrl) {
+      URL.revokeObjectURL(thumbnailPreviewUrl);
+    }
+
+    setThumbnailFile(file);
+    setThumbnailPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const clearVideoFile = () => {
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
+    }
+
+    setVideoFile(null);
+    setVideoPreviewUrl("");
+  };
+
+  const clearThumbnailFile = () => {
+    if (thumbnailPreviewUrl) {
+      URL.revokeObjectURL(thumbnailPreviewUrl);
+    }
+
+    setThumbnailFile(null);
+    setThumbnailPreviewUrl("");
+  };
+
+  const resetForm = () => {
+    clearVideoFile();
+    clearThumbnailFile();
+
+    setContentType("recorded");
+    setSourceLanguage("en");
+
+    setTitle("");
+    setDescription("");
+    setTopic("");
+    setHostName("");
+    setGuestNames("");
+    setDuration("");
+
+    setExistingVideoUrl("");
+    setAudioUrl("");
+
+    setLiveUrl("");
+    setLiveStartsAt("");
+    setLiveEndsAt("");
+
+    setUploadStatus("idle");
+  };
+
+  const validateForm = () => {
+    if (!title.trim()) {
+      alert(copy.titleRequired);
+      return false;
+    }
+
+    if (!description.trim()) {
+      alert(copy.descriptionRequired);
+      return false;
+    }
+
+    if (!topic.trim()) {
+      alert(copy.topicRequired);
+      return false;
+    }
+
+    if (
+      contentType === "recorded" &&
+      !videoFile &&
+      !existingVideoUrl.trim() &&
+      !audioUrl.trim()
+    ) {
+      alert(copy.recordedRequired);
+      return false;
+    }
+
+    if (
+      contentType === "live" &&
+      (!liveUrl.trim() || !liveStartsAt)
+    ) {
+      alert(copy.liveRequired);
+      return false;
+    }
+
+    if (
+      contentType === "live" &&
+      liveEndsAt &&
+      new Date(liveEndsAt) <= new Date(liveStartsAt)
+    ) {
+      alert(copy.endAfterStart);
+      return false;
+    }
+
+    return true;
+  };
+
+  const addPodcast = async () => {
+    if (!validateForm()) return;
+
+    setSubmitting(true);
+
+    let uploadedVideoUrl = "";
+    let uploadedThumbnailUrl = "";
+
+    try {
+      if (thumbnailFile) {
+        setUploadStatus("uploading-thumbnail");
+
+        uploadedThumbnailUrl = await uploadFile(
+          THUMBNAIL_BUCKET,
+          thumbnailFile,
+        );
+      }
+
+      if (contentType === "recorded" && videoFile) {
+        setUploadStatus("uploading-video");
+
+        uploadedVideoUrl = await uploadFile(
+          VIDEO_BUCKET,
+          videoFile,
+        );
+      }
+
+      setUploadStatus("translating");
+
+      const sourceFields: Record<string, string> = {
+        title: title.trim(),
+        description: description.trim(),
+        topic: topic.trim(),
+      };
+
+      if (hostName.trim()) {
+        sourceFields.host_name = hostName.trim();
+      }
+
+      if (guestNames.trim()) {
+        sourceFields.guest_names = guestNames.trim();
+      }
+
+      const targetLanguages: PodcastLanguage[] = (
+        ["en", "fr", "ar"] as PodcastLanguage[]
+      ).filter((lang) => lang !== sourceLanguage);
+
+      const [firstTranslation, secondTranslation] =
+        await Promise.all([
+          translateContent(
+            sourceLanguage,
+            targetLanguages[0],
+            sourceFields,
+          ),
+          translateContent(
+            sourceLanguage,
+            targetLanguages[1],
+            sourceFields,
+          ),
+        ]);
+
+      const translatedByLanguage: Record<
+        PodcastLanguage,
+        Record<string, string>
+      > = {
+        en: {},
+        fr: {},
+        ar: {},
+      };
+
+      translatedByLanguage[sourceLanguage] = sourceFields;
+      translatedByLanguage[targetLanguages[0]] = firstTranslation;
+      translatedByLanguage[targetLanguages[1]] = secondTranslation;
+
+      const valueFor = (
+        lang: PodcastLanguage,
+        field: string,
+      ) => {
+        const translated =
+          translatedByLanguage[lang]?.[field]?.trim();
+
+        /*
+         * We keep a safe fallback so an optional field does
+         * not make the whole publication fail.
+         */
+        return translated || sourceFields[field]?.trim() || "";
+      };
+
+      setUploadStatus("saving");
+
+      const finalVideoUrl =
+        contentType === "recorded"
+          ? uploadedVideoUrl ||
+            existingVideoUrl.trim() ||
+            null
+          : null;
+
+      const finalThumbnailUrl =
+        uploadedThumbnailUrl || null;
+
+      const podcastToInsert = {
+        title: valueFor("en", "title"),
+        title_fr: valueFor("fr", "title"),
+        title_ar: valueFor("ar", "title"),
+
+        description: valueFor("en", "description"),
+        description_fr: valueFor("fr", "description"),
+        description_ar: valueFor("ar", "description"),
+
+        topic: valueFor("en", "topic"),
+        topic_fr: valueFor("fr", "topic"),
+        topic_ar: valueFor("ar", "topic"),
+
+        host_name: valueFor("en", "host_name") || null,
+        host_name_fr: valueFor("fr", "host_name") || null,
+        host_name_ar: valueFor("ar", "host_name") || null,
+
+        guest_names: valueFor("en", "guest_names") || null,
+        guest_names_fr: valueFor("fr", "guest_names") || null,
+        guest_names_ar: valueFor("ar", "guest_names") || null,
+
+        content_type: contentType,
+        language: sourceLanguage,
+
+        video_url: finalVideoUrl,
+        thumbnail_url: finalThumbnailUrl,
+
+        audio_url:
+          contentType === "recorded"
+            ? audioUrl.trim() || null
+            : null,
+
+        duration: duration.trim() || null,
+
+        live_url:
+          contentType === "live"
+            ? liveUrl.trim()
+            : null,
+
+        live_starts_at:
+          contentType === "live" && liveStartsAt
+            ? new Date(liveStartsAt).toISOString()
+            : null,
+
+        live_ends_at:
+          contentType === "live" && liveEndsAt
+            ? new Date(liveEndsAt).toISOString()
+            : null,
+      };
+
+      const { error } = await supabase
+        .from("podcasts")
+        .insert(podcastToInsert);
+
+      if (error) {
+        throw error;
+      }
+
+      resetForm();
+      await getPodcasts();
+      alert(copy.success);
+    } catch (error) {
+      console.error("Podcast creation error:", error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : copy.addError,
+      );
+    } finally {
+      setSubmitting(false);
+      setUploadStatus("idle");
+    }
+  };
+
+  const deletePodcast = async (id: string) => {
+    if (!window.confirm(copy.deleteQuestion)) return;
+
+    const podcastToDelete = podcasts.find(
+      (podcast) => podcast.id === id,
+    );
+
+    const { error } = await supabase
+      .from("podcasts")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Podcast deletion error:", error);
+      alert(copy.deleteError);
+      return;
+    }
+
+    const removeStorageFile = async (
+      bucket: string,
+      publicUrl: string | null,
+    ) => {
+      if (!publicUrl) return;
+
+      try {
+        const marker =
+          `/storage/v1/object/public/${bucket}/`;
+
+        const markerIndex = publicUrl.indexOf(marker);
+
+        if (markerIndex === -1) return;
+
+        const filePath = decodeURIComponent(
+          publicUrl.slice(markerIndex + marker.length),
+        );
+
+        if (!filePath) return;
+
+        const { error: storageError } =
+          await supabase.storage
+            .from(bucket)
+            .remove([filePath]);
+
+        if (storageError) {
+          console.warn(
+            `Unable to remove file from ${bucket}:`,
+            storageError,
+          );
+        }
+      } catch (storageError) {
+        console.warn(
+          `Storage cleanup failed for ${bucket}:`,
+          storageError,
+        );
+      }
+    };
+
+    if (podcastToDelete) {
+      await Promise.all([
+        removeStorageFile(
+          VIDEO_BUCKET,
+          podcastToDelete.video_url,
+        ),
+        removeStorageFile(
+          THUMBNAIL_BUCKET,
+          podcastToDelete.thumbnail_url,
+        ),
+      ]);
+    }
+
+    await getPodcasts();
+  };
+
+  const localizedValue = (
+    english: string | null,
+    french: string | null,
+    arabic: string | null,
+  ) => {
+    if (uiLanguage === "ar" && arabic?.trim()) {
+      return arabic.trim();
+    }
+
+    if (uiLanguage === "fr" && french?.trim()) {
+      return french.trim();
+    }
+
+    return (
+      english?.trim() ||
+      french?.trim() ||
+      arabic?.trim() ||
+      ""
     );
   };
 
-  const handleThumbnailChange =
-    (
-      event:
-        ChangeEvent<HTMLInputElement>,
-    ) => {
-      const file =
-        event.target.files?.[0];
-
-      if (!file) {
-        return;
-      }
-
-      const validImageTypes = [
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-      ];
-
-      if (
-        !validImageTypes.includes(
-          file.type,
-        )
-      ) {
-        alert(
-          copy.invalidThumbnail,
-        );
-
-        event.target.value =
-          "";
-
-        return;
-      }
-
-      if (
-        file.size >
-        MAX_THUMBNAIL_SIZE
-      ) {
-        alert(
-          copy.thumbnailTooLarge,
-        );
-
-        event.target.value =
-          "";
-
-        return;
-      }
-
-      if (
-        thumbnailPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          thumbnailPreviewUrl,
-        );
-      }
-
-      setThumbnailFile(
-        file,
-      );
-
-      setThumbnailPreviewUrl(
-        URL.createObjectURL(
-          file,
-        ),
-      );
-    };
-
-  const clearVideoFile =
-    () => {
-      if (
-        videoPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          videoPreviewUrl,
-        );
-      }
-
-      setVideoFile(null);
-
-      setVideoPreviewUrl(
-        "",
-      );
-    };
-
-  const clearThumbnailFile =
-    () => {
-      if (
-        thumbnailPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          thumbnailPreviewUrl,
-        );
-      }
-
-      setThumbnailFile(
-        null,
-      );
-
-      setThumbnailPreviewUrl(
-        "",
-      );
-    };
-
-  const resetForm =
-    () => {
-      clearVideoFile();
-      clearThumbnailFile();
-
-      setContentType(
-        "recorded",
-      );
-
-      setSourceLanguage(
-        "en",
-      );
-
-      setTitleEn("");
-      setTitleFr("");
-      setTitleAr("");
-
-      setDescriptionEn(
-        "",
-      );
-      setDescriptionFr(
-        "",
-      );
-      setDescriptionAr(
-        "",
-      );
-
-      setTopicEn("");
-      setTopicFr("");
-      setTopicAr("");
-
-      setHostNameEn("");
-      setHostNameFr("");
-      setHostNameAr("");
-
-      setGuestNamesEn(
-        "",
-      );
-      setGuestNamesFr(
-        "",
-      );
-      setGuestNamesAr(
-        "",
-      );
-
-      setDuration("");
-
-      setExistingVideoUrl(
-        "",
-      );
-
-      setAudioUrl("");
-
-      setLiveUrl("");
-
-      setLiveStartsAt(
-        "",
-      );
-
-      setLiveEndsAt(
-        "",
-      );
-
-      setUploadStatus(
-        "idle",
-      );
-    };
-
-  const validateForm =
-    () => {
-      const requiredValues =
-        [
-          titleEn,
-          titleFr,
-          titleAr,
-
-          descriptionEn,
-          descriptionFr,
-          descriptionAr,
-
-          topicEn,
-          topicFr,
-          topicAr,
-        ];
-
-      if (
-        requiredValues.some(
-          (value) =>
-            !value.trim(),
-        )
-      ) {
-        alert(
-          copy.allLanguagesRequired,
-        );
-
-        return false;
-      }
-
-      if (
-        contentType ===
-          "recorded" &&
-        !videoFile &&
-        !existingVideoUrl.trim() &&
-        !audioUrl.trim()
-      ) {
-        alert(
-          copy.recordedRequired,
-        );
-
-        return false;
-      }
-
-      if (
-        contentType ===
-          "live" &&
-        (!liveUrl.trim() ||
-          !liveStartsAt)
-      ) {
-        alert(
-          copy.liveRequired,
-        );
-
-        return false;
-      }
-
-      if (
-        contentType ===
-          "live" &&
-        liveEndsAt &&
-        new Date(
-          liveEndsAt,
-        ) <=
-          new Date(
-            liveStartsAt,
-          )
-      ) {
-        alert(
-          copy.endAfterStart,
-        );
-
-        return false;
-      }
-
-      return true;
-    };
-
-  const addPodcast =
-    async () => {
-      if (
-        !validateForm()
-      ) {
-        return;
-      }
-
-      setSubmitting(true);
-
-      let uploadedVideoUrl =
-        "";
-
-      let uploadedThumbnailUrl =
-        "";
-
-      try {
-        if (
-          thumbnailFile
-        ) {
-          setUploadStatus(
-            "uploading-thumbnail",
-          );
-
-          uploadedThumbnailUrl =
-            await uploadFile(
-              THUMBNAIL_BUCKET,
-              thumbnailFile,
-            );
-        }
-
-        if (
-          contentType ===
-            "recorded" &&
-          videoFile
-        ) {
-          setUploadStatus(
-            "uploading-video",
-          );
-
-          uploadedVideoUrl =
-            await uploadFile(
-              VIDEO_BUCKET,
-              videoFile,
-            );
-        }
-
-        setUploadStatus(
-          "saving",
-        );
-
-        const finalVideoUrl =
-          contentType ===
-          "recorded"
-            ? uploadedVideoUrl ||
-              existingVideoUrl.trim() ||
-              null
-            : null;
-
-        const finalThumbnailUrl =
-          uploadedThumbnailUrl ||
-          null;
-
-        const podcastToInsert =
-          {
-            title:
-              titleEn.trim(),
-
-            title_fr:
-              titleFr.trim(),
-
-            title_ar:
-              titleAr.trim(),
-
-            description:
-              descriptionEn.trim(),
-
-            description_fr:
-              descriptionFr.trim(),
-
-            description_ar:
-              descriptionAr.trim(),
-
-            topic:
-              topicEn.trim(),
-
-            topic_fr:
-              topicFr.trim(),
-
-            topic_ar:
-              topicAr.trim(),
-
-            host_name:
-              hostNameEn.trim() ||
-              null,
-
-            host_name_fr:
-              hostNameFr.trim() ||
-              null,
-
-            host_name_ar:
-              hostNameAr.trim() ||
-              null,
-
-            guest_names:
-              guestNamesEn.trim() ||
-              null,
-
-            guest_names_fr:
-              guestNamesFr.trim() ||
-              null,
-
-            guest_names_ar:
-              guestNamesAr.trim() ||
-              null,
-
-            content_type:
-              contentType,
-
-            language:
-              sourceLanguage,
-
-            video_url:
-              finalVideoUrl,
-
-            thumbnail_url:
-              finalThumbnailUrl,
-
-            audio_url:
-              contentType ===
-              "recorded"
-                ? audioUrl.trim() ||
-                  null
-                : null,
-
-            duration:
-              duration.trim() ||
-              null,
-
-            live_url:
-              contentType ===
-              "live"
-                ? liveUrl.trim()
-                : null,
-
-            live_starts_at:
-              contentType ===
-                "live" &&
-              liveStartsAt
-                ? new Date(
-                    liveStartsAt,
-                  ).toISOString()
-                : null,
-
-            live_ends_at:
-              contentType ===
-                "live" &&
-              liveEndsAt
-                ? new Date(
-                    liveEndsAt,
-                  ).toISOString()
-                : null,
-          };
-
-        const {
-          error,
-        } =
-          await supabase
-            .from(
-              "podcasts",
-            )
-            .insert(
-              podcastToInsert,
-            );
-
-        if (error) {
-          throw error;
-        }
-
-        resetForm();
-
-        await getPodcasts();
-
-        alert(
-          copy.success,
-        );
-      } catch (error) {
-        console.error(
-          "Podcast creation error:",
-          error,
-        );
-
-        alert(
-          error instanceof
-            Error
-            ? error.message
-            : copy.addError,
-        );
-      } finally {
-        setSubmitting(
-          false,
-        );
-
-        setUploadStatus(
-          "idle",
-        );
-      }
-    };
-
-  const deletePodcast =
-    async (
-      id: string,
-    ) => {
-      if (
-        !window.confirm(
-          copy.deleteQuestion,
-        )
-      ) {
-        return;
-      }
-
-      const podcastToDelete =
-        podcasts.find(
-          (podcast) =>
-            podcast.id ===
-            id,
-        );
-
-      const {
-        error,
-      } =
-        await supabase
-          .from("podcasts")
-          .delete()
-          .eq(
-            "id",
-            id,
-          );
-
-      if (error) {
-        console.error(
-          "Podcast deletion error:",
-          error,
-        );
-
-        alert(
-          copy.deleteError,
-        );
-
-        return;
-      }
-
-      const removeStorageFile =
-        async (
-          bucket:
-            string,
-
-          publicUrl:
-            | string
-            | null,
-        ) => {
-          if (!publicUrl) {
-            return;
-          }
-
-          try {
-            const marker =
-              `/storage/v1/object/public/${bucket}/`;
-
-            const markerIndex =
-              publicUrl.indexOf(
-                marker,
-              );
-
-            if (
-              markerIndex ===
-              -1
-            ) {
-              return;
-            }
-
-            const filePath =
-              decodeURIComponent(
-                publicUrl.slice(
-                  markerIndex +
-                    marker.length,
-                ),
-              );
-
-            if (!filePath) {
-              return;
-            }
-
-            const {
-              error:
-                storageError,
-            } =
-              await supabase.storage
-                .from(
-                  bucket,
-                )
-                .remove([
-                  filePath,
-                ]);
-
-            if (
-              storageError
-            ) {
-              console.warn(
-                `Unable to remove file from ${bucket}:`,
-                storageError,
-              );
-            }
-          } catch (
-            storageError
-          ) {
-            console.warn(
-              `Storage cleanup failed for ${bucket}:`,
-              storageError,
-            );
-          }
-        };
-
-      if (
-        podcastToDelete
-      ) {
-        await Promise.all([
-          removeStorageFile(
-            VIDEO_BUCKET,
-            podcastToDelete.video_url,
-          ),
-
-          removeStorageFile(
-            THUMBNAIL_BUCKET,
-            podcastToDelete.thumbnail_url,
-          ),
-        ]);
-      }
-
-      await getPodcasts();
-    };
-
-  const localizedValue =
-    (
-      english:
-        | string
-        | null,
-
-      french:
-        | string
-        | null,
-
-      arabic:
-        | string
-        | null,
-    ) => {
-      if (
-        uiLanguage ===
-          "ar" &&
-        arabic?.trim()
-      ) {
-        return arabic.trim();
-      }
-
-      if (
-        uiLanguage ===
-          "fr" &&
-        french?.trim()
-      ) {
-        return french.trim();
-      }
-
-      return (
-        english?.trim() ||
-        french?.trim() ||
-        arabic?.trim() ||
-        ""
-      );
-    };
-
-  const getDisplayedTitle =
-    (
-      podcast:
-        Podcast,
-    ) =>
-      localizedValue(
-        podcast.title,
-        podcast.title_fr,
-        podcast.title_ar,
-      );
-
-  const getDisplayedDescription =
-    (
-      podcast:
-        Podcast,
-    ) =>
-      localizedValue(
-        podcast.description,
-        podcast.description_fr,
-        podcast.description_ar,
-      ) ||
-      copy.noDescription;
-
-  const getDisplayedTopic =
-    (
-      podcast:
-        Podcast,
-    ) =>
-      localizedValue(
-        podcast.topic,
-        podcast.topic_fr,
-        podcast.topic_ar,
-      );
-
-  const getDisplayedHost =
-    (
-      podcast:
-        Podcast,
-    ) =>
-      localizedValue(
-        podcast.host_name,
-        podcast.host_name_fr,
-        podcast.host_name_ar,
-      );
-
-  const getDisplayedGuests =
-    (
-      podcast:
-        Podcast,
-    ) =>
-      localizedValue(
-        podcast.guest_names,
-        podcast.guest_names_fr,
-        podcast.guest_names_ar,
-      );
-
-  const formatDate = (
-    value:
-      | string
-      | null,
-  ) => {
-    if (!value) {
-      return "";
-    }
+  const getDisplayedTitle = (podcast: Podcast) =>
+    localizedValue(
+      podcast.title,
+      podcast.title_fr,
+      podcast.title_ar,
+    );
+
+  const getDisplayedDescription = (podcast: Podcast) =>
+    localizedValue(
+      podcast.description,
+      podcast.description_fr,
+      podcast.description_ar,
+    ) || copy.noDescription;
+
+  const getDisplayedTopic = (podcast: Podcast) =>
+    localizedValue(
+      podcast.topic,
+      podcast.topic_fr,
+      podcast.topic_ar,
+    );
+
+  const getDisplayedHost = (podcast: Podcast) =>
+    localizedValue(
+      podcast.host_name,
+      podcast.host_name_fr,
+      podcast.host_name_ar,
+    );
+
+  const getDisplayedGuests = (podcast: Podcast) =>
+    localizedValue(
+      podcast.guest_names,
+      podcast.guest_names_fr,
+      podcast.guest_names_ar,
+    );
+
+  const getLanguageLabel = (value: string) => {
+    if (value === "fr") return copy.french;
+    if (value === "ar") return copy.arabic;
+    return copy.english;
+  };
+
+  const formatDate = (value: string | null) => {
+    if (!value) return "";
 
     const locale =
-      uiLanguage ===
-      "ar"
+      uiLanguage === "ar"
         ? "ar-LB"
-        : uiLanguage ===
-            "fr"
+        : uiLanguage === "fr"
           ? "fr-FR"
           : "en-GB";
 
-    return new Intl.DateTimeFormat(
-      locale,
-      {
-        dateStyle:
-          "medium",
-
-        timeStyle:
-          "short",
-      },
-    ).format(
-      new Date(value),
-    );
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
   };
 
-  const formatFileSize =
-    (
-      size: number,
-    ) => {
-      if (
-        size < 1024
-      ) {
-        return `${size} B`;
-      }
+  const formatFileSize = (size: number) => {
+    if (size < 1024) return `${size} B`;
 
-      if (
-        size <
-        1024 * 1024
-      ) {
-        return `${(
-          size / 1024
-        ).toFixed(1)} KB`;
-      }
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
 
-      return `${(
-        size /
-        (1024 * 1024)
-      ).toFixed(1)} MB`;
-    };
+    return `${(
+      size /
+      (1024 * 1024)
+    ).toFixed(1)} MB`;
+  };
 
   if (loading) {
     return (
@@ -1861,11 +1068,7 @@ export default function AdminPodcastsPage() {
         <Navbar />
 
         <main
-          dir={
-            isArabic
-              ? "rtl"
-              : "ltr"
-          }
+          dir={isArabic ? "rtl" : "ltr"}
           className="min-h-screen bg-aan-background px-5 py-10"
         >
           <div className="mx-auto max-w-6xl rounded-[2rem] border border-aan-border bg-white p-10 shadow-[var(--aan-shadow-sm)]">
@@ -1873,9 +1076,7 @@ export default function AdminPodcastsPage() {
               <div className="h-9 w-9 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
 
               <p className="font-semibold text-aan-secondary">
-                {
-                  copy.loading
-                }
+                {copy.loading}
               </p>
             </div>
           </div>
@@ -1889,20 +1090,12 @@ export default function AdminPodcastsPage() {
   }
 
   return (
-    <ProtectedRoute
-      allowedRoles={[
-        "admin",
-      ]}
-    >
+    <ProtectedRoute allowedRoles={["admin"]}>
       <>
         <Navbar />
 
         <main
-          dir={
-            isArabic
-              ? "rtl"
-              : "ltr"
-          }
+          dir={isArabic ? "rtl" : "ltr"}
           className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
         >
           <section className="mx-auto max-w-7xl">
@@ -1910,23 +1103,17 @@ export default function AdminPodcastsPage() {
               <div
                 aria-hidden="true"
                 className={`absolute -top-24 h-72 w-72 rounded-full bg-aan-gold/10 blur-3xl ${
-                  isArabic
-                    ? "-left-20"
-                    : "-right-20"
+                  isArabic ? "-left-20" : "-right-20"
                 }`}
               />
 
               <div className="relative max-w-4xl">
                 <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
-                  {
-                    copy.pageEyebrow
-                  }
+                  {copy.pageEyebrow}
                 </p>
 
                 <h1 className="aan-heading mt-4 text-4xl sm:text-5xl lg:text-6xl">
-                  {
-                    copy.pageTitle
-                  }
+                  {copy.pageTitle}
                 </h1>
 
                 <div className="mt-6 flex items-center gap-3">
@@ -1936,115 +1123,66 @@ export default function AdminPodcastsPage() {
                 </div>
 
                 <p className="mt-6 max-w-4xl text-lg leading-8 text-aan-secondary">
-                  {
-                    copy.pageDescription
-                  }
+                  {copy.pageDescription}
                 </p>
               </div>
             </header>
 
             <section className="mb-10 rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
               <div className="grid gap-5 lg:grid-cols-2">
-                <Field
-                  label={
-                    copy.contentType
-                  }
-                >
+                <Field label={copy.contentType}>
                   <select
-                    value={
-                      contentType
-                    }
-                    onChange={(
-                      event,
-                    ) => {
+                    value={contentType}
+                    onChange={(event) => {
                       const nextType =
-                        event
-                          .target
-                          .value as PodcastContentType;
+                        event.target.value as PodcastContentType;
 
-                      setContentType(
-                        nextType,
-                      );
+                      setContentType(nextType);
 
-                      if (
-                        nextType ===
-                        "live"
-                      ) {
+                      if (nextType === "live") {
                         clearVideoFile();
-
-                        setExistingVideoUrl(
-                          "",
-                        );
-
-                        setAudioUrl(
-                          "",
-                        );
+                        setExistingVideoUrl("");
+                        setAudioUrl("");
                       } else {
-                        setLiveUrl(
-                          "",
-                        );
-
-                        setLiveStartsAt(
-                          "",
-                        );
-
-                        setLiveEndsAt(
-                          "",
-                        );
+                        setLiveUrl("");
+                        setLiveStartsAt("");
+                        setLiveEndsAt("");
                       }
                     }}
-                    disabled={
-                      submitting
-                    }
+                    disabled={submitting}
                     className="aan-field p-4 font-normal"
                   >
                     <option value="recorded">
-                      {
-                        copy.recorded
-                      }
+                      {copy.recorded}
                     </option>
 
                     <option value="live">
-                      {
-                        copy.live
-                      }
+                      {copy.live}
                     </option>
                   </select>
                 </Field>
 
-                <Field
-                  label={
-                    copy.sourceLanguage
-                  }
-                >
+                <Field label={copy.sourceLanguage}>
                   <select
-                    value={
-                      sourceLanguage
-                    }
-                    onChange={(
-                      event,
-                    ) =>
+                    value={sourceLanguage}
+                    onChange={(event) =>
                       setSourceLanguage(
-                        event
-                          .target
-                          .value as PodcastLanguage,
+                        event.target.value as PodcastLanguage,
                       )
                     }
-                    disabled={
-                      submitting
-                    }
+                    disabled={submitting}
                     className="aan-field p-4 font-normal"
                   >
                     <option value="en">
-                      {
-                        copy.english
-                      }
+                      {copy.english}
+                    </option>
+
+                    <option value="fr">
+                      {copy.french}
                     </option>
 
                     <option value="ar">
-                      {
-                        copy.arabic
-                      }
+                      {copy.arabic}
                     </option>
                   </select>
                 </Field>
@@ -2052,287 +1190,157 @@ export default function AdminPodcastsPage() {
 
               <div className="mt-7 rounded-[1.75rem] border border-aan-border bg-[#fbf8f3] p-6">
                 <h2 className="aan-heading text-3xl">
-                  {
-                    copy.translationsTitle
-                  }
+                  {copy.autoTranslationTitle}
                 </h2>
 
-                <p className="mt-3 text-sm leading-6 text-aan-secondary">
-                  {
-                    copy.translationsHelp
-                  }
+                <p className="mt-3 max-w-4xl text-sm leading-6 text-aan-secondary">
+                  {copy.autoTranslationHelp}
                 </p>
 
-                <div className="mt-7 grid gap-7">
-                  <LanguageEditor
-                    languageLabel={
-                      copy.english
-                    }
-                    languageCode="EN"
-                    dir="ltr"
-                    title={
-                      titleEn
-                    }
-                    setTitle={
-                      setTitleEn
-                    }
-                    description={
-                      descriptionEn
-                    }
-                    setDescription={
-                      setDescriptionEn
-                    }
-                    topic={
-                      topicEn
-                    }
-                    setTopic={
-                      setTopicEn
-                    }
-                    hostName={
-                      hostNameEn
-                    }
-                    setHostName={
-                      setHostNameEn
-                    }
-                    guestNames={
-                      guestNamesEn
-                    }
-                    setGuestNames={
-                      setGuestNamesEn
-                    }
-                    disabled={
-                      submitting
-                    }
-                    labels={{
-                      title:
-                        copy.title,
-
-                      description:
-                        copy.description,
-
-                      topic:
-                        copy.topic,
-
-                      host:
-                        copy.host,
-
-                      guests:
-                        copy.guests,
-                    }}
-                  />
-
-                  <LanguageEditor
-                    languageLabel={
-                      copy.french
-                    }
-                    languageCode="FR"
-                    dir="ltr"
-                    title={
-                      titleFr
-                    }
-                    setTitle={
-                      setTitleFr
-                    }
-                    description={
-                      descriptionFr
-                    }
-                    setDescription={
-                      setDescriptionFr
-                    }
-                    topic={
-                      topicFr
-                    }
-                    setTopic={
-                      setTopicFr
-                    }
-                    hostName={
-                      hostNameFr
-                    }
-                    setHostName={
-                      setHostNameFr
-                    }
-                    guestNames={
-                      guestNamesFr
-                    }
-                    setGuestNames={
-                      setGuestNamesFr
-                    }
-                    disabled={
-                      submitting
-                    }
-                    labels={{
-                      title:
-                        copy.title,
-
-                      description:
-                        copy.description,
-
-                      topic:
-                        copy.topic,
-
-                      host:
-                        copy.host,
-
-                      guests:
-                        copy.guests,
-                    }}
-                  />
-
-                  <LanguageEditor
-                    languageLabel={
-                      copy.arabic
-                    }
-                    languageCode="AR"
-                    dir="rtl"
-                    title={
-                      titleAr
-                    }
-                    setTitle={
-                      setTitleAr
-                    }
-                    description={
-                      descriptionAr
-                    }
-                    setDescription={
-                      setDescriptionAr
-                    }
-                    topic={
-                      topicAr
-                    }
-                    setTopic={
-                      setTopicAr
-                    }
-                    hostName={
-                      hostNameAr
-                    }
-                    setHostName={
-                      setHostNameAr
-                    }
-                    guestNames={
-                      guestNamesAr
-                    }
-                    setGuestNames={
-                      setGuestNamesAr
-                    }
-                    disabled={
-                      submitting
-                    }
-                    labels={{
-                      title:
-                        copy.title,
-
-                      description:
-                        copy.description,
-
-                      topic:
-                        copy.topic,
-
-                      host:
-                        copy.host,
-
-                      guests:
-                        copy.guests,
-                    }}
-                  />
-                </div>
-
-                <div className="mt-7 max-w-md">
-                  <Field
-                    label={
-                      copy.duration
-                    }
-                  >
+                <div className="mt-6 grid gap-5">
+                  <Field label={copy.title}>
                     <input
-                      value={
-                        duration
+                      value={title}
+                      onChange={(event) =>
+                        setTitle(event.target.value)
                       }
-                      onChange={(
-                        event,
-                      ) =>
-                        setDuration(
-                          event
-                            .target
-                            .value,
-                        )
+                      disabled={submitting}
+                      dir={
+                        sourceLanguage === "ar"
+                          ? "rtl"
+                          : "ltr"
                       }
-                      disabled={
-                        submitting
-                      }
-                      dir="ltr"
-                      placeholder="42:10"
                       className="aan-field p-4 font-normal"
                     />
                   </Field>
+
+                  <Field label={copy.description}>
+                    <textarea
+                      value={description}
+                      onChange={(event) =>
+                        setDescription(event.target.value)
+                      }
+                      disabled={submitting}
+                      dir={
+                        sourceLanguage === "ar"
+                          ? "rtl"
+                          : "ltr"
+                      }
+                      className="aan-field min-h-40 resize-y p-4 font-normal"
+                    />
+                  </Field>
+
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <Field label={copy.topic}>
+                      <input
+                        value={topic}
+                        onChange={(event) =>
+                          setTopic(event.target.value)
+                        }
+                        disabled={submitting}
+                        dir={
+                          sourceLanguage === "ar"
+                            ? "rtl"
+                            : "ltr"
+                        }
+                        className="aan-field p-4 font-normal"
+                      />
+                    </Field>
+
+                    <Field label={copy.duration}>
+                      <input
+                        value={duration}
+                        onChange={(event) =>
+                          setDuration(event.target.value)
+                        }
+                        disabled={submitting}
+                        dir="ltr"
+                        placeholder="42:10"
+                        className="aan-field p-4 font-normal"
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <Field label={copy.host}>
+                      <input
+                        value={hostName}
+                        onChange={(event) =>
+                          setHostName(event.target.value)
+                        }
+                        disabled={submitting}
+                        dir={
+                          sourceLanguage === "ar"
+                            ? "rtl"
+                            : "ltr"
+                        }
+                        className="aan-field p-4 font-normal"
+                      />
+                    </Field>
+
+                    <Field label={copy.guests}>
+                      <textarea
+                        value={guestNames}
+                        onChange={(event) =>
+                          setGuestNames(event.target.value)
+                        }
+                        disabled={submitting}
+                        dir={
+                          sourceLanguage === "ar"
+                            ? "rtl"
+                            : "ltr"
+                        }
+                        className="aan-field min-h-24 resize-y p-4 font-normal"
+                      />
+                    </Field>
+                  </div>
                 </div>
               </div>
 
               <div className="mt-7 rounded-[1.75rem] border border-aan-border bg-[#fbf8f3] p-6">
                 <h2 className="text-xl font-bold text-aan-navy">
-                  {
-                    copy.thumbnailSection
-                  }
+                  {copy.thumbnailSection}
                 </h2>
 
                 <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_280px]">
                   <div>
                     <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border-2 border-aan-gold bg-white px-6 py-4 font-bold text-aan-navy transition hover:bg-aan-gold hover:text-white">
-                      {
-                        copy.chooseThumbnail
-                      }
+                      {copy.chooseThumbnail}
 
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
-                        onChange={
-                          handleThumbnailChange
-                        }
-                        disabled={
-                          submitting
-                        }
+                        onChange={handleThumbnailChange}
+                        disabled={submitting}
                         className="hidden"
                       />
                     </label>
 
                     <p className="mt-3 text-sm leading-6 text-aan-secondary">
-                      {
-                        copy.thumbnailHelp
-                      }
+                      {copy.thumbnailHelp}
                     </p>
 
                     {thumbnailFile && (
                       <div className="mt-4 rounded-2xl border border-aan-border bg-white p-4">
                         <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                          {
-                            copy.selectedThumbnail
-                          }
+                          {copy.selectedThumbnail}
                         </p>
 
                         <p className="mt-2 break-all font-semibold text-aan-navy">
-                          {
-                            thumbnailFile.name
-                          }
+                          {thumbnailFile.name}
                         </p>
 
                         <p className="mt-1 text-sm text-aan-secondary">
-                          {formatFileSize(
-                            thumbnailFile.size,
-                          )}
+                          {formatFileSize(thumbnailFile.size)}
                         </p>
 
                         <button
                           type="button"
-                          onClick={
-                            clearThumbnailFile
-                          }
-                          disabled={
-                            submitting
-                          }
+                          onClick={clearThumbnailFile}
+                          disabled={submitting}
                           className="mt-3 text-sm font-bold text-red-700"
                         >
-                          ×{" "}
-                          {
-                            copy.delete
-                          }
+                          × {copy.delete}
                         </button>
                       </div>
                     )}
@@ -2341,91 +1349,63 @@ export default function AdminPodcastsPage() {
                   <div className="overflow-hidden rounded-2xl border border-aan-border bg-white">
                     {thumbnailPreviewUrl ? (
                       <img
-                        src={
-                          thumbnailPreviewUrl
-                        }
+                        src={thumbnailPreviewUrl}
                         alt="Thumbnail preview"
                         className="aspect-video h-full w-full object-cover"
                       />
                     ) : (
                       <div className="flex aspect-video items-center justify-center bg-[linear-gradient(145deg,#f8f4ee_0%,#eef4fa_100%)] px-5 text-center text-sm text-aan-secondary">
-                        {
-                          copy.thumbnailPreview
-                        }
+                        {copy.thumbnailPreview}
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {contentType ===
-              "recorded" ? (
+              {contentType === "recorded" ? (
                 <div className="mt-7 rounded-[1.75rem] border border-aan-border bg-[#fbf8f3] p-6">
                   <h2 className="text-xl font-bold text-aan-navy">
-                    {
-                      copy.recordedSection
-                    }
+                    {copy.recordedSection}
                   </h2>
 
                   <div className="mt-5">
                     <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-aan-button px-6 py-4 font-bold text-white transition hover:bg-aan-hover">
-                      {
-                        copy.chooseVideo
-                      }
+                      {copy.chooseVideo}
 
                       <input
                         type="file"
                         accept="video/mp4,video/webm"
-                        onChange={
-                          handleVideoChange
-                        }
-                        disabled={
-                          submitting
-                        }
+                        onChange={handleVideoChange}
+                        disabled={submitting}
                         className="hidden"
                       />
                     </label>
 
                     <p className="mt-3 text-sm leading-6 text-aan-secondary">
-                      {
-                        copy.videoHelp
-                      }
+                      {copy.videoHelp}
                     </p>
 
                     {videoFile && (
                       <div className="mt-4 rounded-2xl border border-aan-border bg-white p-4">
                         <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                          {
-                            copy.selectedVideo
-                          }
+                          {copy.selectedVideo}
                         </p>
 
                         <p className="mt-2 break-all font-semibold text-aan-navy">
-                          {
-                            videoFile.name
-                          }
+                          {videoFile.name}
                         </p>
 
                         <p className="mt-1 text-sm text-aan-secondary">
-                          {formatFileSize(
-                            videoFile.size,
-                          )}
+                          {formatFileSize(videoFile.size)}
                         </p>
 
                         <button
                           type="button"
-                          onClick={
-                            clearVideoFile
-                          }
-                          disabled={
-                            submitting
-                          }
+                          onClick={clearVideoFile}
+                          disabled={submitting}
                           className="mt-3 text-sm font-bold text-red-700"
                         >
-                          ×{" "}
-                          {
-                            copy.delete
-                          }
+                          × {copy.delete}
                         </button>
                       </div>
                     )}
@@ -2433,61 +1413,33 @@ export default function AdminPodcastsPage() {
                     {videoPreviewUrl && (
                       <video
                         controls
-                        src={
-                          videoPreviewUrl
-                        }
+                        src={videoPreviewUrl}
                         className="mt-5 aspect-video w-full rounded-2xl bg-black"
                       />
                     )}
 
                     <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                      <Field
-                        label={
-                          copy.optionalVideoUrl
-                        }
-                      >
+                      <Field label={copy.optionalVideoUrl}>
                         <input
-                          value={
-                            existingVideoUrl
-                          }
-                          onChange={(
-                            event,
-                          ) =>
+                          value={existingVideoUrl}
+                          onChange={(event) =>
                             setExistingVideoUrl(
-                              event
-                                .target
-                                .value,
+                              event.target.value,
                             )
                           }
-                          disabled={
-                            submitting
-                          }
+                          disabled={submitting}
                           dir="ltr"
                           className="aan-field p-4 font-normal"
                         />
                       </Field>
 
-                      <Field
-                        label={
-                          copy.audioUrl
-                        }
-                      >
+                      <Field label={copy.audioUrl}>
                         <input
-                          value={
-                            audioUrl
+                          value={audioUrl}
+                          onChange={(event) =>
+                            setAudioUrl(event.target.value)
                           }
-                          onChange={(
-                            event,
-                          ) =>
-                            setAudioUrl(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          disabled={
-                            submitting
-                          }
+                          disabled={submitting}
                           dir="ltr"
                           className="aan-field p-4 font-normal"
                         />
@@ -2498,87 +1450,47 @@ export default function AdminPodcastsPage() {
               ) : (
                 <div className="mt-7 rounded-[1.75rem] border border-aan-border bg-[#fbf8f3] p-6">
                   <h2 className="text-xl font-bold text-aan-navy">
-                    {
-                      copy.liveSection
-                    }
+                    {copy.liveSection}
                   </h2>
 
                   <div className="mt-5 grid gap-5">
-                    <Field
-                      label={
-                        copy.liveUrl
-                      }
-                    >
+                    <Field label={copy.liveUrl}>
                       <input
-                        value={
-                          liveUrl
+                        value={liveUrl}
+                        onChange={(event) =>
+                          setLiveUrl(event.target.value)
                         }
-                        onChange={(
-                          event,
-                        ) =>
-                          setLiveUrl(
-                            event
-                              .target
-                              .value,
-                          )
-                        }
-                        disabled={
-                          submitting
-                        }
+                        disabled={submitting}
                         dir="ltr"
                         className="aan-field p-4 font-normal"
                       />
                     </Field>
 
                     <div className="grid gap-5 lg:grid-cols-2">
-                      <Field
-                        label={
-                          copy.liveStartsAt
-                        }
-                      >
+                      <Field label={copy.liveStartsAt}>
                         <input
                           type="datetime-local"
-                          value={
-                            liveStartsAt
-                          }
-                          onChange={(
-                            event,
-                          ) =>
+                          value={liveStartsAt}
+                          onChange={(event) =>
                             setLiveStartsAt(
-                              event
-                                .target
-                                .value,
+                              event.target.value,
                             )
                           }
-                          disabled={
-                            submitting
-                          }
+                          disabled={submitting}
                           className="aan-field p-4 font-normal"
                         />
                       </Field>
 
-                      <Field
-                        label={
-                          copy.liveEndsAt
-                        }
-                      >
+                      <Field label={copy.liveEndsAt}>
                         <input
                           type="datetime-local"
-                          value={
-                            liveEndsAt
-                          }
-                          onChange={(
-                            event,
-                          ) =>
+                          value={liveEndsAt}
+                          onChange={(event) =>
                             setLiveEndsAt(
-                              event
-                                .target
-                                .value,
+                              event.target.value,
                             )
                           }
-                          disabled={
-                            submitting
-                          }
+                          disabled={submitting}
                           className="aan-field p-4 font-normal"
                         />
                       </Field>
@@ -2586,9 +1498,7 @@ export default function AdminPodcastsPage() {
 
                     <div className="rounded-2xl border border-aan-border bg-white p-5">
                       <p className="text-sm leading-7 text-aan-secondary">
-                        {
-                          copy.liveHelp
-                        }
+                        {copy.liveHelp}
                       </p>
                     </div>
                   </div>
@@ -2597,17 +1507,11 @@ export default function AdminPodcastsPage() {
 
               <button
                 type="button"
-                onClick={
-                  addPodcast
-                }
-                disabled={
-                  submitting
-                }
+                onClick={addPodcast}
+                disabled={submitting}
                 className="aan-cta mt-7 w-full rounded-2xl py-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {
-                  submissionLabel
-                }
+                {submissionLabel}
               </button>
             </section>
 
@@ -2619,203 +1523,149 @@ export default function AdminPodcastsPage() {
                   </p>
 
                   <h2 className="aan-heading mt-3 text-3xl">
-                    {
-                      copy.existing
-                    }
+                    {copy.existing}
                   </h2>
                 </div>
 
                 <span className="rounded-full bg-[#fbf8f3] px-4 py-2 font-bold text-aan-navy">
-                  {
-                    podcasts.length
-                  }
+                  {podcasts.length}
                 </span>
               </div>
 
-              {podcasts.length ===
-              0 ? (
+              {podcasts.length === 0 ? (
                 <p className="rounded-2xl bg-[#fbf8f3] p-6 text-aan-secondary">
-                  {
-                    copy.empty
-                  }
+                  {copy.empty}
                 </p>
               ) : (
                 <div className="grid gap-6">
-                  {podcasts.map(
-                    (
-                      podcast,
-                    ) => {
-                      const displayedTitle =
-                        getDisplayedTitle(
-                          podcast,
-                        );
+                  {podcasts.map((podcast) => {
+                    const displayedTitle =
+                      getDisplayedTitle(podcast);
 
-                      const displayedDescription =
-                        getDisplayedDescription(
-                          podcast,
-                        );
+                    const displayedDescription =
+                      getDisplayedDescription(podcast);
 
-                      const displayedTopic =
-                        getDisplayedTopic(
-                          podcast,
-                        );
+                    const displayedTopic =
+                      getDisplayedTopic(podcast);
 
-                      const displayedHost =
-                        getDisplayedHost(
-                          podcast,
-                        );
+                    const displayedHost =
+                      getDisplayedHost(podcast);
 
-                      const displayedGuests =
-                        getDisplayedGuests(
-                          podcast,
-                        );
+                    const displayedGuests =
+                      getDisplayedGuests(podcast);
 
-                      return (
-                        <article
-                          key={
-                            podcast.id
-                          }
-                          className="overflow-hidden rounded-[1.75rem] border border-aan-border bg-[#fbf8f3]"
-                        >
-                          <div className="grid lg:grid-cols-[260px_1fr]">
-                            <div className="bg-aan-button">
-                              {podcast.thumbnail_url ? (
-                                <img
-                                  src={
-                                    podcast.thumbnail_url
-                                  }
-                                  alt={
-                                    displayedTitle
-                                  }
-                                  className="aspect-video h-full w-full object-cover lg:aspect-auto"
-                                />
-                              ) : (
-                                <div className="flex min-h-52 items-center justify-center p-6 text-center font-semibold text-white">
-                                  {podcast.content_type ===
-                                  "live"
-                                    ? copy.liveBadge
-                                    : copy.recordedBadge}
-                                </div>
-                              )}
-                            </div>
+                    return (
+                      <article
+                        key={podcast.id}
+                        className="overflow-hidden rounded-[1.75rem] border border-aan-border bg-[#fbf8f3]"
+                      >
+                        <div className="grid lg:grid-cols-[260px_1fr]">
+                          <div className="bg-aan-button">
+                            {podcast.thumbnail_url ? (
+                              <img
+                                src={podcast.thumbnail_url}
+                                alt={displayedTitle}
+                                className="aspect-video h-full w-full object-cover lg:aspect-auto"
+                              />
+                            ) : (
+                              <div className="flex min-h-52 items-center justify-center p-6 text-center font-semibold text-white">
+                                {podcast.content_type === "live"
+                                  ? copy.liveBadge
+                                  : copy.recordedBadge}
+                              </div>
+                            )}
+                          </div>
 
-                            <div className="p-6 sm:p-8">
-                              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap gap-3">
-                                    <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-aan-navy">
-                                      {podcast.content_type ===
-                                      "live"
-                                        ? copy.liveBadge
-                                        : copy.recordedBadge}
-                                    </span>
+                          <div className="p-6 sm:p-8">
+                            <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap gap-3">
+                                  <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-aan-navy">
+                                    {podcast.content_type === "live"
+                                      ? copy.liveBadge
+                                      : copy.recordedBadge}
+                                  </span>
 
+                                  <span className="rounded-full bg-white px-4 py-2 text-sm text-aan-secondary">
+                                    {copy.originalLanguage}:{" "}
+                                    {getLanguageLabel(
+                                      podcast.language,
+                                    )}
+                                  </span>
+
+                                  {displayedTopic && (
                                     <span className="rounded-full bg-white px-4 py-2 text-sm text-aan-secondary">
-                                      {
-                                        copy.originalLanguage
-                                      }
-                                      :{" "}
-                                      {podcast.language ===
-                                      "ar"
-                                        ? copy.arabic
-                                        : copy.english}
+                                      {displayedTopic}
                                     </span>
+                                  )}
+                                </div>
 
-                                    {displayedTopic && (
-                                      <span className="rounded-full bg-white px-4 py-2 text-sm text-aan-secondary">
-                                        {
-                                          displayedTopic
-                                        }
-                                      </span>
+                                <h3 className="aan-heading mt-5 text-3xl">
+                                  {displayedTitle}
+                                </h3>
+
+                                <p className="mt-4 max-w-4xl whitespace-pre-line leading-8 text-aan-secondary">
+                                  {displayedDescription}
+                                </p>
+
+                                {(displayedHost ||
+                                  displayedGuests) && (
+                                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                    {displayedHost && (
+                                      <div className="rounded-2xl bg-white p-4">
+                                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                                          {copy.host}
+                                        </p>
+
+                                        <p className="mt-2 font-semibold text-aan-navy">
+                                          {displayedHost}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {displayedGuests && (
+                                      <div className="rounded-2xl bg-white p-4">
+                                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                                          {copy.guests}
+                                        </p>
+
+                                        <p className="mt-2 whitespace-pre-line font-semibold text-aan-navy">
+                                          {displayedGuests}
+                                        </p>
+                                      </div>
                                     )}
                                   </div>
+                                )}
 
-                                  <h3 className="aan-heading mt-5 text-3xl">
-                                    {
-                                      displayedTitle
-                                    }
-                                  </h3>
-
-                                  <p className="mt-4 max-w-4xl whitespace-pre-line leading-8 text-aan-secondary">
-                                    {
-                                      displayedDescription
-                                    }
-                                  </p>
-
-                                  {(displayedHost ||
-                                    displayedGuests) && (
-                                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                      {displayedHost && (
-                                        <div className="rounded-2xl bg-white p-4">
-                                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                            {
-                                              copy.host
-                                            }
-                                          </p>
-
-                                          <p className="mt-2 font-semibold text-aan-navy">
-                                            {
-                                              displayedHost
-                                            }
-                                          </p>
-                                        </div>
-                                      )}
-
-                                      {displayedGuests && (
-                                        <div className="rounded-2xl bg-white p-4">
-                                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                            {
-                                              copy.guests
-                                            }
-                                          </p>
-
-                                          <p className="mt-2 whitespace-pre-line font-semibold text-aan-navy">
-                                            {
-                                              displayedGuests
-                                            }
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
+                                {podcast.content_type ===
+                                  "live" &&
+                                  podcast.live_starts_at && (
+                                    <p className="mt-5 text-sm font-semibold text-aan-secondary">
+                                      {copy.liveStartsAt}:{" "}
+                                      <span className="text-aan-navy">
+                                        {formatDate(
+                                          podcast.live_starts_at,
+                                        )}
+                                      </span>
+                                    </p>
                                   )}
-
-                                  {podcast.content_type ===
-                                    "live" &&
-                                    podcast.live_starts_at && (
-                                      <p className="mt-5 text-sm font-semibold text-aan-secondary">
-                                        {
-                                          copy.liveStartsAt
-                                        }
-                                        :{" "}
-                                        <span className="text-aan-navy">
-                                          {formatDate(
-                                            podcast.live_starts_at,
-                                          )}
-                                        </span>
-                                      </p>
-                                    )}
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    deletePodcast(
-                                      podcast.id,
-                                    )
-                                  }
-                                  className="shrink-0 rounded-xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50"
-                                >
-                                  {
-                                    copy.delete
-                                  }
-                                </button>
                               </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  deletePodcast(podcast.id)
+                                }
+                                className="shrink-0 rounded-xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50"
+                              >
+                                {copy.delete}
+                              </button>
                             </div>
                           </div>
-                        </article>
-                      );
-                    },
-                  )}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -2831,232 +1681,12 @@ function Field({
   children,
 }: {
   label: string;
-  children:
-    React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <label className="grid gap-2 font-bold text-aan-navy">
       {label}
       {children}
     </label>
-  );
-}
-
-function LanguageEditor({
-  languageLabel,
-  languageCode,
-  dir,
-  title,
-  setTitle,
-  description,
-  setDescription,
-  topic,
-  setTopic,
-  hostName,
-  setHostName,
-  guestNames,
-  setGuestNames,
-  disabled,
-  labels,
-}: {
-  languageLabel:
-    string;
-
-  languageCode:
-    string;
-
-  dir:
-    "ltr" | "rtl";
-
-  title:
-    string;
-
-  setTitle:
-    React.Dispatch<
-      React.SetStateAction<string>
-    >;
-
-  description:
-    string;
-
-  setDescription:
-    React.Dispatch<
-      React.SetStateAction<string>
-    >;
-
-  topic:
-    string;
-
-  setTopic:
-    React.Dispatch<
-      React.SetStateAction<string>
-    >;
-
-  hostName:
-    string;
-
-  setHostName:
-    React.Dispatch<
-      React.SetStateAction<string>
-    >;
-
-  guestNames:
-    string;
-
-  setGuestNames:
-    React.Dispatch<
-      React.SetStateAction<string>
-    >;
-
-  disabled:
-    boolean;
-
-  labels: {
-    title: string;
-    description: string;
-    topic: string;
-    host: string;
-    guests: string;
-  };
-}) {
-  return (
-    <section className="rounded-2xl border border-aan-border bg-white p-5 sm:p-6">
-      <div className="flex items-center gap-3">
-        <span className="rounded-full bg-aan-button px-3 py-1.5 text-xs font-bold text-white">
-          {languageCode}
-        </span>
-
-        <h3 className="text-xl font-bold text-aan-navy">
-          {languageLabel}
-        </h3>
-      </div>
-
-      <div className="mt-5 grid gap-5">
-        <Field
-          label={
-            labels.title
-          }
-        >
-          <input
-            value={title}
-            onChange={(
-              event,
-            ) =>
-              setTitle(
-                event.target
-                  .value,
-              )
-            }
-            disabled={
-              disabled
-            }
-            dir={dir}
-            className="aan-field p-4 font-normal"
-          />
-        </Field>
-
-        <Field
-          label={
-            labels.description
-          }
-        >
-          <textarea
-            value={
-              description
-            }
-            onChange={(
-              event,
-            ) =>
-              setDescription(
-                event.target
-                  .value,
-              )
-            }
-            disabled={
-              disabled
-            }
-            dir={dir}
-            className="aan-field min-h-36 resize-y p-4 font-normal"
-          />
-        </Field>
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Field
-            label={
-              labels.topic
-            }
-          >
-            <input
-              value={
-                topic
-              }
-              onChange={(
-                event,
-              ) =>
-                setTopic(
-                  event.target
-                    .value,
-                )
-              }
-              disabled={
-                disabled
-              }
-              dir={dir}
-              className="aan-field p-4 font-normal"
-            />
-          </Field>
-
-          <Field
-            label={
-              labels.host
-            }
-          >
-            <input
-              value={
-                hostName
-              }
-              onChange={(
-                event,
-              ) =>
-                setHostName(
-                  event.target
-                    .value,
-                )
-              }
-              disabled={
-                disabled
-              }
-              dir={dir}
-              className="aan-field p-4 font-normal"
-            />
-          </Field>
-
-          <Field
-            label={
-              labels.guests
-            }
-          >
-            <textarea
-              value={
-                guestNames
-              }
-              onChange={(
-                event,
-              ) =>
-                setGuestNames(
-                  event.target
-                    .value,
-                )
-              }
-              disabled={
-                disabled
-              }
-              dir={dir}
-              className="aan-field min-h-14 resize-y p-4 font-normal"
-            />
-          </Field>
-        </div>
-      </div>
-    </section>
   );
 }
