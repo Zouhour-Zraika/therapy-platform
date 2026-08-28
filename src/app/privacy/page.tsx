@@ -10,7 +10,7 @@ type Section = {
 };
 
 export default function PrivacyPage() {
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   const copy = isArabic
     ? {
@@ -223,7 +223,218 @@ export default function PrivacyPage() {
           },
         ] as Section[],
       }
-    : {
+    : language === "fr"
+      ? {
+          eyebrow: "Confidentialité & protection des données",
+          title: "Politique de confidentialité",
+          intro:
+            "Cette politique explique comment les informations personnelles sont collectées, utilisées et protégées lorsque vous utilisez la plateforme AAN Psychotherapy.",
+          updated: "Dernière mise à jour : août 2026",
+          important:
+            "Certaines informations traitées par la plateforme peuvent concerner la santé mentale ou physique d’une personne. Les données de santé sont des données personnelles sensibles qui nécessitent un niveau de protection particulièrement élevé.",
+
+          contactTitle: "Contact relatif à la confidentialité",
+          contactText:
+            "Pour toute demande concernant vos informations personnelles ou vos droits en matière de confidentialité, vous pouvez contacter AAN Psychotherapy en utilisant les coordonnées officielles de la plateforme.",
+
+          noteTitle: "Note importante avant le lancement",
+          note:
+            "Avant le lancement public final, cette politique doit être complétée avec l’identité juridique du responsable du traitement, son adresse enregistrée, les coordonnées dédiées à la confidentialité et les durées de conservation définitives approuvées.",
+
+          sections: [
+            {
+              title: "1. Qui est responsable de vos données ?",
+              paragraphs: [
+                "AAN Psychotherapy est la plateforme responsable de déterminer pourquoi et comment les informations personnelles sont traitées dans le cadre des services fournis par le site.",
+                "Le nom juridique complet de l’entité, son adresse enregistrée et les coordonnées dédiées à la confidentialité seront ajoutés avant le lancement public final.",
+              ],
+            },
+            {
+              title: "2. Informations que nous pouvons collecter",
+              paragraphs: [
+                "Les informations collectées dépendent de la manière dont vous utilisez la plateforme, de votre type de compte et des services que vous choisissez d’utiliser.",
+              ],
+              bullets: [
+                "Prénom et nom.",
+                "Adresse e-mail.",
+                "Informations relatives au compte et à l’authentification.",
+                "Langue et préférences de la plateforme.",
+                "Informations relatives aux réservations et aux rendez-vous.",
+                "Thérapeute sélectionné ainsi que la date et l’heure du rendez-vous.",
+                "Informations fournies lors de la recherche d’un soutien psychologique.",
+                "Informations professionnelles fournies par les thérapeutes qui souhaitent rejoindre la plateforme.",
+                "Informations relatives aux transactions et au statut des paiements.",
+                "Informations techniques nécessaires à la sécurité et au fonctionnement de la plateforme.",
+                "Préférences relatives aux cookies et à la confidentialité.",
+              ],
+            },
+            {
+              title: "3. Informations relatives à la santé",
+              paragraphs: [
+                "Certaines informations fournies lors d’une demande de soutien psychologique peuvent révéler des éléments concernant la santé mentale ou physique d’une personne.",
+                "Ces informations doivent être considérées comme particulièrement sensibles et ne doivent être utilisées que pour les finalités précises pour lesquelles elles ont été collectées, lorsque les conditions juridiques requises sont remplies.",
+              ],
+            },
+            {
+              title: "4. Pourquoi utilisons-nous les informations personnelles ?",
+              bullets: [
+                "Créer et gérer les comptes utilisateurs.",
+                "Gérer l’authentification et le contrôle des accès.",
+                "Aider les utilisateurs à trouver des thérapeutes adaptés.",
+                "Gérer les rendez-vous et les réservations.",
+                "Traiter et confirmer les paiements.",
+                "Envoyer les e-mails essentiels relatifs aux réservations et aux comptes.",
+                "Gérer les comptes des thérapeutes et des administrateurs.",
+                "Permettre les séances de thérapie à distance.",
+                "Protéger la plateforme contre les abus et les menaces de sécurité.",
+                "Améliorer les performances et l’expérience utilisateur lorsqu’une base juridique appropriée existe.",
+                "Respecter les obligations légales et réglementaires applicables.",
+              ],
+            },
+            {
+              title: "5. Bases juridiques du traitement",
+              paragraphs: [
+                "La base juridique applicable dépend de l’activité de traitement. Elle peut notamment reposer sur l’exécution d’un contrat ou des mesures prises à la demande de l’utilisateur avant la conclusion d’un contrat, le respect d’une obligation légale, les intérêts légitimes lorsqu’ils sont appropriés, ou le consentement lorsqu’il est requis.",
+                "Lorsque des données de santé ou une autre catégorie particulière de données personnelles sont traitées, une condition juridique supplémentaire autorisant le traitement de ces données sensibles doit également être identifiée.",
+              ],
+            },
+            {
+              title: "6. Comptes et authentification",
+              paragraphs: [
+                "La plateforme utilise un système d’authentification pour gérer la connexion et protéger les comptes utilisateurs.",
+                "Les utilisateurs ne doivent pas partager leur mot de passe. Des sessions sécurisées et des mécanismes d’authentification peuvent être utilisés afin de réduire le risque d’accès non autorisé.",
+              ],
+            },
+            {
+              title: "7. Rendez-vous et réservations",
+              paragraphs: [
+                "Lorsqu’un rendez-vous est réservé, les informations nécessaires à l’organisation de la séance sont traitées, notamment l’utilisateur, le thérapeute, l’heure du rendez-vous, le prix et le statut de la réservation.",
+                "Ces informations sont utilisées pour fournir et administrer le service demandé, sauf lorsqu’une autre base juridique autorise un traitement supplémentaire.",
+              ],
+            },
+            {
+              title: "8. Paiements",
+              paragraphs: [
+                "La plateforme utilise des prestataires de paiement externes pour traiter les transactions.",
+                "Stripe est utilisé pour les paiements internationaux. Les numéros complets des cartes de paiement ne doivent pas être stockés directement dans la base de données d’AAN Psychotherapy.",
+                "Des moyens de paiement libanais tels que Whish Money, OMT, Purpl et PinPay pourront être ajoutés. Cette politique sera mise à jour lors de l’activation de chaque prestataire et après examen de ses exigences en matière de traitement des données.",
+              ],
+            },
+            {
+              title: "9. Séances de thérapie à distance",
+              paragraphs: [
+                "La plateforme peut utiliser des services de communication externes tels que Zoom afin de faciliter les séances à distance.",
+                "Des informations techniques relatives aux réunions peuvent être traitées par ces services conformément à leurs propres conditions et politiques de confidentialité applicables.",
+                "L’utilisation de la plateforme ne signifie pas automatiquement que les séances de thérapie sont enregistrées. Une séance ne doit pas être enregistrée sans base juridique claire et sans information et consentement appropriés lorsque cela est requis.",
+              ],
+            },
+            {
+              title: "10. E-mails transactionnels",
+              paragraphs: [
+                "Une infrastructure d’e-mail externe peut être utilisée pour envoyer des messages opérationnels tels que les confirmations de réservation et les invitations de compte.",
+                "Resend est actuellement utilisé à cette fin.",
+              ],
+            },
+            {
+              title: "11. Traduction automatisée et intelligence artificielle",
+              paragraphs: [
+                "La plateforme peut utiliser l’API OpenAI pour traduire certains contenus entre l’anglais, le français et l’arabe.",
+                "Les informations envoyées aux services d’intelligence artificielle doivent être limitées au strict nécessaire. Les contenus sensibles liés aux séances de thérapie ou les données de santé ne doivent pas être envoyés sans évaluation spécifique de la base juridique, des protections contractuelles et des mesures techniques appropriées.",
+              ],
+            },
+            {
+              title: "12. Cookies et stockage local",
+              paragraphs: [
+                "La plateforme utilise des technologies de stockage nécessaires aux fonctionnalités essentielles, telles que le choix de la langue, l’authentification et les préférences de confidentialité.",
+                "Les technologies d’analyse ou de marketing non essentielles ne doivent pas être activées avant l’obtention du consentement requis.",
+                "Les utilisateurs peuvent accepter ou refuser les technologies non essentielles à l’aide de l’interface de gestion des préférences de cookies.",
+              ],
+            },
+            {
+              title: "13. Prestataires de services",
+              paragraphs: [
+                "AAN Psychotherapy ne vend pas les informations personnelles de ses utilisateurs.",
+                "Seules les informations nécessaires au fonctionnement du service concerné peuvent être partagées avec les prestataires techniques.",
+              ],
+              bullets: [
+                "Supabase — base de données, authentification et stockage de fichiers.",
+                "Vercel — hébergement de l’application web.",
+                "Stripe — traitement des paiements internationaux.",
+                "Resend — envoi des e-mails transactionnels.",
+                "Zoom — séances à distance lorsqu’il est activé.",
+                "OpenAI — traduction automatisée lorsqu’elle est activée.",
+                "Prestataires de paiement libanais lorsqu’ils sont activés.",
+              ],
+            },
+            {
+              title: "14. Transferts internationaux de données",
+              paragraphs: [
+                "Certains prestataires techniques peuvent traiter des informations dans différents pays.",
+                "Avant le lancement final, les lieux de traitement ainsi que les garanties juridiques utilisées pour les transferts internationaux doivent être documentés pour chaque prestataire, notamment les mécanismes d’adéquation ou les clauses contractuelles types lorsque cela est applicable.",
+              ],
+            },
+            {
+              title: "15. Durée de conservation des informations",
+              paragraphs: [
+                "Les informations personnelles ne doivent pas être conservées plus longtemps que nécessaire au regard de la finalité pour laquelle elles ont été collectées.",
+                "AAN Psychotherapy établira et documentera avant le lancement final une durée de conservation pour chaque catégorie d’informations, en tenant compte des obligations applicables en matière de santé, de comptabilité et de droit.",
+              ],
+            },
+            {
+              title: "16. Sécurité des informations",
+              paragraphs: [
+                "Des mesures techniques et organisationnelles sont utilisées afin de réduire les risques d’accès non autorisé, de perte, d’altération ou de divulgation illicite.",
+              ],
+              bullets: [
+                "Contrôles d’accès fondés sur les rôles.",
+                "Permissions distinctes pour les patients, thérapeutes et administrateurs.",
+                "Politiques de sécurité au niveau de la base de données.",
+                "HTTPS dans l’environnement de production.",
+                "Protection des identifiants API et des variables d’environnement.",
+                "Vérification sécurisée des webhooks pour les événements de paiement.",
+                "Protection côté serveur des opérations administratives sensibles.",
+              ],
+            },
+            {
+              title: "17. Vos droits en matière de confidentialité",
+              paragraphs: [
+                "Selon la législation applicable et les circonstances, les utilisateurs peuvent disposer de plusieurs droits concernant leurs informations personnelles.",
+              ],
+              bullets: [
+                "Le droit de recevoir des informations sur le traitement.",
+                "Le droit d’accéder aux informations personnelles.",
+                "Le droit de rectifier les informations inexactes.",
+                "Le droit de demander l’effacement lorsque la loi le permet.",
+                "Le droit de demander la limitation de certains traitements.",
+                "Le droit de s’opposer à certains traitements.",
+                "Le droit à la portabilité des données lorsque les conditions juridiques sont remplies.",
+                "Le droit de retirer son consentement à tout moment lorsque le traitement repose sur le consentement.",
+              ],
+            },
+            {
+              title: "18. Suppression du compte et demandes relatives à la confidentialité",
+              paragraphs: [
+                "Un mécanisme permettra aux utilisateurs de demander la suppression de leur compte et de leurs informations personnelles, sous réserve des informations qui doivent légalement être conservées.",
+                "Les fonctionnalités relatives aux demandes d’accès, de rectification et de suppression seront finalisées dans le cadre de la phase finale de mise en conformité au RGPD.",
+              ],
+            },
+            {
+              title: "19. Protection de la vie privée des enfants",
+              paragraphs: [
+                "La politique définitive concernant l’âge minimum doit être déterminée avant le lancement public complet.",
+                "Si des services sont proposés aux mineurs, des exigences spécifiques relatives à l’implication des parents, au consentement et à la protection des informations des enfants devront être mises en œuvre conformément à la législation applicable.",
+              ],
+            },
+            {
+              title: "20. Modifications de cette politique",
+              paragraphs: [
+                "Cette politique de confidentialité peut être mise à jour lorsque la plateforme, les prestataires de services ou les exigences légales évoluent.",
+                "La version la plus récente sera publiée sur cette page avec sa date de dernière mise à jour.",
+              ],
+            },
+          ] as Section[],
+        }
+      : {
         eyebrow: "Privacy & data protection",
         title: "Privacy Policy",
         intro:
