@@ -11,7 +11,7 @@ type LoginMode = "client" | "therapist";
 
 export default function ClinicianPage() {
   const router = useRouter();
-  const { isArabic, t } = useLanguage();
+  const { language, isArabic, t } = useLanguage();
 
   const [loginMode, setLoginMode] =
     useState<LoginMode>("client");
@@ -149,112 +149,180 @@ export default function ClinicianPage() {
   };
 
   const submitApplication = async (
-  event: FormEvent<HTMLFormElement>
-) => {
-  event.preventDefault();
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
 
-  setApplicationError("");
-  setApplicationSuccess("");
+    setApplicationError("");
+    setApplicationSuccess("");
 
-  const cleanName = fullName.trim();
-  const cleanEmail = applicationEmail.trim();
-  const cleanSpecialty = specialty.trim();
-  const cleanMessage = message.trim();
+    const cleanName = fullName.trim();
+    const cleanEmail = applicationEmail.trim();
+    const cleanSpecialty = specialty.trim();
+    const cleanMessage = message.trim();
 
-  if (!cleanName || !cleanEmail) {
-    setApplicationError(
-      t("clinician.errors.applicationRequired")
-    );
-    return;
-  }
+    if (!cleanName || !cleanEmail) {
+      setApplicationError(
+        t("clinician.errors.applicationRequired")
+      );
+      return;
+    }
 
-  try {
-    setApplicationLoading(true);
+    type ApplicationLanguage = "en" | "fr" | "ar";
 
-    let translations = {
-      full_name: cleanName,
+    const sourceLanguage =
+      (language as ApplicationLanguage) || "en";
+
+    const sourceFields: Record<string, string> = {
       specialty: cleanSpecialty,
       message: cleanMessage,
     };
 
-    try {
+    const translateContent = async (
+      targetLanguage: ApplicationLanguage
+    ) => {
       const response = await fetch("/api/translate-content", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          sourceLanguage: "en",
-          targetLanguage: "ar",
-          fields: {
-            full_name: cleanName,
-            specialty: cleanSpecialty,
-            message: cleanMessage,
-          },
+          sourceLanguage,
+          targetLanguage,
+          fields: sourceFields,
         }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
+      const result = await response.json();
 
-        translations = {
-          full_name:
-            result.translations.full_name || cleanName,
-          specialty:
-            result.translations.specialty || cleanSpecialty,
-          message:
-            result.translations.message || cleanMessage,
-        };
+      if (!response.ok || !result?.translations) {
+        throw new Error(
+          result?.error ||
+            "Automatic translation failed."
+        );
       }
-    } catch (e) {
-      console.log("Translation skipped");
-    }
 
-    const { error } = await supabase
-      .from("therapist_applications")
-      .insert({
-        full_name: cleanName,
-        full_name_ar: translations.full_name,
+      return result.translations as Record<string, string>;
+    };
 
-        email: cleanEmail,
+    try {
+      setApplicationLoading(true);
 
-        specialty: cleanSpecialty,
-        specialty_ar: translations.specialty,
-
-        message: cleanMessage,
-        message_ar: translations.message,
-
-        status: "pending",
-      });
-
-    if (error) {
-      console.error(error);
-
-      setApplicationError(
-        t("clinician.errors.applicationSubmit")
+      const targetLanguages = (
+        ["en", "fr", "ar"] as ApplicationLanguage[]
+      ).filter(
+        (targetLanguage) =>
+          targetLanguage !== sourceLanguage
       );
 
-      return;
+      const [firstTranslation, secondTranslation] =
+        await Promise.all([
+          translateContent(targetLanguages[0]),
+          translateContent(targetLanguages[1]),
+        ]);
+
+      const translationsByLanguage: Record<
+        ApplicationLanguage,
+        Record<string, string>
+      > = {
+        en: {},
+        fr: {},
+        ar: {},
+      };
+
+      translationsByLanguage[sourceLanguage] =
+        sourceFields;
+
+      translationsByLanguage[targetLanguages[0]] =
+        firstTranslation;
+
+      translationsByLanguage[targetLanguages[1]] =
+        secondTranslation;
+
+      const translatedValue = (
+        targetLanguage: ApplicationLanguage,
+        field: "specialty" | "message"
+      ) => {
+        return (
+          translationsByLanguage[targetLanguage]?.[
+            field
+          ]?.trim() ||
+          sourceFields[field]?.trim() ||
+          ""
+        );
+      };
+
+      /*
+       * A person's name should not be "translated".
+       * We keep the same name in all language columns.
+       */
+      const { error } = await supabase
+        .from("therapist_applications")
+        .insert({
+          full_name: cleanName,
+          full_name_fr: cleanName,
+          full_name_ar: cleanName,
+
+          email: cleanEmail,
+
+          specialty: translatedValue(
+            "en",
+            "specialty"
+          ),
+          specialty_fr: translatedValue(
+            "fr",
+            "specialty"
+          ),
+          specialty_ar: translatedValue(
+            "ar",
+            "specialty"
+          ),
+
+          message: translatedValue("en", "message"),
+          message_fr: translatedValue(
+            "fr",
+            "message"
+          ),
+          message_ar: translatedValue(
+            "ar",
+            "message"
+          ),
+
+          status: "pending",
+        });
+
+      if (error) {
+        console.error(error);
+
+        setApplicationError(
+          t("clinician.errors.applicationSubmit")
+        );
+        return;
+      }
+
+      setApplicationSuccess(
+        t("clinician.application.success")
+      );
+
+      setFullName("");
+      setApplicationEmail("");
+      setSpecialty("");
+      setMessage("");
+    } catch (error) {
+      console.error(
+        "Therapist application translation/submission error:",
+        error
+      );
+
+      setApplicationError(
+        error instanceof Error
+          ? error.message
+          : t("clinician.errors.unexpected")
+      );
+    } finally {
+      setApplicationLoading(false);
     }
-
-    setApplicationSuccess(
-      t("clinician.application.success")
-    );
-
-    setFullName("");
-    setApplicationEmail("");
-    setSpecialty("");
-    setMessage("");
-  } catch (error) {
-    console.error(error);
-
-    setApplicationError(
-      t("clinician.errors.unexpected")
-    );
-  } finally {
-    setApplicationLoading(false);
-  }
-};
+  };
 
   const scrollToApplication = () => {
     document
