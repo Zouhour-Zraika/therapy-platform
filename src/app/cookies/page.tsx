@@ -10,7 +10,7 @@ type CookieSection = {
 };
 
 export default function CookiesPage() {
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   const copy = isArabic
     ? {
@@ -134,7 +134,129 @@ export default function CookiesPage() {
           "لمزيد من المعلومات حول كيفية استخدام وحماية البيانات الشخصية، يمكنك مراجعة سياسة الخصوصية.",
         privacyButton: "عرض سياسة الخصوصية",
       }
-    : {
+    : language === "fr"
+      ? {
+          eyebrow: "Confidentialité & cookies",
+          title: "Politique relative aux cookies",
+          intro:
+            "Cette politique explique comment AAN Psychotherapy utilise les cookies, le stockage du navigateur et des technologies similaires lorsque vous utilisez la plateforme.",
+          updated: "Dernière mise à jour : août 2026",
+
+          important:
+            "Les cookies non essentiels ou les technologies de suivi ne sont pas activés avant l’obtention du consentement lorsque celui-ci est requis.",
+
+          sections: [
+            {
+              title: "1. Que sont les cookies ?",
+              paragraphs: [
+                "Les cookies sont de petits fichiers ou des technologies similaires qui peuvent être stockés sur l’appareil d’un utilisateur lorsqu’il utilise un site web ou une application web.",
+                "La plateforme peut également utiliser des technologies telles que le stockage local du navigateur afin de conserver les informations nécessaires à certaines fonctionnalités et préférences.",
+              ],
+            },
+            {
+              title: "2. Pourquoi AAN utilise ces technologies",
+              paragraphs: [
+                "AAN Psychotherapy utilise des technologies de stockage nécessaires afin de fournir des fonctionnalités essentielles et sécurisées de la plateforme.",
+              ],
+              bullets: [
+                "Connexion et gestion des sessions.",
+                "Sécurité des comptes et authentification.",
+                "Mémorisation de la langue sélectionnée sur le site.",
+                "Mémorisation des préférences relatives aux cookies et à la confidentialité.",
+                "Fourniture des fonctionnalités essentielles de la plateforme.",
+              ],
+            },
+            {
+              title: "3. Cookies strictement nécessaires",
+              paragraphs: [
+                "Ces technologies sont nécessaires au fonctionnement de la plateforme et ne peuvent pas être désactivées lorsqu’elles sont requises pour fournir un service explicitement demandé par l’utilisateur.",
+                "Elles peuvent notamment inclure les sessions d’authentification, les paramètres de sécurité, les préférences linguistiques et le stockage des préférences de confidentialité.",
+              ],
+            },
+            {
+              title: "4. Cookies d’analyse",
+              paragraphs: [
+                "Des technologies d’analyse peuvent être utilisées afin de comprendre comment les visiteurs utilisent la plateforme et d’améliorer les performances ainsi que l’expérience utilisateur.",
+                "Les outils d’analyse non essentiels ne seront pas activés avant l’obtention du consentement lorsque celui-ci est requis.",
+                "Cette politique devra être mise à jour si un prestataire d’analyse spécifique, tel que Google Analytics ou un autre service, est ajouté.",
+              ],
+            },
+            {
+              title: "5. Cookies de marketing",
+              paragraphs: [
+                "Des technologies de marketing pourront être introduites à l’avenir afin de mesurer les campagnes ou de personnaliser le contenu publicitaire.",
+                "Ces technologies ne sont pas nécessaires au fonctionnement principal de la plateforme et ne doivent pas être activées avant l’obtention du consentement lorsque celui-ci est requis.",
+                "Si AAN n’utilise aucune technologie de marketing, cette catégorie restera désactivée.",
+              ],
+            },
+            {
+              title: "6. Stockage local du navigateur",
+              paragraphs: [
+                "Le site utilise actuellement le stockage local du navigateur afin de conserver certaines préférences.",
+              ],
+              bullets: [
+                "Langue sélectionnée.",
+                "Choix de l’utilisateur concernant le consentement aux cookies.",
+                "Certains paramètres techniques liés à l’expérience utilisateur.",
+              ],
+            },
+            {
+              title: "7. Gestion du consentement",
+              paragraphs: [
+                "Lors de la première visite, les utilisateurs peuvent accepter les technologies non essentielles, les refuser ou personnaliser leurs préférences.",
+                "Le refus des technologies non essentielles ne doit pas empêcher l’accès aux fonctionnalités essentielles de la plateforme.",
+              ],
+            },
+            {
+              title: "8. Retrait ou modification du consentement",
+              paragraphs: [
+                "Les utilisateurs peuvent modifier ou retirer leur consentement à tout moment.",
+                "Un moyen permanent et facilement accessible permettant de rouvrir les préférences relatives aux cookies sera disponible sur la plateforme.",
+              ],
+            },
+            {
+              title: "9. Services tiers",
+              paragraphs: [
+                "AAN Psychotherapy utilise plusieurs prestataires techniques externes pour faire fonctionner la plateforme.",
+                "L’utilisation de ces prestataires ne signifie pas nécessairement qu’ils déposent tous des cookies d’analyse ou de marketing.",
+                "Un examen final de chaque prestataire sera effectué afin d’identifier les cookies ou technologies similaires susceptibles d’être utilisés.",
+              ],
+              bullets: [
+                "Supabase — base de données, authentification et stockage.",
+                "Vercel — hébergement de l’application.",
+                "Stripe — traitement des paiements internationaux.",
+                "Zoom — séances vidéo.",
+                "Resend — e-mails transactionnels.",
+                "OpenAI — traduction automatisée du contenu lorsqu’elle est activée.",
+                "Prestataires de paiement libanais lorsqu’ils sont activés.",
+              ],
+            },
+            {
+              title: "10. Durée de conservation des préférences",
+              paragraphs: [
+                "Le choix de l’utilisateur est enregistré afin que la plateforme ne pose pas la même question à chaque visite.",
+                "Les utilisateurs peuvent être invités à renouveler leur choix périodiquement ou lorsqu’un changement important intervient dans l’utilisation des cookies ou des technologies de suivi.",
+              ],
+            },
+            {
+              title: "11. Modifications de cette politique",
+              paragraphs: [
+                "Cette politique relative aux cookies peut être mise à jour lorsque de nouvelles technologies sont introduites ou lorsque les prestataires techniques de la plateforme changent.",
+                "La version la plus récente sera publiée sur cette page avec la date de révision mise à jour.",
+              ],
+            },
+          ] as CookieSection[],
+
+          preferencesTitle: "Gérer vos préférences",
+          preferencesText:
+            "Vous pouvez gérer les cookies non essentiels à l’aide de l’interface de préférences relative aux cookies disponible sur la plateforme.",
+
+          privacyTitle: "Politique de confidentialité",
+          privacyText:
+            "Pour en savoir plus sur la manière dont les informations personnelles sont collectées, utilisées et protégées, consultez la Politique de confidentialité.",
+          privacyButton: "Voir la Politique de confidentialité",
+        }
+      : {
         eyebrow: "Privacy & cookies",
         title: "Cookie Policy",
         intro:
