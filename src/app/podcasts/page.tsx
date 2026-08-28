@@ -35,7 +35,7 @@ export default function PodcastsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
 
-  const { isArabic, t } = useLanguage();
+  const { language, isArabic, t } = useLanguage();
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -111,7 +111,14 @@ export default function PodcastsPage() {
   };
 
   const formatDate = (date: string) => {
-    return new Intl.DateTimeFormat(isArabic ? "ar-LB" : "en-GB", {
+    const locale =
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB";
+
+    return new Intl.DateTimeFormat(locale, {
       dateStyle: "medium",
       timeStyle: "short",
     }).format(new Date(date));
@@ -138,33 +145,48 @@ export default function PodcastsPage() {
     return "ended";
   };
 
-  const copy = isArabic
-    ? {
-        description:
-          "شاهد الحوارات المسجلة وانضم إلى اللقاءات المباشرة حول الصحة النفسية والعلاج والرفاه.",
-        liveNow: "مباشر الآن",
-        upcomingLive: "بث مباشر قريباً",
-        joinLive: "الانضمام إلى البث المباشر",
-        recordingUnavailable: "التسجيل غير متوفر حالياً.",
-        liveSchedule: "موعد البث المباشر",
-        host: "المقدّم",
-        guests: "الضيوف",
-        videoUnsupported: "المتصفح لا يدعم تشغيل الفيديو.",
-        videoUnavailable: "لا يوجد فيديو متاح حالياً.",
-      }
-    : {
-        description:
-          "Watch recorded conversations and join live discussions about mental health, therapy and wellbeing.",
-        liveNow: "LIVE NOW",
-        upcomingLive: "Upcoming live",
-        joinLive: "Join live session",
-        recordingUnavailable: "Recording unavailable.",
-        liveSchedule: "Live schedule",
-        host: "Host",
-        guests: "Guests",
-        videoUnsupported: "Your browser does not support video playback.",
-        videoUnavailable: "No video is available at the moment.",
-      };
+  const copy =
+    language === "ar"
+      ? {
+          description:
+            "شاهد الحوارات المسجلة وانضم إلى اللقاءات المباشرة حول الصحة النفسية والعلاج والرفاه.",
+          liveNow: "مباشر الآن",
+          upcomingLive: "بث مباشر قريباً",
+          joinLive: "الانضمام إلى البث المباشر",
+          recordingUnavailable: "التسجيل غير متوفر حالياً.",
+          liveSchedule: "موعد البث المباشر",
+          host: "المقدّم",
+          guests: "الضيوف",
+          videoUnsupported: "المتصفح لا يدعم تشغيل الفيديو.",
+          videoUnavailable: "لا يوجد فيديو متاح حالياً.",
+        }
+      : language === "fr"
+        ? {
+            description:
+              "Découvrez des conversations enregistrées et participez à des échanges en direct autour de la santé mentale, de la psychothérapie et du bien-être.",
+            liveNow: "EN DIRECT",
+            upcomingLive: "Direct à venir",
+            joinLive: "Rejoindre le direct",
+            recordingUnavailable: "L’enregistrement n’est pas disponible pour le moment.",
+            liveSchedule: "Horaire du direct",
+            host: "Présentateur",
+            guests: "Invités",
+            videoUnsupported: "Votre navigateur ne prend pas en charge la lecture vidéo.",
+            videoUnavailable: "Aucune vidéo n’est disponible pour le moment.",
+          }
+        : {
+            description:
+              "Watch recorded conversations and join live discussions about mental health, therapy and wellbeing.",
+            liveNow: "LIVE NOW",
+            upcomingLive: "Upcoming live",
+            joinLive: "Join live session",
+            recordingUnavailable: "Recording unavailable.",
+            liveSchedule: "Live schedule",
+            host: "Host",
+            guests: "Guests",
+            videoUnsupported: "Your browser does not support video playback.",
+            videoUnavailable: "No video is available at the moment.",
+          };
 
   return (
     <>
