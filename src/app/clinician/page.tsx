@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
 
 type LoginMode = "client" | "therapist";
+type ApplicationLanguage = "en" | "fr" | "ar";
 
 export default function ClinicianPage() {
   const router = useRouter();
@@ -21,6 +22,9 @@ export default function ClinicianPage() {
     useState("");
   const [showPassword, setShowPassword] =
     useState(false);
+
+  const [applicationLanguage, setApplicationLanguage] =
+    useState<ApplicationLanguage>("en");
 
   const [fullName, setFullName] = useState("");
   const [applicationEmail, setApplicationEmail] =
@@ -168,10 +172,7 @@ export default function ClinicianPage() {
       return;
     }
 
-    type ApplicationLanguage = "en" | "fr" | "ar";
-
-    const sourceLanguage =
-      (language as ApplicationLanguage) || "en";
+    const sourceLanguage = applicationLanguage;
 
     const sourceFields: Record<string, string> = {
       specialty: cleanSpecialty,
@@ -332,6 +333,31 @@ export default function ClinicianPage() {
         block: "start",
       });
   };
+
+  const applicationLanguageCopy =
+    language === "ar"
+      ? {
+          label: "لغة المحتوى الذي ستكتبه",
+          help: "اختر لغة النص الذي ستكتبه في التخصص والرسالة. سيقوم النظام بإنشاء اللغتين الأخريين تلقائياً.",
+          english: "الإنجليزية",
+          french: "الفرنسية",
+          arabic: "العربية",
+        }
+      : language === "fr"
+        ? {
+            label: "Langue du contenu saisi",
+            help: "Choisissez la langue dans laquelle vous allez écrire la spécialité et le message. Les deux autres versions seront générées automatiquement.",
+            english: "Anglais",
+            french: "Français",
+            arabic: "Arabe",
+          }
+        : {
+            label: "Language of the content you are entering",
+            help: "Choose the language you will use for the specialty and message. The other two versions will be generated automatically.",
+            english: "English",
+            french: "French",
+            arabic: "Arabic",
+          };
 
   return (
     <>
@@ -662,6 +688,41 @@ export default function ClinicianPage() {
               onSubmit={submitApplication}
               className="p-8 sm:p-12 lg:p-14"
             >
+              <div className="mb-7 rounded-2xl border border-[#e8dfd2] bg-[#fcfaf7] p-5">
+                <label
+                  htmlFor="application-language"
+                  className="mb-2 block text-sm font-semibold text-[#223748]"
+                >
+                  {applicationLanguageCopy.label}
+                </label>
+
+                <select
+                  id="application-language"
+                  value={applicationLanguage}
+                  onChange={(event) =>
+                    setApplicationLanguage(
+                      event.target.value as ApplicationLanguage
+                    )
+                  }
+                  disabled={applicationLoading}
+                  className="w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 text-[#223748] outline-none transition focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
+                >
+                  <option value="en">
+                    {applicationLanguageCopy.english}
+                  </option>
+                  <option value="fr">
+                    {applicationLanguageCopy.french}
+                  </option>
+                  <option value="ar">
+                    {applicationLanguageCopy.arabic}
+                  </option>
+                </select>
+
+                <p className="mt-3 text-sm leading-6 text-[#6d7981]">
+                  {applicationLanguageCopy.help}
+                </p>
+              </div>
+
               <div>
                 <label
                   htmlFor="application-full-name"
@@ -717,6 +778,7 @@ export default function ClinicianPage() {
                     setSpecialty(event.target.value)
                   }
                   placeholder={t("clinician.application.form.specialtyPlaceholder")}
+                  dir={applicationLanguage === "ar" ? "rtl" : "ltr"}
                   className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
@@ -735,6 +797,7 @@ export default function ClinicianPage() {
                     setMessage(event.target.value)
                   }
                   placeholder={t("clinician.application.form.aboutPlaceholder")}
+                  dir={applicationLanguage === "ar" ? "rtl" : "ltr"}
                   className="min-h-36 w-full resize-y rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
