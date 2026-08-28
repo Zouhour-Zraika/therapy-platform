@@ -18,7 +18,7 @@ const defaultPreferences: CookiePreferences = {
 };
 
 export default function CookieBanner() {
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   const [visible, setVisible] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -54,7 +54,35 @@ export default function CookieBanner() {
         marketingDescription:
           "يمكن استخدامها لقياس الحملات أو تخصيص المحتوى التسويقي. لا يتم تفعيلها دون موافقة.",
       }
-    : {
+    : language === "fr"
+      ? {
+          title: "Votre vie privée compte",
+          description:
+            "Nous utilisons des cookies strictement nécessaires au fonctionnement de la plateforme AAN Psychotherapy. Les cookies d’analyse et de marketing ne sont activés que si vous choisissez de les autoriser.",
+          acceptAll: "Tout accepter",
+          rejectAll: "Refuser les cookies non essentiels",
+          customise: "Gérer les préférences",
+          save: "Enregistrer les préférences",
+          close: "Fermer",
+          privacy: "Politique de confidentialité",
+          cookies: "Politique relative aux cookies",
+          cookieSettings: "Paramètres des cookies",
+
+          settingsTitle: "Gérer les préférences de cookies",
+
+          necessaryTitle: "Cookies strictement nécessaires",
+          necessaryDescription:
+            "Nécessaires à l’authentification, à la sécurité et aux fonctionnalités essentielles de la plateforme. Ces cookies ne peuvent pas être désactivés.",
+
+          analyticsTitle: "Cookies d’analyse",
+          analyticsDescription:
+            "Ils nous aident à comprendre comment la plateforme est utilisée afin d’améliorer ses performances et l’expérience utilisateur.",
+
+          marketingTitle: "Cookies de marketing",
+          marketingDescription:
+            "Ils peuvent être utilisés pour mesurer les campagnes ou personnaliser le contenu marketing. Ils ne sont pas activés sans votre consentement.",
+        }
+      : {
         title: "Your privacy matters",
         description:
           "We use strictly necessary cookies to operate AAN Psychotherapy. Analytics and marketing cookies are only activated if you choose to allow them.",
@@ -299,7 +327,9 @@ export default function CookieBanner() {
                   <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700">
                     {isArabic
                       ? "دائماً مفعّلة"
-                      : "Always active"}
+                      : language === "fr"
+                        ? "Toujours actifs"
+                        : "Always active"}
                   </span>
                 </div>
               </div>
