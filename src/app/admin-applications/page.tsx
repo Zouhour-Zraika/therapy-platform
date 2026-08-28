@@ -10,14 +10,17 @@ type TherapistApplication = {
   id: string;
 
   full_name: string;
+  full_name_fr: string | null;
   full_name_ar: string | null;
 
   email: string;
 
   specialty: string | null;
+  specialty_fr: string | null;
   specialty_ar: string | null;
 
   message: string | null;
+  message_fr: string | null;
   message_ar: string | null;
 
   status: string;
@@ -156,11 +159,14 @@ export default function AdminApplicationsPage() {
         `
           id,
           full_name,
+          full_name_fr,
           full_name_ar,
           email,
           specialty,
+          specialty_fr,
           specialty_ar,
           message,
+          message_fr,
           message_ar,
           status,
           created_at
@@ -300,6 +306,13 @@ export default function AdminApplicationsPage() {
       return application.full_name_ar;
     }
 
+    if (
+      language === "fr" &&
+      application.full_name_fr?.trim()
+    ) {
+      return application.full_name_fr;
+    }
+
     return application.full_name;
   };
 
@@ -313,8 +326,17 @@ export default function AdminApplicationsPage() {
       return application.specialty_ar;
     }
 
+    if (
+      language === "fr" &&
+      application.specialty_fr?.trim()
+    ) {
+      return application.specialty_fr;
+    }
+
     return (
       application.specialty?.trim() ||
+      application.specialty_fr?.trim() ||
+      application.specialty_ar?.trim() ||
       copy.notProvided
     );
   };
@@ -329,8 +351,17 @@ export default function AdminApplicationsPage() {
       return application.message_ar;
     }
 
+    if (
+      language === "fr" &&
+      application.message_fr?.trim()
+    ) {
+      return application.message_fr;
+    }
+
     return (
       application.message?.trim() ||
+      application.message_fr?.trim() ||
+      application.message_ar?.trim() ||
       copy.noMessage
     );
   };
