@@ -144,7 +144,7 @@ function SectionIcon({
 }
 
 export default function AdminPage() {
-  const { isArabic } = useLanguage();
+  const { language, isArabic } = useLanguage();
 
   const copy = isArabic
     ? {
@@ -196,7 +196,60 @@ export default function AdminPage() {
         comingSoonDescription:
           "ستتم إضافة إدارة الحجوزات وإعدادات المنصة والتقارير في المرحلة القادمة.",
       }
-    : {
+    : language === "fr"
+      ? {
+          eyebrow:
+            "Tableau de bord administrateur",
+
+          title:
+            "Administration AAN",
+
+          description:
+            "Gérez votre profil administrateur, les candidatures des thérapeutes, les thérapeutes approuvés, le contenu des podcasts en trois langues, les comptes administrateurs et les demandes de confidentialité depuis un tableau de bord sécurisé.",
+
+          profileTitle:
+            "Mon profil administrateur",
+
+          profileDescription:
+            "Mettez à jour votre photo, votre nom, votre titre professionnel et votre biographie.",
+
+          applicationsTitle:
+            "Candidatures des thérapeutes",
+
+          applicationsDescription:
+            "Examinez, approuvez ou refusez les nouvelles candidatures de thérapeutes.",
+
+          therapistsTitle:
+            "Gérer les thérapeutes",
+
+          therapistsDescription:
+            "Gérez les profils des thérapeutes approuvés et les tarifs des séances.",
+
+          podcastsTitle:
+            "Gérer les podcasts",
+
+          podcastsDescription:
+            "Ajoutez, traduisez et supprimez les podcasts sur la santé mentale.",
+
+          adminsTitle:
+            "Gérer les administrateurs",
+
+          adminsDescription:
+            "Invitez un nouvel administrateur et gérez les comptes administrateurs autorisés.",
+
+          privacyTitle:
+            "Demandes de confidentialité",
+
+          privacyDescription:
+            "Examinez et gérez les demandes d’accès, de rectification ou de suppression des données personnelles ainsi que les autres demandes liées à la confidentialité.",
+
+          comingSoonTitle:
+            "D’autres outils d’administration arrivent bientôt",
+
+          comingSoonDescription:
+            "La gestion des réservations, les paramètres de la plateforme et les rapports seront ajoutés lors de la prochaine phase de développement.",
+        }
+      : {
         eyebrow:
           "Administration dashboard",
 
