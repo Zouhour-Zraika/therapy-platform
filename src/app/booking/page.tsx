@@ -1,4 +1,4 @@
-"use client";
+
 
 import {
   Suspense,
@@ -307,7 +307,10 @@ function BookingContent() {
       const loadedSlots =
         ((slotData || []) as Slot[]).filter(
           (slot) =>
-            slot.is_booked !== true,
+            slot.is_booked !== true &&
+            isSlotInFuture(
+              slot,
+            ),
         );
 
       setTherapists(
@@ -631,6 +634,25 @@ function BookingContent() {
     }
 
     return result;
+  };
+
+
+  const isSlotInFuture = (
+    slot: Slot,
+  ) => {
+    const start =
+      getScheduledStart(
+        slot,
+      );
+
+    if (!start) {
+      return false;
+    }
+
+    return (
+      start.getTime() >
+      Date.now()
+    );
   };
     const getTherapistName = (
     therapist: Therapist,
@@ -1057,6 +1079,39 @@ function BookingContent() {
         !selectedTherapist ||
         bookingLoading
       ) {
+        return;
+      }
+
+      if (
+        !isSlotInFuture(
+          selectedSlot,
+        )
+      ) {
+        setAllSlots(
+          (
+            current,
+          ) =>
+            current.filter(
+              (
+                slot,
+              ) =>
+                slot.id !==
+                selectedSlot.id,
+            ),
+        );
+
+        setSelectedSlot(
+          null,
+        );
+
+        alert(
+          language === "ar"
+            ? "هذا الموعد أصبح في الماضي ولم يعد متاحاً للحجز."
+            : language === "fr"
+              ? "Ce créneau est maintenant passé et n’est plus disponible à la réservation."
+              : "This slot is now in the past and is no longer available for booking.",
+        );
+
         return;
       }
 

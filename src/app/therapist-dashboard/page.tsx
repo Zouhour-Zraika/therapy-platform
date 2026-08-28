@@ -23,8 +23,10 @@ type AvailabilitySlot = {
 
 type Booking = {
   id: string;
+  slot_id: string | null;
   slot_day: string;
   slot_time: string;
+  scheduled_start: string | null;
   price: number;
   status: string;
   created_at: string;
@@ -162,6 +164,13 @@ export default function TherapistDashboard() {
 
   const [bookings, setBookings] =
     useState<Booking[]>([]);
+
+  const [
+    bookingActionId,
+    setBookingActionId,
+  ] = useState<string | null>(
+    null,
+  );
 
   const [loading, setLoading] =
     useState(false);
@@ -343,6 +352,30 @@ export default function TherapistDashboard() {
 
           meetingNotReady:
             "رابط الجلسة غير جاهز",
+
+          requestReschedule:
+            "طلب تغيير الموعد",
+
+          cancelSession:
+            "إلغاء الجلسة",
+
+          rescheduleConfirm:
+            "سيتم إرسال رسالة إلى المريض لطلب اختيار موعد جديد. هل تريد المتابعة؟",
+
+          cancelSessionConfirm:
+            "سيتم إلغاء الجلسة وطلب ردّ المبلغ للمريض مع إرسال إشعار بالبريد الإلكتروني. هل تريد المتابعة؟",
+
+          actionSuccessReschedule:
+            "تم إرسال طلب تغيير الموعد إلى المريض.",
+
+          actionSuccessCancel:
+            "تم إرسال طلب إلغاء الجلسة واسترداد المبلغ.",
+
+          actionError:
+            "تعذر تنفيذ هذا الإجراء.",
+
+          sessionDate:
+            "تاريخ الجلسة",
         }
       : language === "fr"
         ? {
@@ -510,6 +543,30 @@ export default function TherapistDashboard() {
 
             meetingNotReady:
               "Lien de séance non disponible",
+
+            requestReschedule:
+              "Demander un changement",
+
+            cancelSession:
+              "Annuler la séance",
+
+            rescheduleConfirm:
+              "Le patient recevra un e-mail lui demandant de choisir un nouveau créneau. Continuer ?",
+
+            cancelSessionConfirm:
+              "La séance sera annulée, le remboursement sera demandé et le patient recevra un e-mail. Continuer ?",
+
+            actionSuccessReschedule:
+              "La demande de changement a été envoyée au patient.",
+
+            actionSuccessCancel:
+              "La demande d’annulation et de remboursement a été envoyée.",
+
+            actionError:
+              "Impossible d’effectuer cette action.",
+
+            sessionDate:
+              "Date de la séance",
           }
         : {
             profileTitle:
@@ -676,6 +733,30 @@ export default function TherapistDashboard() {
 
             meetingNotReady:
               "Session link not ready",
+
+            requestReschedule:
+              "Request reschedule",
+
+            cancelSession:
+              "Cancel session",
+
+            rescheduleConfirm:
+              "The patient will receive an email asking them to choose a new available slot. Continue?",
+
+            cancelSessionConfirm:
+              "The session will be cancelled, a refund will be requested, and the patient will receive an email. Continue?",
+
+            actionSuccessReschedule:
+              "The reschedule request was sent to the patient.",
+
+            actionSuccessCancel:
+              "The cancellation and refund request was sent.",
+
+            actionError:
+              "Unable to perform this action.",
+
+            sessionDate:
+              "Session date",
           };
 
   /*
@@ -1798,6 +1879,154 @@ export default function TherapistDashboard() {
       );
     };
 
+
+  const formatBookingSessionDate = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return booking.slot_day;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      );
+
+    if (
+      Number.isNaN(
+        value.getTime(),
+      )
+    ) {
+      return booking.slot_day;
+    }
+
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(value);
+  };
+
+  const runBookingAction =
+    async (
+      booking: Booking,
+      action:
+        | "request_reschedule"
+        | "cancel_and_refund",
+    ) => {
+      const confirmation =
+        window.confirm(
+          action ===
+            "request_reschedule"
+            ? text.rescheduleConfirm
+            : text.cancelSessionConfirm,
+        );
+
+      if (!confirmation) {
+        return;
+      }
+
+      setBookingActionId(
+        booking.id,
+      );
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          window.location.href =
+            "/login";
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/booking/therapist-action",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+
+              body:
+                JSON.stringify({
+                  bookingId:
+                    booking.id,
+
+                  action,
+
+                  language,
+                }),
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          alert(
+            result.error ||
+              text.actionError,
+          );
+
+          return;
+        }
+
+        alert(
+          action ===
+            "request_reschedule"
+            ? text.actionSuccessReschedule
+            : text.actionSuccessCancel,
+        );
+
+        await getBookings();
+        await getSlots();
+      } catch (error) {
+        console.error(
+          "Booking action error:",
+          error,
+        );
+
+        alert(
+          text.actionError,
+        );
+      } finally {
+        setBookingActionId(
+          null,
+        );
+      }
+    };
+
   const displayedPhoto =
     photoPreview ||
     photoUrl;
@@ -2352,10 +2581,16 @@ export default function TherapistDashboard() {
                           }
                           className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
                         >
-                          <h3 className="text-2xl font-bold text-aan-navy">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
                             {
-                              booking.slot_day
-                            }{" "}
+                              text.sessionDate
+                            }
+                          </p>
+
+                          <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
+                            {formatBookingSessionDate(
+                              booking,
+                            )}{" "}
                             {language ===
                             "fr"
                               ? "à"
@@ -2417,6 +2652,46 @@ export default function TherapistDashboard() {
                             )}
                           </p>
 
+                          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void runBookingAction(
+                                  booking,
+                                  "request_reschedule",
+                                )
+                              }
+                              disabled={
+                                bookingActionId ===
+                                booking.id
+                              }
+                              className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {
+                                text.requestReschedule
+                              }
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void runBookingAction(
+                                  booking,
+                                  "cancel_and_refund",
+                                )
+                              }
+                              disabled={
+                                bookingActionId ===
+                                booking.id
+                              }
+                              className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {
+                                text.cancelSession
+                              }
+                            </button>
+                          </div>
+
                           {sessionUrl ? (
                             <a
                               href={
@@ -2424,7 +2699,7 @@ export default function TherapistDashboard() {
                               }
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="aan-button mt-5 flex w-full py-3"
+                              className="aan-button mt-3 flex w-full py-3"
                             >
                               {
                                 text.startSession
@@ -2434,7 +2709,7 @@ export default function TherapistDashboard() {
                             <button
                               type="button"
                               disabled
-                              className="mt-5 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
+                              className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
                             >
                               {
                                 text.meetingNotReady
