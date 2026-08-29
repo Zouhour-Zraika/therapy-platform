@@ -19,6 +19,8 @@ type Booking = {
   zoom_join_url: string | null;
 };
 
+const PAYMENT_HOLD_MS = 10 * 60 * 1000;
+
 const DAYS_AR: Record<string, string> = {
   Monday: "الاثنين",
   Tuesday: "الثلاثاء",
@@ -33,12 +35,9 @@ export default function PatientDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const { language, isArabic } = useLanguage();
-
-  useEffect(() => {
-    void getBookings();
-  }, []);
 
   const copy =
     language === "ar"
@@ -53,6 +52,7 @@ export default function PatientDashboard() {
           findTherapist: "البحث عن معالج",
           date: "التاريخ",
           time: "الوقت",
+          localTime: "توقيتك المحلي",
           price: "السعر",
           status: "الحالة",
           booked: "تم الحجز في",
@@ -77,6 +77,7 @@ export default function PatientDashboard() {
             findTherapist: "Trouver un spécialiste",
             date: "Date",
             time: "Heure",
+            localTime: "Votre heure locale",
             price: "Prix",
             status: "Statut",
             booked: "Réservé le",
@@ -101,6 +102,7 @@ export default function PatientDashboard() {
             findTherapist: "Find a Therapist",
             date: "Date",
             time: "Time",
+            localTime: "Your local time",
             price: "Price",
             status: "Status",
             booked: "Booked on",
@@ -114,6 +116,18 @@ export default function PatientDashboard() {
             unableToLoad:
               "Unable to load appointments. Please try again.",
           };
+
+  useEffect(() => {
+    void getBookings();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const getBookings = async () => {
     setLoading(true);
@@ -141,6 +155,7 @@ export default function PatientDashboard() {
       }
 
       setBookings((data as Booking[] | null) || []);
+      setNowMs(Date.now());
     } catch (error) {
       console.error("Unable to load patient bookings:", error);
       setErrorMessage(copy.unableToLoad);
@@ -148,6 +163,29 @@ export default function PatientDashboard() {
       setLoading(false);
     }
   };
+
+  const isExpiredPendingBooking = (booking: Booking) => {
+    if (booking.status !== "pending") {
+      return false;
+    }
+
+    const createdAtMs = new Date(booking.created_at).getTime();
+
+    if (Number.isNaN(createdAtMs)) {
+      return false;
+    }
+
+    return nowMs >= createdAtMs + PAYMENT_HOLD_MS;
+  };
+
+  /*
+   * Une réservation "pending" n'est visible que pendant les 10 minutes
+   * de hold de paiement. Après expiration, elle disparaît automatiquement
+   * du dashboard sans nécessiter un nouveau fetch Supabase.
+   */
+  const visibleBookings = bookings.filter(
+    (booking) => !isExpiredPendingBooking(booking),
+  );
 
   const formatDigits = (value: string | number) => {
     const text = String(value);
@@ -173,62 +211,89 @@ export default function PatientDashboard() {
     return `$${new Intl.NumberFormat("en-US").format(price)}`;
   };
 
-  const formatBookedDate = (date: string) => {
-    return new Intl.DateTimeFormat(
-      language === "ar"
-        ? "ar-LB"
-        : language === "fr"
-          ? "fr-FR"
-          : "en-GB",
-      {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: "Asia/Beirut",
-      },
-    ).format(new Date(date));
+  const getLocale = () => {
+    if (language === "ar") {
+      return "ar-LB";
+    }
+
+    if (language === "fr") {
+      return "fr-FR";
+    }
+
+    return "en-GB";
   };
 
-  const formatAppointmentDate = (
-    booking: Booking,
-  ) => {
-    if (booking.scheduled_start) {
-      const scheduledDate =
-        new Date(
-          booking.scheduled_start,
-        );
+  const getLocalTimeZone = () => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch {
+      return "";
+    }
+  };
 
-      if (
-        !Number.isNaN(
-          scheduledDate.getTime(),
-        )
-      ) {
-        return new Intl.DateTimeFormat(
-          language === "ar"
-            ? "ar-LB"
-            : language === "fr"
-              ? "fr-FR"
-              : "en-GB",
-          {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "Asia/Beirut",
-          },
-        ).format(
-          scheduledDate,
-        );
+  /*
+   * IMPORTANT :
+   * aucune timeZone n'est forcée ici.
+   * Le navigateur affiche donc created_at dans le fuseau local du patient.
+   */
+  const formatBookedDate = (date: string) => {
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return date;
+    }
+
+    return new Intl.DateTimeFormat(getLocale(), {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(parsedDate);
+  };
+
+  /*
+   * scheduled_start est un instant absolu.
+   * Sans timeZone: "Asia/Beirut", Intl l'affiche automatiquement
+   * dans le fuseau horaire du navigateur du patient.
+   */
+  const formatAppointmentDate = (booking: Booking) => {
+    if (booking.scheduled_start) {
+      const scheduledDate = new Date(booking.scheduled_start);
+
+      if (!Number.isNaN(scheduledDate.getTime())) {
+        return new Intl.DateTimeFormat(getLocale(), {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(scheduledDate);
       }
     }
 
     /*
-     * Anciennes réservations :
-     * si scheduled_start n'existe pas,
-     * on garde au minimum le jour enregistré.
+     * Anciennes réservations sans scheduled_start :
+     * on conserve le jour historique enregistré.
      */
-    return formatDay(
-      booking.slot_day,
-    );
+    return formatDay(booking.slot_day);
+  };
+
+  const formatAppointmentTime = (booking: Booking) => {
+    if (booking.scheduled_start) {
+      const scheduledDate = new Date(booking.scheduled_start);
+
+      if (!Number.isNaN(scheduledDate.getTime())) {
+        const formatted = new Intl.DateTimeFormat(getLocale(), {
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(scheduledDate);
+
+        return formatDigits(formatted);
+      }
+    }
+
+    /*
+     * Fallback pour les anciennes réservations qui n'ont pas
+     * de scheduled_start.
+     */
+    return formatDigits(booking.slot_time);
   };
 
   const getStatusLabel = (status: string) => {
@@ -254,6 +319,8 @@ export default function PatientDashboard() {
 
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
+
+  const localTimeZone = getLocalTimeZone();
 
   return (
     <ProtectedRoute allowedRoles={["patient"]}>
@@ -306,9 +373,9 @@ export default function PatientDashboard() {
                   </h2>
                 </div>
 
-                {!loading && bookings.length > 0 && (
+                {!loading && visibleBookings.length > 0 && (
                   <span className="inline-flex w-fit rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-bold text-aan-navy">
-                    {formatDigits(bookings.length)}
+                    {formatDigits(visibleBookings.length)}
                   </span>
                 )}
               </div>
@@ -325,7 +392,7 @@ export default function PatientDashboard() {
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-7 text-center text-red-700">
                   {errorMessage}
                 </div>
-              ) : bookings.length === 0 ? (
+              ) : visibleBookings.length === 0 ? (
                 <div className="rounded-[2rem] border border-dashed border-aan-border bg-[#fbf8f3] p-10 text-center">
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white text-2xl text-aan-gold shadow-sm">
                     ◇
@@ -344,7 +411,7 @@ export default function PatientDashboard() {
                 </div>
               ) : (
                 <div className="grid gap-6">
-                  {bookings.map((booking) => (
+                  {visibleBookings.map((booking) => (
                     <article
                       key={booking.id}
                       className="overflow-hidden rounded-[2rem] border border-aan-border bg-white shadow-[var(--aan-shadow-sm)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--aan-shadow-md)]"
@@ -378,9 +445,7 @@ export default function PatientDashboard() {
                               </p>
 
                               <p className="mt-2 font-bold capitalize text-aan-navy">
-                                {formatAppointmentDate(
-                                  booking,
-                                )}
+                                {formatAppointmentDate(booking)}
                               </p>
                             </div>
 
@@ -390,8 +455,15 @@ export default function PatientDashboard() {
                               </p>
 
                               <p className="mt-2 font-bold text-aan-navy">
-                                {formatDigits(booking.slot_time)}
+                                {formatAppointmentTime(booking)}
                               </p>
+
+                              {booking.scheduled_start && (
+                                <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                                  {copy.localTime}
+                                  {localTimeZone ? ` · ${localTimeZone}` : ""}
+                                </p>
+                              )}
                             </div>
 
                             <div className="rounded-2xl bg-[#fbf8f3] p-4">
