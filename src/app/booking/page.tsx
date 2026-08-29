@@ -164,6 +164,36 @@ const availabilityOptions = [
   { value: "none" },
 ] as const;
 
+const FALLBACK_TIME_ZONES = [
+  "Asia/Beirut",
+  "Europe/Paris",
+  "Europe/London",
+  "Europe/Berlin",
+  "Europe/Rome",
+  "Europe/Madrid",
+  "Europe/Athens",
+  "Asia/Dubai",
+  "Asia/Riyadh",
+  "Asia/Qatar",
+  "Asia/Kuwait",
+  "Asia/Amman",
+  "Asia/Jerusalem",
+  "Africa/Cairo",
+  "Africa/Casablanca",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Sao_Paulo",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+] as const;
+
 function BookingContent() {
   const searchParams = useSearchParams();
 
@@ -231,6 +261,45 @@ function BookingContent() {
     dataError,
     setDataError,
   ] = useState("");
+
+  const [
+    selectedTimeZone,
+    setSelectedTimeZone,
+  ] = useState("Asia/Beirut");
+
+  const [
+    timeZoneReady,
+    setTimeZoneReady,
+  ] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedTimeZone =
+        window.localStorage.getItem(
+          "aan_booking_timezone",
+        );
+
+      const detectedTimeZone =
+        Intl.DateTimeFormat()
+          .resolvedOptions()
+          .timeZone;
+
+      const initialTimeZone =
+        savedTimeZone ||
+        detectedTimeZone ||
+        "Asia/Beirut";
+
+      setSelectedTimeZone(
+        initialTimeZone,
+      );
+    } catch {
+      setSelectedTimeZone(
+        "Asia/Beirut",
+      );
+    } finally {
+      setTimeZoneReady(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (
@@ -386,9 +455,144 @@ function BookingContent() {
       : translatedDay;
   };
 
+  const getLocale = () => {
+    if (language === "ar") {
+      return "ar-LB";
+    }
+
+    if (language === "fr") {
+      return "fr-FR";
+    }
+
+    return "en-GB";
+  };
+
+  const getSupportedTimeZones = () => {
+    try {
+      const intlWithSupportedValues =
+        Intl as typeof Intl & {
+          supportedValuesOf?: (
+            key: string,
+          ) => string[];
+        };
+
+      const zones =
+        intlWithSupportedValues.supportedValuesOf?.(
+          "timeZone",
+        );
+
+      if (
+        zones &&
+        zones.length > 0
+      ) {
+        return zones;
+      }
+    } catch {
+      // Fallback below.
+    }
+
+    return [
+      ...FALLBACK_TIME_ZONES,
+    ];
+  };
+
+  const timeZoneOptions =
+    useMemo(() => {
+      const zones =
+        getSupportedTimeZones();
+
+      if (
+        !zones.includes(
+          selectedTimeZone,
+        )
+      ) {
+        return [
+          selectedTimeZone,
+          ...zones,
+        ];
+      }
+
+      return zones;
+    }, [
+      selectedTimeZone,
+    ]);
+
+  const getTimeZoneOffsetLabel = (
+    timeZone: string,
+    date = new Date(),
+  ) => {
+    try {
+      const parts =
+        new Intl.DateTimeFormat(
+          "en-US",
+          {
+            timeZone,
+            timeZoneName:
+              "shortOffset",
+          },
+        ).formatToParts(
+          date,
+        );
+
+      const zoneName =
+        parts.find(
+          (part) =>
+            part.type ===
+            "timeZoneName",
+        )?.value;
+
+      return zoneName
+        ? zoneName.replace(
+            "GMT",
+            "UTC",
+          )
+        : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const formatTimeZoneName = (
+    timeZone: string,
+  ) => {
+    const offset =
+      getTimeZoneOffsetLabel(
+        timeZone,
+      );
+
+    return offset
+      ? `${timeZone} (${offset})`
+      : timeZone;
+  };
+
   const formatSlotDate = (
     slot: Slot,
   ) => {
+    const start =
+      getScheduledStart(
+        slot,
+      );
+
+    if (start) {
+      return new Intl.DateTimeFormat(
+        getLocale(),
+        {
+          timeZone:
+            selectedTimeZone,
+          weekday:
+            "long",
+          day:
+            "numeric",
+          month:
+            "long",
+          year:
+            "numeric",
+        },
+      ).format(
+        start,
+      );
+    }
+
     if (!slot.slot_date) {
       return translateDay(
         slot.day,
@@ -396,20 +600,97 @@ function BookingContent() {
     }
 
     return new Intl.DateTimeFormat(
-      isArabic
-        ? "ar-LB"
-        : "en-GB",
+      getLocale(),
       {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
+        weekday:
+          "long",
+        day:
+          "numeric",
+        month:
+          "long",
+        year:
+          "numeric",
       },
     ).format(
       new Date(
         `${slot.slot_date}T12:00:00`,
       ),
     );
+  };
+
+  const formatSlotTime = (
+    slot: Slot,
+  ) => {
+    const start =
+      getScheduledStart(
+        slot,
+      );
+
+    if (!start) {
+      return slot.time;
+    }
+
+    return new Intl.DateTimeFormat(
+      getLocale(),
+      {
+        timeZone:
+          selectedTimeZone,
+        hour:
+          "2-digit",
+        minute:
+          "2-digit",
+        hourCycle:
+          "h23",
+      },
+    ).format(
+      start,
+    );
+  };
+
+  const formatBeirutTime = (
+    slot: Slot,
+  ) => {
+    const start =
+      getScheduledStart(
+        slot,
+      );
+
+    if (!start) {
+      return slot.time;
+    }
+
+    return new Intl.DateTimeFormat(
+      getLocale(),
+      {
+        timeZone:
+          "Asia/Beirut",
+        hour:
+          "2-digit",
+        minute:
+          "2-digit",
+        hourCycle:
+          "h23",
+      },
+    ).format(
+      start,
+    );
+  };
+
+  const handleTimeZoneChange = (
+    value: string,
+  ) => {
+    setSelectedTimeZone(
+      value,
+    );
+
+    try {
+      window.localStorage.setItem(
+        "aan_booking_timezone",
+        value,
+      );
+    } catch {
+      // The selector still works even if storage is unavailable.
+    }
   };
 
   const getTimeZoneOffsetMs = (
@@ -761,10 +1042,58 @@ function BookingContent() {
       return true;
     }
 
-    const hour =
-      parseTimeHour(
-        slot.time,
+    const start =
+      getScheduledStart(
+        slot,
       );
+
+    let hour: number | null =
+      null;
+
+    if (start) {
+      try {
+        const parts =
+          new Intl.DateTimeFormat(
+            "en-US",
+            {
+              timeZone:
+                selectedTimeZone,
+              hour:
+                "2-digit",
+              hourCycle:
+                "h23",
+            },
+          ).formatToParts(
+            start,
+          );
+
+        const hourValue =
+          parts.find(
+            (part) =>
+              part.type ===
+              "hour",
+          )?.value;
+
+        if (hourValue) {
+          hour =
+            Number(
+              hourValue,
+            );
+        }
+      } catch {
+        hour = null;
+      }
+    }
+
+    if (
+      hour === null ||
+      Number.isNaN(hour)
+    ) {
+      hour =
+        parseTimeHour(
+          slot.time,
+        );
+    }
 
     if (hour === null) {
       return true;
@@ -1338,7 +1667,9 @@ function BookingContent() {
             result.slotLabel ||
               `${formatSlotDate(
                 selectedSlot,
-              )} ${selectedSlot.time}`,
+              )} ${formatSlotTime(
+                selectedSlot,
+              )} (${selectedTimeZone})`,
           );
 
         const holdExpiresAt =
@@ -1380,6 +1711,9 @@ function BookingContent() {
 
             slot:
               slotLabel,
+
+            timeZone:
+              selectedTimeZone,
           });
 
         if (holdExpiresAt) {
@@ -1802,7 +2136,9 @@ function BookingContent() {
                                         )}{" "}
                                         ·{" "}
                                         {
-                                          nextSlot.time
+                                          formatSlotTime(
+                                            nextSlot,
+                                          )
                                         }
                                       </p>
                                     </div>
@@ -1923,6 +2259,83 @@ function BookingContent() {
                           )}
                         </p>
 
+                        {timeZoneReady && (
+                          <div className="mt-6 rounded-2xl border border-[#dfd5c5] bg-[#faf7f2] p-5 sm:p-6">
+                            <div className="grid gap-4 sm:grid-cols-[1fr_minmax(260px,360px)] sm:items-center">
+                              <div>
+                                <p className="text-sm font-bold text-[#223748]">
+                                  {language === "ar"
+                                    ? "المنطقة الزمنية"
+                                    : language === "fr"
+                                      ? "Fuseau horaire"
+                                      : "Time zone"}
+                                </p>
+
+                                <p className="mt-1 text-sm leading-6 text-[#69747a]">
+                                  {language === "ar"
+                                    ? "يتم عرض المواعيد حسب المنطقة الزمنية التي تختارها. يمكنك تغييرها في أي وقت."
+                                    : language === "fr"
+                                      ? "Les créneaux sont affichés dans le fuseau horaire que vous choisissez. Vous pouvez le changer à tout moment."
+                                      : "Appointment times are shown in the time zone you choose. You can change it at any time."}
+                                </p>
+                              </div>
+
+                              <label className="block">
+                                <span className="sr-only">
+                                  {language === "ar"
+                                    ? "اختيار المنطقة الزمنية"
+                                    : language === "fr"
+                                      ? "Choisir le fuseau horaire"
+                                      : "Choose a time zone"}
+                                </span>
+
+                                <select
+                                  value={
+                                    selectedTimeZone
+                                  }
+                                  onChange={(event) =>
+                                    handleTimeZoneChange(
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="w-full rounded-xl border border-[#d9cebd] bg-white px-4 py-3 font-semibold text-[#223748] outline-none transition focus:border-[#415a72] focus:ring-2 focus:ring-[#415a72]/15"
+                                >
+                                  {timeZoneOptions.map(
+                                    (timeZone) => (
+                                      <option
+                                        key={
+                                          timeZone
+                                        }
+                                        value={
+                                          timeZone
+                                        }
+                                      >
+                                        {formatTimeZoneName(
+                                          timeZone,
+                                        )}
+                                      </option>
+                                    ),
+                                  )}
+                                </select>
+                              </label>
+                            </div>
+
+                            <p className="mt-4 text-xs leading-5 text-[#7a858b]">
+                              {language === "ar"
+                                ? `المواعيد المعروضة الآن حسب: ${formatTimeZoneName(
+                                    selectedTimeZone,
+                                  )}`
+                                : language === "fr"
+                                  ? `Créneaux affichés actuellement en : ${formatTimeZoneName(
+                                      selectedTimeZone,
+                                    )}`
+                                  : `Appointments are currently shown in: ${formatTimeZoneName(
+                                      selectedTimeZone,
+                                    )}`}
+                            </p>
+                          </div>
+                        )}
+
                         {selectedTherapistSlots.length ===
                         0 ? (
                           <div className="mt-8 rounded-2xl border border-dashed border-[#d8cebf] bg-[#faf7f2] p-8 text-center">
@@ -1983,7 +2396,9 @@ function BookingContent() {
 
                                         <p className="mt-2 text-lg font-semibold text-[#415a72]">
                                           {
-                                            slot.time
+                                            formatSlotTime(
+                                              slot,
+                                            )
                                           }
                                         </p>
                                       </div>
@@ -2000,6 +2415,31 @@ function BookingContent() {
                                           : ""}
                                       </div>
                                     </div>
+
+                                    {start && (
+                                      <p className="mt-3 text-xs leading-5 text-[#7a858b]">
+                                        {formatTimeZoneName(
+                                          selectedTimeZone,
+                                        )}
+                                        {selectedTimeZone !==
+                                          "Asia/Beirut" && (
+                                          <>
+                                            <br />
+                                            {language === "ar"
+                                              ? `الوقت المقابل في لبنان: ${formatBeirutTime(
+                                                  slot,
+                                                )}`
+                                              : language === "fr"
+                                                ? `Heure correspondante au Liban : ${formatBeirutTime(
+                                                    slot,
+                                                  )}`
+                                                : `Corresponding time in Lebanon: ${formatBeirutTime(
+                                                    slot,
+                                                  )}`}
+                                          </>
+                                        )}
+                                      </p>
+                                    )}
 
                                     {start &&
                                       end && (
@@ -2065,9 +2505,34 @@ function BookingContent() {
 
                               <p className="mt-1 font-bold text-[#223748]">
                                 {
-                                  selectedSlot.time
+                                  formatSlotTime(
+                                    selectedSlot,
+                                  )
                                 }
                               </p>
+
+                              <p className="mt-1 text-xs leading-5 text-[#7a858b]">
+                                {formatTimeZoneName(
+                                  selectedTimeZone,
+                                )}
+                              </p>
+
+                              {selectedTimeZone !==
+                                "Asia/Beirut" && (
+                                <p className="mt-1 text-xs leading-5 text-[#7a858b]">
+                                  {language === "ar"
+                                    ? `لبنان: ${formatBeirutTime(
+                                        selectedSlot,
+                                      )}`
+                                    : language === "fr"
+                                      ? `Liban : ${formatBeirutTime(
+                                          selectedSlot,
+                                        )}`
+                                      : `Lebanon: ${formatBeirutTime(
+                                          selectedSlot,
+                                        )}`}
+                                </p>
+                              )}
                             </div>
 
                             <div>
@@ -2193,5 +2658,5 @@ export default function BookingPage() {
     >
       <BookingContent />
     </Suspense>
-  );
+     );
 }
