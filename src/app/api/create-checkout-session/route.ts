@@ -20,7 +20,11 @@ type BookingRecord = {
   slot_time: string | null;
   scheduled_start: string | null;
   patient_email: string | null;
+  patient_id: string | null;
+  created_at: string;
 };
+
+const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +33,9 @@ export async function POST(request: Request) {
 
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const supabaseAnonKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     const supabaseServerKey =
       process.env.SUPABASE_SECRET_KEY ||
@@ -48,6 +55,7 @@ export async function POST(request: Request) {
 
     if (
       !supabaseUrl ||
+      !supabaseAnonKey ||
       !supabaseServerKey
     ) {
       return NextResponse.json(
@@ -63,6 +71,86 @@ export async function POST(request: Request) {
 
     const stripe =
       new Stripe(stripeSecretKey);
+
+    const authHeader =
+      request.headers.get("authorization");
+
+    if (
+      !authHeader ||
+      !authHeader
+        .toLowerCase()
+        .startsWith("bearer ")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication is required.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const accessToken =
+      authHeader.slice(7).trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication is required.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const supabaseAuth =
+      createClient(
+        supabaseUrl,
+        supabaseAnonKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+            detectSessionInUrl: false,
+          },
+          global: {
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+          },
+        },
+      );
+
+    const {
+      data: {
+        user,
+      },
+      error:
+        userError,
+    } =
+      await supabaseAuth.auth.getUser(
+        accessToken,
+      );
+
+    if (
+      userError ||
+      !user
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Authentication is required.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
 
     const supabaseAdmin =
       createClient(
@@ -108,32 +196,31 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * IMPORTANT :
-     * On récupère désormais toutes les informations
-     * officielles directement depuis Supabase.
-     *
-     * Le navigateur ne décide plus du prix.
-     */
     const {
       data: booking,
       error: bookingError,
-    } = await supabaseAdmin
-      .from("bookings")
-      .select(
-        `
-          id,
-          status,
-          price,
-          therapist_name,
-          slot_day,
-          slot_time,
-          scheduled_start,
-          patient_email
-        `,
-      )
-      .eq("id", bookingId)
-      .maybeSingle<BookingRecord>();
+    } =
+      await supabaseAdmin
+        .from("bookings")
+        .select(
+          `
+            id,
+            status,
+            price,
+            therapist_name,
+            slot_day,
+            slot_time,
+            scheduled_start,
+            patient_email,
+            patient_id,
+            created_at
+          `,
+        )
+        .eq(
+          "id",
+          bookingId,
+        )
+        .maybeSingle<BookingRecord>();
 
     if (bookingError) {
       throw bookingError;
@@ -158,21 +245,70 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Une réservation déjà payée ne doit pas
-     * générer une nouvelle Checkout Session.
+     * SECURITY:
+     * this booking must belong to the currently authenticated patient.
+     * Because this route uses the service-role client below, ownership
+     * must be verified explicitly here.
      */
-    if (booking.status === "paid") {
+    if (
+      !booking.patient_id ||
+      booking.patient_id !== user.id
+    ) {
       const errorMessage =
         language === "ar"
-          ? "تم دفع هذه الجلسة بالفعل."
+          ? "لا يمكنك الدفع مقابل هذا الحجز."
           : language === "fr"
-            ? "Cette réservation a déjà été payée."
-            : "This booking has already been paid.";
+            ? "Vous ne pouvez pas payer cette réservation."
+            : "You cannot pay for this booking.";
 
       return NextResponse.json(
         {
           error: errorMessage,
-          alreadyPaid: true,
+        },
+        {
+          status: 403,
+        },
+      );
+    }
+
+    /*
+     * Only pending bookings can create a checkout session.
+     */
+    if (
+      booking.status !== "pending"
+    ) {
+      if (
+        booking.status === "paid"
+      ) {
+        const errorMessage =
+          language === "ar"
+            ? "تم دفع هذه الجلسة بالفعل."
+            : language === "fr"
+              ? "Cette réservation a déjà été payée."
+              : "This booking has already been paid.";
+
+        return NextResponse.json(
+          {
+            error:
+              errorMessage,
+            alreadyPaid: true,
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      const errorMessage =
+        language === "ar"
+          ? "لم يعد هذا الحجز متاحاً للدفع."
+          : language === "fr"
+            ? "Cette réservation n’est plus disponible pour le paiement."
+            : "This booking is no longer available for payment.";
+
+      return NextResponse.json(
+        {
+          error: errorMessage,
         },
         {
           status: 409,
@@ -180,18 +316,86 @@ export async function POST(request: Request) {
       );
     }
 
-    const numericPrice =
-      Number(booking.price);
+    /*
+     * Enforce the 10-minute payment hold on the server.
+     */
+    const createdAtMs =
+      new Date(
+        booking.created_at,
+      ).getTime();
 
     if (
-      !Number.isFinite(numericPrice) ||
+      Number.isNaN(
+        createdAtMs,
+      )
+    ) {
+      console.error(
+        "Invalid booking created_at:",
+        {
+          bookingId,
+          created_at:
+            booking.created_at,
+        },
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            language === "ar"
+              ? "تعذر التحقق من صلاحية الحجز."
+              : language === "fr"
+                ? "Impossible de vérifier la validité de la réservation."
+                : "Unable to verify the booking validity.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    const expiresAtMs =
+      createdAtMs +
+      PAYMENT_HOLD_MS;
+
+    if (
+      Date.now() >=
+      expiresAtMs
+    ) {
+      const errorMessage =
+        language === "ar"
+          ? "انتهت مهلة الدفع لهذه الجلسة. يرجى اختيار موعد جديد."
+          : language === "fr"
+            ? "Le délai de paiement de 10 minutes a expiré. Veuillez choisir un nouveau créneau."
+            : "The 10-minute payment window has expired. Please choose a new time slot.";
+
+      return NextResponse.json(
+        {
+          error: errorMessage,
+          expired: true,
+        },
+        {
+          status: 410,
+        },
+      );
+    }
+
+    const numericPrice =
+      Number(
+        booking.price,
+      );
+
+    if (
+      !Number.isFinite(
+        numericPrice,
+      ) ||
       numericPrice <= 0
     ) {
       console.error(
         "Invalid booking price:",
         {
           bookingId,
-          price: booking.price,
+          price:
+            booking.price,
         },
       );
 
@@ -204,7 +408,8 @@ export async function POST(request: Request) {
 
       return NextResponse.json(
         {
-          error: errorMessage,
+          error:
+            errorMessage,
         },
         {
           status: 400,
@@ -214,11 +419,13 @@ export async function POST(request: Request) {
 
     const therapist =
       booking.therapist_name?.trim() ||
-      (language === "ar"
-        ? "المختص"
-        : language === "fr"
-          ? "Spécialiste"
-          : "Specialist");
+      (
+        language === "ar"
+          ? "المختص"
+          : language === "fr"
+            ? "Spécialiste"
+            : "Specialist"
+      );
 
     const email =
       booking.patient_email?.trim();
@@ -233,7 +440,8 @@ export async function POST(request: Request) {
 
       return NextResponse.json(
         {
-          error: errorMessage,
+          error:
+            errorMessage,
         },
         {
           status: 400,
@@ -241,14 +449,11 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * On construit la description du rendez-vous
-     * depuis les informations enregistrées
-     * dans bookings.
-     */
     let slot = "";
 
-    if (booking.scheduled_start) {
+    if (
+      booking.scheduled_start
+    ) {
       try {
         slot =
           new Intl.DateTimeFormat(
@@ -258,8 +463,10 @@ export async function POST(request: Request) {
                 ? "ar-LB"
                 : "en-GB",
             {
-              dateStyle: "full",
-              timeStyle: "short",
+              dateStyle:
+                "full",
+              timeStyle:
+                "short",
               timeZone:
                 "Asia/Beirut",
             },
@@ -291,13 +498,16 @@ export async function POST(request: Request) {
     }
 
     const requestOrigin =
-      new URL(request.url).origin;
+      new URL(
+        request.url,
+      ).origin;
 
     const publicSiteUrl =
       process.env.NEXT_PUBLIC_SITE_URL?.replace(
         /\/$/,
         "",
-      ) || requestOrigin;
+      ) ||
+      requestOrigin;
 
     const successUrl =
       `${publicSiteUrl}/success` +
@@ -315,7 +525,9 @@ export async function POST(request: Request) {
         therapist,
       )}` +
       `&price=${encodeURIComponent(
-        String(numericPrice),
+        String(
+          numericPrice,
+        ),
       )}` +
       `&slot=${encodeURIComponent(
         slot,
@@ -335,92 +547,76 @@ export async function POST(request: Request) {
           ? "en"
           : "auto";
 
-    console.log(
-      "STRIPE CHECKOUT DEBUG:",
-      {
-        requestOrigin,
-        publicSiteUrl,
-        bookingId,
-        databasePrice:
-          numericPrice,
-        therapist,
-        email,
-        slot,
-        successUrl,
-      },
-    );
-
-    /*
-     * Le montant envoyé à Stripe provient
-     * maintenant exclusivement de Supabase.
-     */
     const session =
-      await stripe.checkout.sessions.create({
-        mode: "payment",
+      await stripe.checkout.sessions.create(
+        {
+          mode:
+            "payment",
 
-        customer_email: email,
+          customer_email:
+            email,
 
-        locale: stripeLocale,
+          locale:
+            stripeLocale,
 
-        payment_method_types: [
-          "card",
-        ],
+          payment_method_types: [
+            "card",
+          ],
 
-        line_items: [
-          {
-            quantity: 1,
+          line_items: [
+            {
+              quantity: 1,
 
-            price_data: {
-              currency: "usd",
+              price_data: {
+                currency:
+                  "usd",
 
-              unit_amount:
-                Math.round(
-                  numericPrice * 100,
-                ),
+                unit_amount:
+                  Math.round(
+                    numericPrice *
+                      100,
+                  ),
 
-              product_data: {
-                name: productName,
-                description: slot,
+                product_data: {
+                  name:
+                    productName,
+
+                  description:
+                    slot,
+                },
               },
             },
-          },
-        ],
+          ],
 
-        metadata: {
-          bookingId,
-          therapist,
-          slot,
-          language,
-          email,
-          paymentProvider:
-            "stripe",
-        },
-
-        payment_intent_data: {
           metadata: {
             bookingId,
+            patientId:
+              user.id,
+            therapist,
+            slot,
+            language,
+            email,
             paymentProvider:
               "stripe",
           },
+
+          payment_intent_data: {
+            metadata: {
+              bookingId,
+              patientId:
+                user.id,
+              paymentProvider:
+                "stripe",
+            },
+          },
+
+          success_url:
+            successUrl,
+
+          cancel_url:
+            cancelUrl,
         },
-
-        success_url: successUrl,
-
-        cancel_url: cancelUrl,
-      });
-
-    console.log(
-      "STRIPE SESSION CREATED:",
-      {
-        id: session.id,
-        bookingId,
-        amount:
-          numericPrice,
-        success_url:
-          session.success_url,
-        url: session.url,
-      },
-    );
+      );
 
     if (!session.url) {
       return NextResponse.json(
@@ -435,12 +631,21 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      provider: "stripe",
-      sessionId: session.id,
+      provider:
+        "stripe",
+      sessionId:
+        session.id,
       bookingId,
-      amount: numericPrice,
-      currency: "USD",
-      url: session.url,
+      amount:
+        numericPrice,
+      currency:
+        "USD",
+      url:
+        session.url,
+      expiresAt:
+        new Date(
+          expiresAtMs,
+        ).toISOString(),
     });
   } catch (error) {
     console.error(

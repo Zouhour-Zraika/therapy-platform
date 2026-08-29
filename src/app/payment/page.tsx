@@ -1,4 +1,4 @@
-"use client";
+
 
 import {
   Suspense,
@@ -518,6 +518,30 @@ function PaymentContent() {
           return;
         }
 
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session?.access_token
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          setIsProcessing(
+            false,
+          );
+
+          return;
+        }
+
         const response =
           await fetch(
             "/api/create-checkout-session",
@@ -528,6 +552,8 @@ function PaymentContent() {
               headers: {
                 "Content-Type":
                   "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
               },
 
               body:
