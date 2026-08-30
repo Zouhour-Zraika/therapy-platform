@@ -17,9 +17,12 @@ type Booking = {
   created_at: string;
   scheduled_start: string | null;
   zoom_join_url: string | null;
+  reschedule_requested_by?: string | null;
+  reschedule_requested_at?: string | null;
 };
 
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
+const PATIENT_CHANGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
 const DAYS_AR: Record<string, string> = {
   Monday: "الاثنين",
@@ -36,6 +39,8 @@ export default function PatientDashboard() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [bookingActionId, setBookingActionId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState("");
 
   const { language, isArabic } = useLanguage();
 
@@ -64,6 +69,19 @@ export default function PatientDashboard() {
           completePayment: "إكمال الدفع",
           sessionDetails: "تفاصيل الجلسة",
           unableToLoad: "تعذر تحميل المواعيد. يرجى المحاولة مرة أخرى.",
+          changeSlot: "تغيير الموعد",
+          cancelAndRefund: "إلغاء الجلسة واسترداد المبلغ",
+          changeConfirm: "يمكنك تغيير الموعد فقط إذا بقي أكثر من 24 ساعة على الجلسة. هل تريد المتابعة؟",
+          cancelConfirm: "سيتم إلغاء الجلسة وطلب استرداد المبلغ إلى وسيلة الدفع الأصلية. هل تريد المتابعة؟",
+          tooLate: "لا يمكن تغيير أو إلغاء الجلسة خلال آخر 24 ساعة قبل الموعد.",
+          missingScheduledStart: "لا يمكن إدارة هذا الموعد لأن وقت الجلسة غير متوفر.",
+          changing: "جارٍ تحضير تغيير الموعد...",
+          cancelling: "جارٍ الإلغاء والاسترداد...",
+          rescheduleReady: "تم تسجيل طلب تغيير الموعد. اختر الآن موعداً جديداً.",
+          cancelSuccess: "تم إلغاء الجلسة وبدء عملية استرداد المبلغ.",
+          actionError: "تعذر تنفيذ هذا الإجراء. يرجى المحاولة مرة أخرى.",
+          refundProviderPending: "الاسترداد التلقائي لهذا المزود غير مفعّل بعد. يرجى التواصل مع AAN.",
+          manageUntil: "التغيير والإلغاء متاحان حتى 24 ساعة قبل الجلسة.",
         }
       : language === "fr"
         ? {
@@ -90,6 +108,28 @@ export default function PatientDashboard() {
             sessionDetails: "Détails de la séance",
             unableToLoad:
               "Impossible de charger les rendez-vous. Veuillez réessayer.",
+            changeSlot: "Changer le créneau",
+            cancelAndRefund: "Annuler et demander le remboursement",
+            changeConfirm:
+              "Vous pouvez changer le créneau uniquement à plus de 24 h de la séance. Continuer ?",
+            cancelConfirm:
+              "La séance sera annulée et le remboursement sera demandé sur le moyen de paiement d’origine. Continuer ?",
+            tooLate:
+              "Le changement et l’annulation ne sont plus possibles dans les 24 heures précédant la séance.",
+            missingScheduledStart:
+              "Impossible de gérer ce rendez-vous car l’heure de séance n’est pas disponible.",
+            changing: "Préparation du changement de créneau...",
+            cancelling: "Annulation et remboursement...",
+            rescheduleReady:
+              "Le changement a été enregistré. Choisissez maintenant un nouveau créneau.",
+            cancelSuccess:
+              "La séance a été annulée et la procédure de remboursement a été lancée.",
+            actionError:
+              "Impossible d’effectuer cette action. Veuillez réessayer.",
+            refundProviderPending:
+              "Le remboursement automatique pour ce prestataire n’est pas encore activé. Veuillez contacter AAN.",
+            manageUntil:
+              "Changement et annulation possibles jusqu’à 24 h avant la séance.",
           }
         : {
             eyebrow: "Your private space",
@@ -115,6 +155,28 @@ export default function PatientDashboard() {
             sessionDetails: "Session details",
             unableToLoad:
               "Unable to load appointments. Please try again.",
+            changeSlot: "Change time",
+            cancelAndRefund: "Cancel and request refund",
+            changeConfirm:
+              "You can change the appointment only when more than 24 hours remain before the session. Continue?",
+            cancelConfirm:
+              "The session will be cancelled and a refund will be requested to the original payment method. Continue?",
+            tooLate:
+              "Changes and cancellations are no longer available within 24 hours of the session.",
+            missingScheduledStart:
+              "This appointment cannot be managed because its scheduled time is unavailable.",
+            changing: "Preparing appointment change...",
+            cancelling: "Cancelling and refunding...",
+            rescheduleReady:
+              "The change request has been recorded. Choose a new available time now.",
+            cancelSuccess:
+              "The session was cancelled and the refund process was started.",
+            actionError:
+              "Unable to perform this action. Please try again.",
+            refundProviderPending:
+              "Automatic refunds for this payment provider are not active yet. Please contact AAN.",
+            manageUntil:
+              "Changes and cancellations are available until 24 hours before the session.",
           };
 
   useEffect(() => {
@@ -296,6 +358,138 @@ export default function PatientDashboard() {
     return formatDigits(booking.slot_time);
   };
 
+  const canPatientManageBooking = (booking: Booking) => {
+    if (
+      booking.status !== "paid" ||
+      !booking.scheduled_start
+    ) {
+      return false;
+    }
+
+    const scheduledStartMs =
+      new Date(booking.scheduled_start).getTime();
+
+    if (Number.isNaN(scheduledStartMs)) {
+      return false;
+    }
+
+    return (
+      scheduledStartMs - nowMs >
+      PATIENT_CHANGE_DEADLINE_MS
+    );
+  };
+
+  const hasValidScheduledStart = (booking: Booking) => {
+    if (!booking.scheduled_start) {
+      return false;
+    }
+
+    return !Number.isNaN(
+      new Date(booking.scheduled_start).getTime(),
+    );
+  };
+
+  const runPatientBookingAction = async (
+    booking: Booking,
+    action: "request_reschedule" | "cancel_and_refund",
+  ) => {
+    setActionMessage("");
+
+    if (!hasValidScheduledStart(booking)) {
+      alert(copy.missingScheduledStart);
+      return;
+    }
+
+    if (!canPatientManageBooking(booking)) {
+      alert(copy.tooLate);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      action === "request_reschedule"
+        ? copy.changeConfirm
+        : copy.cancelConfirm,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBookingActionId(booking.id);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const response = await fetch(
+        "/api/booking/patient-action",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            bookingId: booking.id,
+            action,
+            language,
+          }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const message =
+          result.code === "CHANGE_WINDOW_CLOSED"
+            ? copy.tooLate
+            : result.code === "REFUND_PROVIDER_NOT_CONFIGURED"
+              ? copy.refundProviderPending
+              : result.error || copy.actionError;
+
+        alert(message);
+        return;
+      }
+
+      if (action === "cancel_and_refund") {
+        setActionMessage(copy.cancelSuccess);
+        await getBookings();
+        return;
+      }
+
+      /*
+       * Le serveur vient d'enregistrer que ce booking payé
+       * est en cours de changement.
+       *
+       * IMPORTANT : /booking devra reconnaître le paramètre
+       * "reschedule" et remplacer le créneau de CE booking
+       * sans créer un deuxième paiement.
+       */
+      setActionMessage(copy.rescheduleReady);
+
+      window.location.href =
+        `/booking?reschedule=${encodeURIComponent(
+          booking.id,
+        )}`;
+    } catch (error) {
+      console.error(
+        "Patient booking action error:",
+        error,
+      );
+
+      alert(copy.actionError);
+    } finally {
+      setBookingActionId(null);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     if (status === "paid") {
       return copy.paid;
@@ -362,6 +556,12 @@ export default function PatientDashboard() {
             </header>
 
             <section className="rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10">
+              {actionMessage && (
+                <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 font-semibold text-emerald-800">
+                  {actionMessage}
+                </div>
+              )}
+
               <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
@@ -486,24 +686,77 @@ export default function PatientDashboard() {
                         </div>
 
                         <div className="flex flex-col justify-center border-t border-aan-border bg-[linear-gradient(145deg,#fbf8f3_0%,#eef4fa_100%)] p-6 lg:border-s lg:border-t-0 sm:p-8">
-                          {booking.status === "paid" &&
-                          booking.zoom_join_url ? (
-                            <a
-                              href={booking.zoom_join_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
-                            >
-                              {copy.joinZoom}
-                            </a>
-                          ) : booking.status === "paid" ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="w-full cursor-not-allowed rounded-2xl bg-aan-button/40 px-6 py-4 font-bold text-white"
-                            >
-                              {copy.zoomNotReady}
-                            </button>
+                          {booking.status === "paid" ? (
+                            <div className="space-y-3">
+                              {booking.zoom_join_url ? (
+                                <a
+                                  href={booking.zoom_join_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                                >
+                                  {copy.joinZoom}
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="w-full cursor-not-allowed rounded-2xl bg-aan-button/40 px-6 py-4 font-bold text-white"
+                                >
+                                  {copy.zoomNotReady}
+                                </button>
+                              )}
+
+                              {canPatientManageBooking(booking) ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void runPatientBookingAction(
+                                        booking,
+                                        "request_reschedule",
+                                      )
+                                    }
+                                    disabled={
+                                      bookingActionId === booking.id
+                                    }
+                                    className="w-full rounded-2xl border border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {bookingActionId === booking.id
+                                      ? copy.changing
+                                      : copy.changeSlot}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void runPatientBookingAction(
+                                        booking,
+                                        "cancel_and_refund",
+                                      )
+                                    }
+                                    disabled={
+                                      bookingActionId === booking.id
+                                    }
+                                    className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {bookingActionId === booking.id
+                                      ? copy.cancelling
+                                      : copy.cancelAndRefund}
+                                  </button>
+
+                                  <p className="text-center text-xs leading-5 text-aan-secondary">
+                                    {copy.manageUntil}
+                                  </p>
+                                </>
+                              ) : (
+                                <div className="rounded-2xl border border-aan-border bg-white/80 px-4 py-3 text-center text-xs leading-5 text-aan-secondary">
+                                  {hasValidScheduledStart(booking)
+                                    ? copy.tooLate
+                                    : copy.missingScheduledStart}
+                                </div>
+                              )}
+                            </div>
                           ) : booking.status === "cancelled" ? (
                             <span className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-center font-bold text-red-700">
                               {copy.cancelled}

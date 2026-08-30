@@ -206,6 +206,9 @@ function BookingContent() {
   const supportFromUrl =
     searchParams.get("support");
 
+  const rescheduleBookingId =
+    searchParams.get("reschedule");
+
   const bookingSectionRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -390,7 +393,131 @@ function BookingContent() {
         loadedSlots,
       );
 
-      if (directTherapistId) {
+      if (rescheduleBookingId) {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          window.location.href =
+            `/login?redirect=${encodeURIComponent(
+              `/booking?reschedule=${rescheduleBookingId}`,
+            )}`;
+          return;
+        }
+
+        const {
+          data: existingBooking,
+          error: existingBookingError,
+        } = await supabase
+          .from("bookings")
+          .select("id, patient_id, therapist_id, status, scheduled_start")
+          .eq("id", rescheduleBookingId)
+          .eq("patient_id", user.id)
+          .eq("status", "paid")
+          .maybeSingle<{
+            id: string;
+            patient_id: string;
+            therapist_id: string;
+            status: string;
+            scheduled_start: string | null;
+          }>();
+
+        if (
+          existingBookingError ||
+          !existingBooking
+        ) {
+          console.error(
+            "Unable to load booking for reschedule:",
+            existingBookingError,
+          );
+
+          setDataError(
+            language === "ar"
+              ? "تعذر تحميل الحجز المراد تغييره."
+              : language === "fr"
+                ? "Impossible de charger la réservation à modifier."
+                : "Unable to load the booking to reschedule.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        if (existingBooking.scheduled_start) {
+          const currentStartMs = new Date(
+            existingBooking.scheduled_start,
+          ).getTime();
+
+          if (
+            !Number.isNaN(currentStartMs) &&
+            currentStartMs - Date.now() <=
+              24 * 60 * 60 * 1000
+          ) {
+            setDataError(
+              language === "ar"
+                ? "لم يعد من الممكن تغيير هذا الموعد خلال آخر 24 ساعة قبل الجلسة."
+                : language === "fr"
+                  ? "Ce rendez-vous ne peut plus être modifié dans les 24 heures précédant la séance."
+                  : "This appointment can no longer be changed within 24 hours of the session.",
+            );
+            setLoading(false);
+            return;
+          }
+        }
+
+        let rescheduleTherapist =
+          loadedTherapists.find(
+            (therapist) =>
+              therapist.id ===
+              existingBooking.therapist_id,
+          ) || null;
+
+        /*
+         * Une réservation existante peut concerner un spécialiste
+         * qui n'est plus listé comme "active". On recharge alors
+         * uniquement ce spécialiste afin de permettre de terminer
+         * proprement le changement de créneau si des disponibilités
+         * existent encore.
+         */
+        if (!rescheduleTherapist) {
+          const {
+            data: therapistForReschedule,
+            error: therapistForRescheduleError,
+          } = await supabase
+            .from("therapists")
+            .select("*")
+            .eq(
+              "id",
+              existingBooking.therapist_id,
+            )
+            .maybeSingle<Therapist>();
+
+          if (
+            therapistForRescheduleError ||
+            !therapistForReschedule
+          ) {
+            setDataError(
+              language === "ar"
+                ? "تعذر تحميل المختص المرتبط بهذا الحجز."
+                : language === "fr"
+                  ? "Impossible de charger le spécialiste lié à cette réservation."
+                  : "Unable to load the specialist linked to this booking.",
+            );
+            setLoading(false);
+            return;
+          }
+
+          rescheduleTherapist =
+            therapistForReschedule;
+        }
+
+        setSelectedTherapist(
+          rescheduleTherapist,
+        );
+        setSelectedSlot(null);
+        setStep(4);
+      } else if (directTherapistId) {
         const directTherapist =
           loadedTherapists.find(
             (therapist) =>
@@ -429,6 +556,8 @@ function BookingContent() {
   }, [
     directTherapistId,
     directSlotId,
+    rescheduleBookingId,
+    language,
     t,
   ]);
 
@@ -1489,25 +1618,6 @@ function BookingContent() {
           return;
         }
 
-        /*
-         * IMPORTANT :
-         *
-         * La réservation temporaire n'est plus
-         * créée directement depuis le navigateur.
-         *
-         * L'API serveur /api/booking/hold doit :
-         * - vérifier que le spécialiste est active ;
-         * - relire le vrai prix dans Supabase ;
-         * - vérifier que le créneau est encore libre ;
-         * - créer un hold de paiement de 10 minutes ;
-         * - empêcher deux patients de réserver
-         *   le même créneau en même temps ;
-         * - retourner bookingId + holdExpiresAt.
-         *
-         * Si le paiement n'est pas effectué dans
-         * les 10 minutes, le hold doit expirer et
-         * le créneau doit redevenir disponible.
-         */
         const {
           data: {
             session,
@@ -1540,6 +1650,94 @@ function BookingContent() {
           return;
         }
 
+        if (rescheduleBookingId) {
+          const response = await fetch(
+            "/api/booking/patient-action",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                bookingId:
+                  rescheduleBookingId,
+                action: "reschedule",
+                newSlotId:
+                  selectedSlot.id,
+                language,
+              }),
+            },
+          );
+
+          const result =
+            await response.json();
+
+          if (!response.ok) {
+            console.error(
+              "Reschedule error:",
+              result,
+            );
+
+            if (
+              result.code ===
+              "SLOT_NOT_AVAILABLE"
+            ) {
+              setAllSlots(
+                (current) =>
+                  current.filter(
+                    (slot) =>
+                      slot.id !==
+                      selectedSlot.id,
+                  ),
+              );
+              setSelectedSlot(null);
+            }
+
+            alert(
+              result.error ||
+                (language === "ar"
+                  ? "تعذر تغيير الموعد. يرجى المحاولة مرة أخرى."
+                  : language === "fr"
+                    ? "Impossible de changer le créneau. Veuillez réessayer."
+                    : "Unable to reschedule the appointment. Please try again."),
+            );
+            return;
+          }
+
+          alert(
+            language === "ar"
+              ? "تم تغيير موعد الجلسة بنجاح. لن يتم طلب أي دفعة جديدة."
+              : language === "fr"
+                ? "Le créneau a été modifié avec succès. Aucun nouveau paiement ne sera demandé."
+                : "The appointment was rescheduled successfully. No new payment will be required.",
+          );
+
+          window.location.href =
+            "/dashboard";
+          return;
+        }
+
+        /*
+         * IMPORTANT :
+         *
+         * La réservation temporaire n'est plus
+         * créée directement depuis le navigateur.
+         *
+         * L'API serveur /api/booking/hold doit :
+         * - vérifier que le spécialiste est active ;
+         * - relire le vrai prix dans Supabase ;
+         * - vérifier que le créneau est encore libre ;
+         * - créer un hold de paiement de 10 minutes ;
+         * - empêcher deux patients de réserver
+         *   le même créneau en même temps ;
+         * - retourner bookingId + holdExpiresAt.
+         *
+         * Si le paiement n'est pas effectué dans
+         * les 10 minutes, le hold doit expirer et
+         * le créneau doit redevenir disponible.
+         */
         const response =
           await fetch(
             "/api/booking/hold",
@@ -1760,7 +1958,7 @@ function BookingContent() {
               </p>
 
               <h1 className="mt-4 text-4xl font-bold leading-tight sm:text-5xl">
-                {directTherapistId
+                {directTherapistId || rescheduleBookingId
                   ? t(
                       "booking.hero.directTitle",
                     )
@@ -1770,7 +1968,7 @@ function BookingContent() {
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-[#66727a]">
-                {directTherapistId
+                {directTherapistId || rescheduleBookingId
                   ? t(
                       "booking.hero.directDescription",
                     )
@@ -1780,7 +1978,7 @@ function BookingContent() {
               </p>
             </div>
 
-            {!directTherapistId && (
+            {!directTherapistId && !rescheduleBookingId && (
               <div className="mx-auto mt-10 max-w-5xl">
                 <div className="flex items-center justify-between text-sm font-semibold text-[#69747a]">
                   <span>
@@ -2189,6 +2387,25 @@ function BookingContent() {
                         bookingSectionRef
                       }
                     >
+                      {rescheduleBookingId && (
+                        <div className="mb-6 rounded-2xl border border-[#b39668]/40 bg-[#fbf8f3] p-5 text-[#223748]">
+                          <p className="font-bold">
+                            {language === "ar"
+                              ? "تغيير موعد الجلسة"
+                              : language === "fr"
+                                ? "Changer le créneau de votre séance"
+                                : "Reschedule your session"}
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-[#69747a]">
+                            {language === "ar"
+                              ? "اختر موعداً جديداً مع نفس المختص. لن يتم خصم أي مبلغ جديد."
+                              : language === "fr"
+                                ? "Choisissez un nouveau créneau avec le même spécialiste. Aucun nouveau paiement ne sera effectué."
+                                : "Choose a new time with the same specialist. You will not be charged again."}
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex flex-col gap-6 rounded-[1.75rem] bg-[#f8f4ee] p-6 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-4">
                           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#e8decd] text-2xl font-bold text-[#415a72]">
@@ -2219,7 +2436,7 @@ function BookingContent() {
                           </div>
                         </div>
 
-                        {!directTherapistId && (
+                        {!directTherapistId && !rescheduleBookingId && (
                           <button
                             type="button"
                             onClick={() => {
@@ -2553,11 +2770,17 @@ function BookingContent() {
 
                           <div className="mt-6 rounded-2xl border border-[#e3d8c7] bg-white p-4">
                             <p className="text-sm leading-6 text-[#69747a]">
-                              {language === "ar"
-                                ? "عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد. مدة الجلسة نفسها قد تصل إلى ساعتين."
-                                : language === "fr"
-                                  ? "En continuant vers le paiement, ce créneau vous sera réservé temporairement pendant 10 minutes. Sans paiement dans ce délai, il redeviendra disponible. La séance elle-même peut durer jusqu’à deux heures."
-                                  : "When you continue to payment, this slot will be held for you for 10 minutes. If payment is not completed in that time, the slot will become available again. The session itself may last up to two hours."}
+                              {rescheduleBookingId
+                                ? language === "ar"
+                                  ? "سيتم استبدال الموعد الحالي بهذا الموعد مع نفس المختص. يبقى الدفع الحالي صالحاً ولن يتم طلب أي دفعة جديدة."
+                                  : language === "fr"
+                                    ? "Ce créneau remplacera votre rendez-vous actuel avec le même spécialiste. Votre paiement reste valable et aucun nouveau paiement ne sera demandé."
+                                    : "This time will replace your current appointment with the same specialist. Your existing payment remains valid and no new payment will be required."
+                                : language === "ar"
+                                  ? "عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد. مدة الجلسة نفسها قد تصل إلى ساعتين."
+                                  : language === "fr"
+                                    ? "En continuant vers le paiement, ce créneau vous sera réservé temporairement pendant 10 minutes. Sans paiement dans ce délai, il redeviendra disponible. La séance elle-même peut durer jusqu’à deux heures."
+                                    : "When you continue to payment, this slot will be held for you for 10 minutes. If payment is not completed in that time, the slot will become available again. The session itself may last up to two hours."}
                             </p>
                           </div>
 
@@ -2572,12 +2795,24 @@ function BookingContent() {
                             className="mt-7 w-full rounded-2xl bg-[#415a72] px-6 py-4 text-lg font-bold text-white transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                           >
                             {bookingLoading
-                              ? isArabic
-                                ? "جارٍ إنشاء الحجز..."
-                                : "Creating booking..."
-                              : t(
-                                  "booking.session.continueToPayment",
-                                )}
+                              ? rescheduleBookingId
+                                ? language === "ar"
+                                  ? "جارٍ تغيير الموعد..."
+                                  : language === "fr"
+                                    ? "Modification du créneau..."
+                                    : "Rescheduling..."
+                                : isArabic
+                                  ? "جارٍ إنشاء الحجز..."
+                                  : "Creating booking..."
+                              : rescheduleBookingId
+                                ? language === "ar"
+                                  ? "تأكيد الموعد الجديد"
+                                  : language === "fr"
+                                    ? "Confirmer le nouveau créneau"
+                                    : "Confirm new time"
+                                : t(
+                                    "booking.session.continueToPayment",
+                                  )}
                           </button>
                         </div>
                       )}
@@ -2587,6 +2822,7 @@ function BookingContent() {
                 {/* Navigation */}
 
                 {!directTherapistId &&
+                  !rescheduleBookingId &&
                   step < 4 && (
                     <div className="mt-10 flex flex-col-reverse gap-3 border-t border-[#eee6db] pt-6 sm:flex-row sm:items-center sm:justify-between">
                       <button
