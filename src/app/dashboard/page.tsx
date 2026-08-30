@@ -82,6 +82,7 @@ export default function PatientDashboard() {
           actionError: "تعذر تنفيذ هذا الإجراء. يرجى المحاولة مرة أخرى.",
           refundProviderPending: "الاسترداد التلقائي لهذا المزود غير مفعّل بعد. يرجى التواصل مع AAN.",
           manageUntil: "التغيير والإلغاء متاحان حتى 24 ساعة قبل الجلسة.",
+          sessionPast: "جلسة سابقة",
         }
       : language === "fr"
         ? {
@@ -130,6 +131,7 @@ export default function PatientDashboard() {
               "Le remboursement automatique pour ce prestataire n’est pas encore activé. Veuillez contacter AAN.",
             manageUntil:
               "Changement et annulation possibles jusqu’à 24 h avant la séance.",
+            sessionPast: "Séance passée",
           }
         : {
             eyebrow: "Your private space",
@@ -177,6 +179,7 @@ export default function PatientDashboard() {
               "Automatic refunds for this payment provider are not active yet. Please contact AAN.",
             manageUntil:
               "Changes and cancellations are available until 24 hours before the session.",
+            sessionPast: "Past session",
           };
 
   useEffect(() => {
@@ -387,6 +390,21 @@ export default function PatientDashboard() {
     return !Number.isNaN(
       new Date(booking.scheduled_start).getTime(),
     );
+  };
+
+  const isPastBooking = (booking: Booking) => {
+    if (!booking.scheduled_start) {
+      return false;
+    }
+
+    const scheduledStartMs =
+      new Date(booking.scheduled_start).getTime();
+
+    if (Number.isNaN(scheduledStartMs)) {
+      return false;
+    }
+
+    return scheduledStartMs < nowMs;
   };
 
   const runPatientBookingAction = async (
@@ -687,76 +705,82 @@ export default function PatientDashboard() {
 
                         <div className="flex flex-col justify-center border-t border-aan-border bg-[linear-gradient(145deg,#fbf8f3_0%,#eef4fa_100%)] p-6 lg:border-s lg:border-t-0 sm:p-8">
                           {booking.status === "paid" ? (
-                            <div className="space-y-3">
-                              {booking.zoom_join_url ? (
-                                <a
-                                  href={booking.zoom_join_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
-                                >
-                                  {copy.joinZoom}
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="w-full cursor-not-allowed rounded-2xl bg-aan-button/40 px-6 py-4 font-bold text-white"
-                                >
-                                  {copy.zoomNotReady}
-                                </button>
-                              )}
-
-                              {canPatientManageBooking(booking) ? (
-                                <>
+                            isPastBooking(booking) ? (
+                              <div className="rounded-2xl border border-aan-border bg-white/80 px-6 py-4 text-center font-bold text-aan-secondary">
+                                {copy.sessionPast}
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {booking.zoom_join_url ? (
+                                  <a
+                                    href={booking.zoom_join_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                                  >
+                                    {copy.joinZoom}
+                                  </a>
+                                ) : (
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      void runPatientBookingAction(
-                                        booking,
-                                        "request_reschedule",
-                                      )
-                                    }
-                                    disabled={
-                                      bookingActionId === booking.id
-                                    }
-                                    className="w-full rounded-2xl border border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled
+                                    className="w-full cursor-not-allowed rounded-2xl bg-aan-button/40 px-6 py-4 font-bold text-white"
                                   >
-                                    {bookingActionId === booking.id
-                                      ? copy.changing
-                                      : copy.changeSlot}
+                                    {copy.zoomNotReady}
                                   </button>
+                                )}
 
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void runPatientBookingAction(
-                                        booking,
-                                        "cancel_and_refund",
-                                      )
-                                    }
-                                    disabled={
-                                      bookingActionId === booking.id
-                                    }
-                                    className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {bookingActionId === booking.id
-                                      ? copy.cancelling
-                                      : copy.cancelAndRefund}
-                                  </button>
+                                {canPatientManageBooking(booking) ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void runPatientBookingAction(
+                                          booking,
+                                          "request_reschedule",
+                                        )
+                                      }
+                                      disabled={
+                                        bookingActionId === booking.id
+                                      }
+                                      className="w-full rounded-2xl border border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {bookingActionId === booking.id
+                                        ? copy.changing
+                                        : copy.changeSlot}
+                                    </button>
 
-                                  <p className="text-center text-xs leading-5 text-aan-secondary">
-                                    {copy.manageUntil}
-                                  </p>
-                                </>
-                              ) : (
-                                <div className="rounded-2xl border border-aan-border bg-white/80 px-4 py-3 text-center text-xs leading-5 text-aan-secondary">
-                                  {hasValidScheduledStart(booking)
-                                    ? copy.tooLate
-                                    : copy.missingScheduledStart}
-                                </div>
-                              )}
-                            </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void runPatientBookingAction(
+                                          booking,
+                                          "cancel_and_refund",
+                                        )
+                                      }
+                                      disabled={
+                                        bookingActionId === booking.id
+                                      }
+                                      className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {bookingActionId === booking.id
+                                        ? copy.cancelling
+                                        : copy.cancelAndRefund}
+                                    </button>
+
+                                    <p className="text-center text-xs leading-5 text-aan-secondary">
+                                      {copy.manageUntil}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <div className="rounded-2xl border border-aan-border bg-white/80 px-4 py-3 text-center text-xs leading-5 text-aan-secondary">
+                                    {hasValidScheduledStart(booking)
+                                      ? copy.tooLate
+                                      : copy.missingScheduledStart}
+                                  </div>
+                                )}
+                              </div>
+                            )
                           ) : booking.status === "cancelled" ? (
                             <span className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-center font-bold text-red-700">
                               {copy.cancelled}
