@@ -1,4 +1,4 @@
-"use client";
+
 
 import Image from "next/image";
 import {
@@ -164,6 +164,9 @@ export default function TherapistDashboard() {
 
   const [bookings, setBookings] =
     useState<Booking[]>([]);
+
+  const [nowMs, setNowMs] =
+    useState(() => Date.now());
 
   const [
     bookingActionId,
@@ -376,6 +379,12 @@ export default function TherapistDashboard() {
 
           sessionDate:
             "تاريخ الجلسة",
+
+          sessionPast:
+            "جلسة سابقة",
+
+          therapistTimeZone:
+            "توقيت لبنان · Asia/Beirut",
         }
       : language === "fr"
         ? {
@@ -567,6 +576,12 @@ export default function TherapistDashboard() {
 
             sessionDate:
               "Date de la séance",
+
+            sessionPast:
+              "Séance passée",
+
+            therapistTimeZone:
+              "Heure du Liban · Asia/Beirut",
           }
         : {
             profileTitle:
@@ -757,6 +772,12 @@ export default function TherapistDashboard() {
 
             sessionDate:
               "Session date",
+
+            sessionPast:
+              "Past session",
+
+            therapistTimeZone:
+              "Lebanon time · Asia/Beirut",
           };
 
   /*
@@ -766,6 +787,14 @@ export default function TherapistDashboard() {
   useEffect(() => {
     void getSlots();
     void getBookings();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
   }, []);
 
   /*
@@ -1916,6 +1945,60 @@ export default function TherapistDashboard() {
     ).format(value);
   };
 
+  const formatBookingSessionTime = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return booking.slot_time;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      );
+
+    if (
+      Number.isNaN(
+        value.getTime(),
+      )
+    ) {
+      return booking.slot_time;
+    }
+
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(value);
+  };
+
+  const isPastBooking = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return false;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      ).getTime();
+
+    if (Number.isNaN(value)) {
+      return false;
+    }
+
+    return value < nowMs;
+  };
+
+
   const runBookingAction =
     async (
       booking: Booking,
@@ -2598,10 +2681,16 @@ export default function TherapistDashboard() {
                                   "ar"
                                 ? "في"
                                 : "at"}{" "}
-                            {
-                              booking.slot_time
-                            }
+                            {formatBookingSessionTime(
+                              booking,
+                            )}
                           </h3>
+
+                          <p className="mt-1 text-sm font-semibold text-aan-secondary">
+                            {
+                              text.therapistTimeZone
+                            }
+                          </p>
 
                           <p className="mt-4 text-aan-secondary">
                             {
@@ -2652,69 +2741,81 @@ export default function TherapistDashboard() {
                             )}
                           </p>
 
-                          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void runBookingAction(
-                                  booking,
-                                  "request_reschedule",
-                                )
-                              }
-                              disabled={
-                                bookingActionId ===
-                                booking.id
-                              }
-                              className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
+                          {isPastBooking(
+                            booking,
+                          ) ? (
+                            <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
                               {
-                                text.requestReschedule
+                                text.sessionPast
                               }
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void runBookingAction(
-                                  booking,
-                                  "cancel_and_refund",
-                                )
-                              }
-                              disabled={
-                                bookingActionId ===
-                                booking.id
-                              }
-                              className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {
-                                text.cancelSession
-                              }
-                            </button>
-                          </div>
-
-                          {sessionUrl ? (
-                            <a
-                              href={
-                                sessionUrl
-                              }
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="aan-button mt-3 flex w-full py-3"
-                            >
-                              {
-                                text.startSession
-                              }
-                            </a>
+                            </div>
                           ) : (
-                            <button
-                              type="button"
-                              disabled
-                              className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
-                            >
-                              {
-                                text.meetingNotReady
-                              }
-                            </button>
+                            <>
+                              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "request_reschedule",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {
+                                    text.requestReschedule
+                                  }
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "cancel_and_refund",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {
+                                    text.cancelSession
+                                  }
+                                </button>
+                              </div>
+
+                              {sessionUrl ? (
+                                <a
+                                  href={
+                                    sessionUrl
+                                  }
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="aan-button mt-3 flex w-full py-3"
+                                >
+                                  {
+                                    text.startSession
+                                  }
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
+                                >
+                                  {
+                                    text.meetingNotReady
+                                  }
+                                </button>
+                              )}
+                            </>
                           )}
                         </article>
                       );
