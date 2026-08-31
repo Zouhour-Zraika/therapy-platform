@@ -43,6 +43,109 @@ export async function POST(request: Request) {
       },
     );
 
+    /*
+     * =========================================================
+     * Vérifier l'authentification de l'administrateur
+     * =========================================================
+     */
+
+    const authorization =
+      request.headers.get("authorization");
+
+    if (
+      !authorization ||
+      !authorization.startsWith("Bearer ")
+    ) {
+      return NextResponse.json(
+        {
+          error: "Authentication is required.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const accessToken =
+      authorization
+        .slice("Bearer ".length)
+        .trim();
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          error: "Authentication is required.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    const {
+      data: authData,
+      error: authError,
+    } =
+      await supabaseAdmin.auth.getUser(
+        accessToken,
+      );
+
+    if (
+      authError ||
+      !authData.user
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid authentication.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    /*
+     * Vérifier côté serveur que l'utilisateur
+     * connecté possède réellement le rôle admin.
+     */
+
+    const {
+      data: adminProfile,
+      error: adminProfileError,
+    } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role")
+      .eq(
+        "id",
+        authData.user.id,
+      )
+      .maybeSingle();
+
+    if (adminProfileError) {
+      throw adminProfileError;
+    }
+
+    if (
+      !adminProfile ||
+      adminProfile.role !== "admin"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Administrator access is required.",
+        },
+        {
+          status: 403,
+        },
+      );
+    }
+
+    /*
+     * =========================================================
+     * Lire la requête
+     * =========================================================
+     */
+
     const body =
       (await request.json()) as ApproveTherapistRequest;
 
@@ -50,7 +153,9 @@ export async function POST(request: Request) {
       body.applicationId?.trim();
 
     const email =
-      body.email?.trim().toLowerCase();
+      body.email
+        ?.trim()
+        .toLowerCase();
 
     const fullName =
       body.fullName?.trim() || "";
@@ -73,8 +178,7 @@ export async function POST(request: Request) {
     if (!email) {
       return NextResponse.json(
         {
-          error:
-            "Email is required.",
+          error: "Email is required.",
         },
         {
           status: 400,
@@ -83,22 +187,25 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Vérifier que la candidature existe
-     * réellement avant de continuer.
+     * =========================================================
+     * Vérifier la candidature
+     * =========================================================
      */
+
     const {
       data: application,
       error: applicationReadError,
     } = await supabaseAdmin
       .from("therapist_applications")
-      .select(
-        `
-          id,
-          email,
-          status
-        `,
+      .select(`
+        id,
+        email,
+        status
+      `)
+      .eq(
+        "id",
+        applicationId,
       )
-      .eq("id", applicationId)
       .maybeSingle();
 
     if (applicationReadError) {
@@ -118,11 +225,14 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Si elle est déjà approuvée,
-     * on évite de relancer inutilement
-     * toute la procédure.
+     * Si déjà approuvée, ne pas relancer
+     * l'invitation ni modifier le spécialiste.
      */
-    if (application.status === "approved") {
+
+    if (
+      application.status ===
+      "approved"
+    ) {
       return NextResponse.json({
         success: true,
         alreadyApproved: true,
@@ -130,12 +240,6 @@ export async function POST(request: Request) {
       });
     }
 
-    /*
-     * Sécurité supplémentaire :
-     * l'e-mail envoyé par le navigateur
-     * doit correspondre à celui enregistré
-     * dans la candidature.
-     */
     const applicationEmail =
       application.email
         ?.trim()
@@ -160,37 +264,38 @@ export async function POST(request: Request) {
       new URL(request.url).origin;
 
     const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(
-        /\/$/,
-        "",
-      ) || requestOrigin;
+      process.env.NEXT_PUBLIC_SITE_URL
+        ?.replace(/\/$/, "") ||
+      requestOrigin;
 
     /*
-     * Première tentative :
-     * inviter le spécialiste.
+     * =========================================================
+     * Inviter le spécialiste
+     * =========================================================
      */
+
     const {
       data: invitedUser,
       error: inviteError,
     } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(
-        email,
-        {
-          redirectTo:
-            `${siteUrl}/reset-password`,
-        },
-      );
+      await supabaseAdmin.auth.admin
+        .inviteUserByEmail(
+          email,
+          {
+            redirectTo:
+              `${siteUrl}/reset-password`,
+          },
+        );
 
     let userId =
-      invitedUser?.user?.id || null;
+      invitedUser?.user?.id ||
+      null;
 
     /*
-     * Si l'utilisateur existe déjà,
-     * Supabase peut refuser une nouvelle invitation.
-     *
-     * Dans ce cas, on essaie de retrouver
-     * son profil existant.
+     * Si le compte existe déjà,
+     * retrouver son profil.
      */
+
     if (inviteError) {
       console.log(
         "Therapist invitation response:",
@@ -203,7 +308,10 @@ export async function POST(request: Request) {
       } = await supabaseAdmin
         .from("profiles")
         .select("id")
-        .eq("email", email)
+        .eq(
+          "email",
+          email,
+        )
         .maybeSingle();
 
       if (existingProfileError) {
@@ -211,14 +319,9 @@ export async function POST(request: Request) {
       }
 
       if (existingProfile?.id) {
-        userId = existingProfile.id;
+        userId =
+          existingProfile.id;
       } else {
-        /*
-         * Si Supabase a renvoyé une vraie erreur
-         * et qu'aucun profil n'existe,
-         * on ne prétend pas que l'approbation
-         * a fonctionné.
-         */
         return NextResponse.json(
           {
             error:
@@ -244,8 +347,11 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Créer ou mettre à jour le profil.
+     * =========================================================
+     * Profil
+     * =========================================================
      */
+
     const {
       error: profileError,
     } = await supabaseAdmin
@@ -266,40 +372,89 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Créer ou mettre à jour
-     * la fiche spécialiste.
+     * =========================================================
+     * Fiche spécialiste
+     *
+     * IMPORTANT :
+     * - nouveau spécialiste => price = 0
+     * - spécialiste existant => ne jamais écraser
+     *   son prix ni sa bio
+     * =========================================================
      */
+
     const {
-      error: therapistError,
+      data: existingTherapist,
+      error: therapistReadError,
     } = await supabaseAdmin
       .from("therapists")
-      .upsert(
-        {
+      .select("id")
+      .eq(
+        "id",
+        userId,
+      )
+      .maybeSingle();
+
+    if (therapistReadError) {
+      throw therapistReadError;
+    }
+
+    if (existingTherapist) {
+      /*
+       * On actualise uniquement les informations
+       * provenant de la candidature.
+       *
+       * price, bio et autres paramètres existants
+       * restent intacts.
+       */
+
+      const {
+        error: therapistUpdateError,
+      } = await supabaseAdmin
+        .from("therapists")
+        .update({
+          full_name: fullName,
+          specialty,
+        })
+        .eq(
+          "id",
+          userId,
+        );
+
+      if (therapistUpdateError) {
+        throw therapistUpdateError;
+      }
+    } else {
+      /*
+       * Pour un nouveau spécialiste,
+       * aucun tarif n'est inventé.
+       *
+       * L'administrateur devra définir le prix
+       * avant qu'une réservation soit possible.
+       */
+
+      const {
+        error: therapistInsertError,
+      } = await supabaseAdmin
+        .from("therapists")
+        .insert({
           id: userId,
           full_name: fullName,
           specialty,
           bio: "",
           price: 0,
-        },
-        {
-          onConflict: "id",
-        },
-      );
+        });
 
-    if (therapistError) {
-      throw therapistError;
+      if (therapistInsertError) {
+        throw therapistInsertError;
+      }
     }
 
     /*
-     * IMPORTANT :
-     * on met à jour LA candidature précise
-     * grâce à applicationId,
-     * et non plus toutes les candidatures
-     * partageant éventuellement le même e-mail.
-     *
-     * .select() permet aussi de vérifier
-     * qu'une ligne a réellement été modifiée.
+     * =========================================================
+     * Marquer LA candidature comme approuvée
+     * =========================================================
      */
+
     const {
       data: updatedApplication,
       error: applicationUpdateError,
@@ -312,13 +467,11 @@ export async function POST(request: Request) {
         "id",
         applicationId,
       )
-      .select(
-        `
-          id,
-          email,
-          status
-        `,
-      )
+      .select(`
+        id,
+        email,
+        status
+      `)
       .maybeSingle();
 
     if (applicationUpdateError) {
@@ -353,10 +506,11 @@ export async function POST(request: Request) {
     }
 
     /*
-    * Envoyer l'e-mail d'approbation
-    * uniquement après confirmation que
-    * la candidature est réellement approved.
-    */
+     * =========================================================
+     * E-mail d'approbation
+     * =========================================================
+     */
+
     try {
       const emailResponse =
         await fetch(
@@ -387,15 +541,15 @@ export async function POST(request: Request) {
       }
     } catch (emailError) {
       /*
-      * La candidature reste approuvée
-      * même si l'e-mail rencontre un problème.
-      */
+       * L'échec de l'e-mail ne remet
+       * pas en cause l'approbation.
+       */
+
       console.error(
         "Therapist approval email request failed:",
         emailError,
       );
     }
-
 
     console.log(
       "THERAPIST APPLICATION APPROVED:",
@@ -403,6 +557,8 @@ export async function POST(request: Request) {
         applicationId,
         email,
         userId,
+        approvedBy:
+          authData.user.id,
         status:
           updatedApplication.status,
       },
@@ -410,11 +566,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-
       applicationId,
-
       userId,
-
       status:
         updatedApplication.status,
     });

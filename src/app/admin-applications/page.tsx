@@ -205,12 +205,22 @@ export default function AdminApplicationsPage() {
     setProcessingId(application.id);
 
     try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Admin authentication is required.");
+      }
+
       const response = await fetch(
         "/api/approve-therapist",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
             applicationId: application.id,
