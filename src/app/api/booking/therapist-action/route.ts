@@ -149,14 +149,52 @@ async function getAuthenticatedTherapist(
 
   if (
     profileError ||
-    !profile ||
-    profile.role !==
-      "therapist"
+    !profile
   ) {
     return null;
   }
 
-  return user;
+  if (
+    profile.role ===
+    "therapist"
+  ) {
+    return user;
+  }
+
+  if (
+    profile.role ===
+    "admin"
+  ) {
+    const {
+      data:
+        therapistRecord,
+      error:
+        therapistError,
+    } =
+      await supabaseAdmin
+        .from(
+          "therapists",
+        )
+        .select("id")
+        .eq(
+          "id",
+          user.id,
+        )
+        .maybeSingle<{
+          id: string;
+        }>();
+
+    if (
+      therapistError ||
+      !therapistRecord
+    ) {
+      return null;
+    }
+
+    return user;
+  }
+
+  return null;
 }
 
 function getSiteUrl(

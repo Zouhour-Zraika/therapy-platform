@@ -93,6 +93,29 @@ type TherapistProfile = {
   photo_url: string | null;
 };
 
+
+type AvailabilitySlot = {
+  id: string;
+  slot_date: string | null;
+  day: string | null;
+  time: string;
+};
+
+type Booking = {
+  id: string;
+  slot_id: string | null;
+  slot_day: string;
+  slot_time: string;
+  scheduled_start: string | null;
+  price: number;
+  status: string;
+  created_at: string;
+  patient_email: string | null;
+  zoom_start_url: string | null;
+  meeting_url?: string | null;
+  meeting_provider?: string | null;
+};
+
 type TranslationFields = {
   fullName: string;
   professionalTitle: string;
@@ -173,6 +196,32 @@ export default function AdminProfilePage() {
     photoPreview,
     setPhotoPreview,
   ] = useState("");
+
+
+  const [price, setPrice] =
+    useState("");
+
+  const [slotDate, setSlotDate] =
+    useState("");
+
+  const [time, setTime] =
+    useState("");
+
+  const [slots, setSlots] =
+    useState<AvailabilitySlot[]>([]);
+
+  const [bookings, setBookings] =
+    useState<Booking[]>([]);
+
+  const [nowMs, setNowMs] =
+    useState(() => Date.now());
+
+  const [
+    bookingActionId,
+    setBookingActionId,
+  ] = useState<string | null>(
+    null,
+  );
 
   const [loading, setLoading] =
     useState(true);
@@ -278,6 +327,96 @@ export default function AdminProfilePage() {
           translationError:
             "تعذر إكمال الترجمة التلقائية.",
 
+          sessionPrice:
+            "سعر الجلسة",
+
+          priceHelp:
+            "يمكن للإدارة تعديل السعر في أي وقت. استخدم 0 لإيقاف الحجز مؤقتاً.",
+
+          priceInvalid:
+            "يرجى إدخال سعر صالح يساوي 0 أو أكثر.",
+
+          availability:
+            "المواعيد المتاحة",
+
+          addAvailability:
+            "إضافة موعد",
+
+          chooseDateTime:
+            "يرجى اختيار التاريخ والوقت.",
+
+          addAvailabilityError:
+            "تعذرت إضافة الموعد.",
+
+          noAvailability:
+            "لا توجد مواعيد متاحة.",
+
+          delete:
+            "حذف",
+
+          deleteConfirm:
+            "هل تريد حذف هذا الموعد؟",
+
+          deleteError:
+            "تعذر حذف الموعد.",
+
+          bookedSessions:
+            "الجلسات المحجوزة",
+
+          noBookings:
+            "لا توجد حجوزات مدفوعة بعد.",
+
+          priceLabel:
+            "السعر",
+
+          patientEmail:
+            "بريد المريض",
+
+          unknown:
+            "غير معروف",
+
+          status:
+            "الحالة",
+
+          created:
+            "تم الإنشاء",
+
+          startSession:
+            "بدء الجلسة",
+
+          meetingNotReady:
+            "رابط الجلسة غير جاهز",
+
+          requestReschedule:
+            "طلب تغيير الموعد",
+
+          cancelSession:
+            "إلغاء الجلسة",
+
+          rescheduleConfirm:
+            "سيتم إرسال رسالة إلى المريض لطلب اختيار موعد جديد. هل تريد المتابعة؟",
+
+          cancelSessionConfirm:
+            "سيتم إلغاء الجلسة وطلب ردّ المبلغ للمريض مع إرسال إشعار بالبريد الإلكتروني. هل تريد المتابعة؟",
+
+          actionSuccessReschedule:
+            "تم إرسال طلب تغيير الموعد إلى المريض.",
+
+          actionSuccessCancel:
+            "تم إرسال طلب إلغاء الجلسة واسترداد المبلغ.",
+
+          actionError:
+            "تعذر تنفيذ هذا الإجراء.",
+
+          sessionDate:
+            "تاريخ الجلسة",
+
+          sessionPast:
+            "جلسة سابقة",
+
+          therapistTimeZone:
+            "توقيت لبنان · Asia/Beirut",
+
           photoAlt:
             "صورة المسؤول",
         }
@@ -373,6 +512,96 @@ export default function AdminProfilePage() {
             translationError:
               "La traduction automatique n’a pas pu être terminée.",
 
+            sessionPrice:
+              "Prix de la séance",
+
+            priceHelp:
+              "L’administration peut modifier le prix à tout moment. Utilisez 0 pour suspendre temporairement les réservations.",
+
+            priceInvalid:
+              "Veuillez saisir un prix valide supérieur ou égal à 0.",
+
+            availability:
+              "Disponibilités",
+
+            addAvailability:
+              "Ajouter une disponibilité",
+
+            chooseDateTime:
+              "Veuillez choisir une date et une heure.",
+
+            addAvailabilityError:
+              "Impossible d’ajouter la disponibilité.",
+
+            noAvailability:
+              "Aucune disponibilité pour le moment.",
+
+            delete:
+              "Supprimer",
+
+            deleteConfirm:
+              "Supprimer cette disponibilité ?",
+
+            deleteError:
+              "Impossible de supprimer la disponibilité.",
+
+            bookedSessions:
+              "Séances réservées",
+
+            noBookings:
+              "Aucune réservation payée pour le moment.",
+
+            priceLabel:
+              "Prix",
+
+            patientEmail:
+              "E-mail du patient",
+
+            unknown:
+              "Inconnu",
+
+            status:
+              "Statut",
+
+            created:
+              "Créé le",
+
+            startSession:
+              "Démarrer la séance",
+
+            meetingNotReady:
+              "Lien de séance non disponible",
+
+            requestReschedule:
+              "Demander un changement",
+
+            cancelSession:
+              "Annuler la séance",
+
+            rescheduleConfirm:
+              "Le patient recevra un e-mail lui demandant de choisir un nouveau créneau. Continuer ?",
+
+            cancelSessionConfirm:
+              "La séance sera annulée, le remboursement sera demandé et le patient recevra un e-mail. Continuer ?",
+
+            actionSuccessReschedule:
+              "La demande de changement a été envoyée au patient.",
+
+            actionSuccessCancel:
+              "La demande d’annulation et de remboursement a été envoyée.",
+
+            actionError:
+              "Impossible d’effectuer cette action.",
+
+            sessionDate:
+              "Date de la séance",
+
+            sessionPast:
+              "Séance passée",
+
+            therapistTimeZone:
+              "Heure du Liban · Asia/Beirut",
+
             photoAlt:
               "Photo de l’administratrice",
           }
@@ -467,9 +696,113 @@ export default function AdminProfilePage() {
             translationError:
               "Automatic translation could not be completed.",
 
+            sessionPrice:
+              "Session Price",
+
+            priceHelp:
+              "The administrator can change the price at any time. Use 0 to temporarily pause bookings.",
+
+            priceInvalid:
+              "Please enter a valid price greater than or equal to 0.",
+
+            availability:
+              "Availability",
+
+            addAvailability:
+              "Add Availability",
+
+            chooseDateTime:
+              "Please choose a date and time.",
+
+            addAvailabilityError:
+              "Unable to add availability.",
+
+            noAvailability:
+              "No availability yet.",
+
+            delete:
+              "Delete",
+
+            deleteConfirm:
+              "Delete this availability?",
+
+            deleteError:
+              "Unable to delete the availability.",
+
+            bookedSessions:
+              "Booked Sessions",
+
+            noBookings:
+              "No paid bookings yet.",
+
+            priceLabel:
+              "Price",
+
+            patientEmail:
+              "Patient Email",
+
+            unknown:
+              "Unknown",
+
+            status:
+              "Status",
+
+            created:
+              "Created",
+
+            startSession:
+              "Start Session",
+
+            meetingNotReady:
+              "Session link not ready",
+
+            requestReschedule:
+              "Request reschedule",
+
+            cancelSession:
+              "Cancel session",
+
+            rescheduleConfirm:
+              "The patient will receive an email asking them to choose a new available slot. Continue?",
+
+            cancelSessionConfirm:
+              "The session will be cancelled, a refund will be requested, and the patient will receive an email. Continue?",
+
+            actionSuccessReschedule:
+              "The reschedule request was sent to the patient.",
+
+            actionSuccessCancel:
+              "The cancellation and refund request was sent.",
+
+            actionError:
+              "Unable to perform this action.",
+
+            sessionDate:
+              "Session date",
+
+            sessionPast:
+              "Past session",
+
+            therapistTimeZone:
+              "Lebanon time · Asia/Beirut",
+
             photoAlt:
               "Administrator photo",
           };
+
+
+  useEffect(() => {
+    void getSlots();
+    void getBookings();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     void loadProfile();
@@ -839,6 +1172,11 @@ export default function AdminProfilePage() {
             profile.photo_url ||
             "",
         );
+
+        setPrice(
+          therapist?.price?.toString() ||
+            "0",
+        );
       } catch (error) {
         console.error(
           "Admin profile load error:",
@@ -848,6 +1186,424 @@ export default function AdminProfilePage() {
         setLoading(false);
       }
     };
+
+  const getCurrentUser =
+    async () => {
+      const {
+        data: { user },
+      } =
+        await supabase.auth.getUser();
+
+      return user;
+    };
+
+  const formatDate = (
+    date: string | null,
+  ) => {
+    if (!date) {
+      return language === "ar"
+        ? "لا يوجد تاريخ"
+        : language === "fr"
+          ? "Aucune date"
+          : "No date";
+    }
+
+    return new Date(
+      `${date}T12:00:00`,
+    ).toLocaleDateString(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-US",
+      {
+        weekday: "long",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      },
+    );
+  };
+
+  const getDayFromDate = (
+    date: string,
+  ) =>
+    new Date(
+      `${date}T12:00:00`,
+    ).toLocaleDateString(
+      "en-US",
+      {
+        weekday: "long",
+      },
+    );
+
+  const getSlots =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .select("*")
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .order(
+          "slot_date",
+          {
+            ascending: true,
+          },
+        )
+        .order("time", {
+          ascending: true,
+        });
+
+      if (error) {
+        console.error(
+          "Slots error:",
+          error,
+        );
+        return;
+      }
+
+      setSlots(
+        (data as AvailabilitySlot[]) ||
+          [],
+      );
+    };
+
+  const addSlot =
+    async () => {
+      if (
+        !slotDate ||
+        !time
+      ) {
+        alert(
+          text.chooseDateTime,
+        );
+        return;
+      }
+
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .insert({
+          therapist_id:
+            user.id,
+          slot_date:
+            slotDate,
+          day:
+            getDayFromDate(
+              slotDate,
+            ),
+          time,
+          is_booked: false,
+        });
+
+      if (error) {
+        console.error(
+          "Availability creation error:",
+          error,
+        );
+        alert(
+          text.addAvailabilityError,
+        );
+        return;
+      }
+
+      setSlotDate("");
+      setTime("");
+      await getSlots();
+    };
+
+  const deleteSlot =
+    async (
+      id: string,
+    ) => {
+      const confirmed =
+        window.confirm(
+          text.deleteConfirm,
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const {
+        error,
+      } = await supabase
+        .from(
+          "availability_slots",
+        )
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error(
+          "Slot deletion error:",
+          error,
+        );
+        alert(
+          text.deleteError,
+        );
+        return;
+      }
+
+      await getSlots();
+    };
+
+  const getBookings =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .eq(
+          "status",
+          "paid",
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          },
+        );
+
+      if (error) {
+        console.error(
+          "Bookings error:",
+          error,
+        );
+        return;
+      }
+
+      setBookings(
+        (data as Booking[]) ||
+          [],
+      );
+    };
+
+  const formatBookingSessionDate = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return booking.slot_day;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      );
+
+    if (
+      Number.isNaN(
+        value.getTime(),
+      )
+    ) {
+      return booking.slot_day;
+    }
+
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(value);
+  };
+
+  const formatBookingSessionTime = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return booking.slot_time;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      );
+
+    if (
+      Number.isNaN(
+        value.getTime(),
+      )
+    ) {
+      return booking.slot_time;
+    }
+
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(value);
+  };
+
+  const isPastBooking = (
+    booking: Booking,
+  ) => {
+    if (!booking.scheduled_start) {
+      return false;
+    }
+
+    const value =
+      new Date(
+        booking.scheduled_start,
+      ).getTime();
+
+    if (Number.isNaN(value)) {
+      return false;
+    }
+
+    return value < nowMs;
+  };
+
+  const runBookingAction =
+    async (
+      booking: Booking,
+      action:
+        | "request_reschedule"
+        | "cancel_and_refund",
+    ) => {
+      const confirmation =
+        window.confirm(
+          action ===
+            "request_reschedule"
+            ? text.rescheduleConfirm
+            : text.cancelSessionConfirm,
+        );
+
+      if (!confirmation) {
+        return;
+      }
+
+      setBookingActionId(
+        booking.id,
+      );
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          window.location.href =
+            "/login";
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/booking/therapist-action",
+            {
+              method:
+                "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+              body:
+                JSON.stringify({
+                  bookingId:
+                    booking.id,
+                  action,
+                  language,
+                }),
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          alert(
+            result.error ||
+              text.actionError,
+          );
+          return;
+        }
+
+        alert(
+          action ===
+            "request_reschedule"
+            ? text.actionSuccessReschedule
+            : text.actionSuccessCancel,
+        );
+
+        await getBookings();
+        await getSlots();
+      } catch (error) {
+        console.error(
+          "Booking action error:",
+          error,
+        );
+        alert(
+          text.actionError,
+        );
+      } finally {
+        setBookingActionId(
+          null,
+        );
+      }
+    };
+
       const handlePhotoChange = (
     event: ChangeEvent<HTMLInputElement>,
   ) => {
@@ -1132,6 +1888,24 @@ export default function AdminProfilePage() {
         return;
       }
 
+
+      const parsedPrice =
+        price.trim()
+          ? Number(price)
+          : 0;
+
+      if (
+        !Number.isFinite(
+          parsedPrice,
+        ) ||
+        parsedPrice < 0
+      ) {
+        alert(
+          text.priceInvalid,
+        );
+        return;
+      }
+
       setSaving(true);
 
       try {
@@ -1304,29 +2078,6 @@ export default function AdminProfilePage() {
           language === "ar"
             ? fullName.trim()
             : arabicFields.fullName;
-
-        /*
-         * Vérifier le prix existant afin
-         * de ne pas l’écraser à chaque save.
-         */
-        const {
-          data:
-            existingTherapist,
-        } = await supabase
-          .from("therapists")
-          .select("price")
-          .eq(
-            "id",
-            user.id,
-          )
-          .maybeSingle<{
-            price:
-              number | null;
-          }>();
-
-        const existingPrice =
-          existingTherapist?.price ??
-          25;
 
         /*
          * profiles :
@@ -1509,7 +2260,7 @@ export default function AdminProfilePage() {
                 uploadedPhotoUrl,
 
               price:
-                existingPrice,
+                parsedPrice,
             },
             {
               onConflict:
@@ -1938,6 +2689,38 @@ export default function AdminProfilePage() {
                         />
                       </Field>
 
+
+                      <Field
+                        label={
+                          text.sessionPrice
+                        }
+                      >
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={
+                            price
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setPrice(
+                              event
+                                .target
+                                .value,
+                            )
+                          }
+                          className="aan-field p-4 font-normal"
+                        />
+
+                        <span className="text-sm font-normal leading-6 text-aan-secondary">
+                          {
+                            text.priceHelp
+                          }
+                        </span>
+                      </Field>
+
                       {successMessage && (
                         <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 font-semibold text-green-700">
                           {
@@ -1961,6 +2744,306 @@ export default function AdminProfilePage() {
                           : text.save}
                       </button>
                     </div>
+                  </section>
+
+                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
+                    <h2 className="aan-heading text-3xl">
+                      {
+                        text.availability
+                      }
+                    </h2>
+
+                    <div className="mt-8 space-y-4">
+                      <input
+                        type="date"
+                        value={
+                          slotDate
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setSlotDate(
+                            event
+                              .target
+                              .value,
+                          )
+                        }
+                        className="aan-field p-4"
+                      />
+
+                      <input
+                        type="time"
+                        value={
+                          time
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setTime(
+                            event
+                              .target
+                              .value,
+                          )
+                        }
+                        className="aan-field p-4"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void addSlot()
+                        }
+                        className="aan-button w-full py-4 text-lg"
+                      >
+                        {
+                          text.addAvailability
+                        }
+                      </button>
+                    </div>
+
+                    <div className="mt-8 space-y-4">
+                      {slots.length ===
+                      0 ? (
+                        <p className="text-aan-secondary">
+                          {
+                            text.noAvailability
+                          }
+                        </p>
+                      ) : (
+                        slots.map(
+                          (
+                            slot,
+                          ) => (
+                            <div
+                              key={
+                                slot.id
+                              }
+                              className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
+                            >
+                              <div>
+                                <p className="font-bold text-aan-navy">
+                                  {formatDate(
+                                    slot.slot_date,
+                                  )}
+                                </p>
+
+                                <p className="mt-1 text-aan-secondary">
+                                  {
+                                    slot.time
+                                  }
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void deleteSlot(
+                                    slot.id,
+                                  )
+                                }
+                                className="rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50"
+                              >
+                                {
+                                  text.delete
+                                }
+                              </button>
+                            </div>
+                          ),
+                        )
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
+                    <h2 className="aan-heading text-3xl">
+                      {
+                        text.bookedSessions
+                      }
+                    </h2>
+
+                    {bookings.length ===
+                    0 ? (
+                      <p className="mt-8 text-aan-secondary">
+                        {
+                          text.noBookings
+                        }
+                      </p>
+                    ) : (
+                      <div className="mt-8 grid gap-6">
+                        {bookings.map(
+                          (
+                            booking,
+                          ) => {
+                            const sessionUrl =
+                              booking.meeting_url ||
+                              booking.zoom_start_url;
+
+                            return (
+                              <article
+                                key={
+                                  booking.id
+                                }
+                                className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
+                              >
+                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                                  {
+                                    text.sessionDate
+                                  }
+                                </p>
+
+                                <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
+                                  {formatBookingSessionDate(
+                                    booking,
+                                  )}{" "}
+                                  {language ===
+                                  "fr"
+                                    ? "à"
+                                    : language ===
+                                        "ar"
+                                      ? "في"
+                                      : "at"}{" "}
+                                  {formatBookingSessionTime(
+                                    booking,
+                                  )}
+                                </h3>
+
+                                <p className="mt-1 text-sm font-semibold text-aan-secondary">
+                                  {
+                                    text.therapistTimeZone
+                                  }
+                                </p>
+
+                                <p className="mt-4 text-aan-secondary">
+                                  {
+                                    text.priceLabel
+                                  }
+                                  : $
+                                  {
+                                    booking.price
+                                  }
+                                </p>
+
+                                <p className="mt-2 break-words text-aan-secondary">
+                                  {
+                                    text.patientEmail
+                                  }
+                                  :{" "}
+                                  <span className="font-semibold text-aan-navy">
+                                    {booking.patient_email ||
+                                      text.unknown}
+                                  </span>
+                                </p>
+
+                                <p className="mt-2 font-bold text-green-700">
+                                  {
+                                    text.status
+                                  }
+                                  :{" "}
+                                  {
+                                    booking.status
+                                  }
+                                </p>
+
+                                <p className="mt-2 text-sm text-aan-secondary">
+                                  {
+                                    text.created
+                                  }
+                                  :{" "}
+                                  {new Date(
+                                    booking.created_at,
+                                  ).toLocaleString(
+                                    language ===
+                                    "ar"
+                                      ? "ar-LB"
+                                      : language ===
+                                          "fr"
+                                        ? "fr-FR"
+                                        : "en-US",
+                                  )}
+                                </p>
+
+                                {isPastBooking(
+                                  booking,
+                                ) ? (
+                                  <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
+                                    {
+                                      text.sessionPast
+                                    }
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void runBookingAction(
+                                            booking,
+                                            "request_reschedule",
+                                          )
+                                        }
+                                        disabled={
+                                          bookingActionId ===
+                                          booking.id
+                                        }
+                                        className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {
+                                          text.requestReschedule
+                                        }
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void runBookingAction(
+                                            booking,
+                                            "cancel_and_refund",
+                                          )
+                                        }
+                                        disabled={
+                                          bookingActionId ===
+                                          booking.id
+                                        }
+                                        className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {
+                                          text.cancelSession
+                                        }
+                                      </button>
+                                    </div>
+
+                                    {sessionUrl ? (
+                                      <a
+                                        href={
+                                          sessionUrl
+                                        }
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="aan-button mt-3 flex w-full py-3"
+                                      >
+                                        {
+                                          text.startSession
+                                        }
+                                      </a>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
+                                      >
+                                        {
+                                          text.meetingNotReady
+                                        }
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </article>
+                            );
+                          },
+                        )}
+                      </div>
+                    )}
                   </section>
                 </div>
               )}
