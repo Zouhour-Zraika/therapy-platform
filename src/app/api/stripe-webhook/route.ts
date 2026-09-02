@@ -22,6 +22,10 @@ type BookingRecord = {
 
   price: number;
 
+  patient_id:
+    | string
+    | null;
+
   patient_email:
     | string
     | null;
@@ -65,6 +69,20 @@ type BookingRecord = {
   payment_transaction_id:
     | string
     | null;
+};
+
+type TherapistAssignmentInfo = {
+  id: string;
+  care_domain:
+    | string
+    | null;
+};
+
+type ActiveAssignment = {
+  id: string;
+  therapist_id: string;
+  care_domain: string;
+  status: string;
 };
 
 export async function POST(
@@ -308,6 +326,7 @@ export async function POST(
      * Récupérer LA réservation depuis Supabase.
      *
      * Supabase devient la source de vérité :
+     * - patient
      * - prix
      * - thérapeute
      * - horaire
@@ -328,6 +347,7 @@ export async function POST(
             id,
             status,
             price,
+            patient_id,
             patient_email,
             therapist_id,
             therapist_name,
@@ -518,7 +538,8 @@ export async function POST(
     if (paymentError) {
       throw paymentError;
     }
-        /*
+
+    /*
      * =======================================================
      * Mettre la réservation à PAID
      * =======================================================
@@ -558,6 +579,7 @@ export async function POST(
             id,
             status,
             price,
+            patient_id,
             patient_email,
             therapist_id,
             therapist_name,
@@ -591,6 +613,275 @@ export async function POST(
     ) {
       throw new Error(
         "Booking was not marked as paid.",
+      );
+    }
+
+    /*
+     * =======================================================
+     * Créer / conserver le suivi clinique actif.
+     *
+     * Règle :
+     * un patient ne peut avoir qu'un spécialiste actif
+     * par care_domain.
+     *
+     * Cette opération est idempotente :
+     * - si l'assignment existe déjà avec ce spécialiste,
+     *   on ne crée rien ;
+     * - sinon, on crée l'assignment actif.
+     *
+     * La protection principale contre le changement
+     * de spécialiste se trouve aussi dans
+     * /api/booking/hold.
+     * =======================================================
+     */
+
+    if (
+      updatedBooking.patient_id &&
+      updatedBooking.therapist_id
+    ) {
+      const {
+        data:
+          therapistInfo,
+        error:
+          therapistInfoError,
+      } =
+        await supabaseAdmin
+          .from("therapists")
+          .select(
+            `
+              id,
+              care_domain
+            `,
+          )
+          .eq(
+            "id",
+            updatedBooking
+              .therapist_id,
+          )
+          .maybeSingle<TherapistAssignmentInfo>();
+
+      if (
+        therapistInfoError
+      ) {
+        throw therapistInfoError;
+      }
+
+      const careDomain =
+        therapistInfo
+          ?.care_domain
+          ?.trim() ||
+        null;
+
+      if (careDomain) {
+        const {
+          data:
+            activeAssignment,
+          error:
+            assignmentReadError,
+        } =
+          await supabaseAdmin
+            .from(
+              "patient_therapist_assignments",
+            )
+            .select(
+              `
+                id,
+                therapist_id,
+                care_domain,
+                status
+              `,
+            )
+            .eq(
+              "patient_id",
+              updatedBooking
+                .patient_id,
+            )
+            .eq(
+              "care_domain",
+              careDomain,
+            )
+            .eq(
+              "status",
+              "active",
+            )
+            .limit(1)
+            .maybeSingle<ActiveAssignment>();
+
+        if (
+          assignmentReadError
+        ) {
+          throw assignmentReadError;
+        }
+
+        if (
+          !activeAssignment
+        ) {
+          const {
+            error:
+              assignmentInsertError,
+          } =
+            await supabaseAdmin
+              .from(
+                "patient_therapist_assignments",
+              )
+              .insert({
+                patient_id:
+                  updatedBooking
+                    .patient_id,
+
+                therapist_id:
+                  updatedBooking
+                    .therapist_id,
+
+                care_domain:
+                  careDomain,
+
+                status:
+                  "active",
+              });
+
+          if (
+            assignmentInsertError
+          ) {
+            /*
+             * Un webhook Stripe peut être reçu plusieurs fois
+             * ou deux traitements peuvent se croiser.
+             *
+             * On relit alors l'assignment actif avant de
+             * considérer cela comme une vraie erreur.
+             */
+            const {
+              data:
+                assignmentAfterInsert,
+              error:
+                assignmentAfterInsertError,
+            } =
+              await supabaseAdmin
+                .from(
+                  "patient_therapist_assignments",
+                )
+                .select(
+                  `
+                    id,
+                    therapist_id,
+                    care_domain,
+                    status
+                  `,
+                )
+                .eq(
+                  "patient_id",
+                  updatedBooking
+                    .patient_id,
+                )
+                .eq(
+                  "care_domain",
+                  careDomain,
+                )
+                .eq(
+                  "status",
+                  "active",
+                )
+                .limit(1)
+                .maybeSingle<ActiveAssignment>();
+
+            if (
+              assignmentAfterInsertError ||
+              !assignmentAfterInsert
+            ) {
+              throw assignmentInsertError;
+            }
+
+            if (
+              assignmentAfterInsert
+                .therapist_id !==
+              updatedBooking
+                .therapist_id
+            ) {
+              console.error(
+                "CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:",
+                {
+                  bookingId,
+
+                  patientId:
+                    updatedBooking
+                      .patient_id,
+
+                  paidTherapistId:
+                    updatedBooking
+                      .therapist_id,
+
+                  activeTherapistId:
+                    assignmentAfterInsert
+                      .therapist_id,
+
+                  careDomain,
+                },
+              );
+            }
+          }
+        } else if (
+          activeAssignment
+            .therapist_id !==
+          updatedBooking
+            .therapist_id
+        ) {
+          /*
+           * Ce cas ne devrait normalement jamais arriver,
+           * car /api/booking/hold bloque le changement avant
+           * Stripe. On logue fortement le conflit sans
+           * annuler rétroactivement un paiement déjà réussi.
+           */
+          console.error(
+            "CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:",
+            {
+              bookingId,
+
+              patientId:
+                updatedBooking
+                  .patient_id,
+
+              paidTherapistId:
+                updatedBooking
+                  .therapist_id,
+
+              activeTherapistId:
+                activeAssignment
+                  .therapist_id,
+
+              careDomain,
+            },
+          );
+        }
+      } else {
+        /*
+         * Tant que care_domain n'est pas défini pour ce
+         * spécialiste, aucun verrou de domaine n'est créé.
+         */
+        console.warn(
+          "Therapist care_domain is missing; clinical assignment was not created:",
+          {
+            bookingId,
+
+            therapistId:
+              updatedBooking
+                .therapist_id,
+          },
+        );
+      }
+    } else {
+      console.warn(
+        "Booking patient_id or therapist_id is missing; clinical assignment was not created:",
+        {
+          bookingId,
+
+          patientId:
+            updatedBooking
+              .patient_id,
+
+          therapistId:
+            updatedBooking
+              .therapist_id,
+        },
       );
     }
 
@@ -747,6 +1038,10 @@ export async function POST(
       "STRIPE PAYMENT CONFIRMED:",
       {
         bookingId,
+
+        patientId:
+          updatedBooking
+            .patient_id,
 
         therapistId:
           updatedBooking

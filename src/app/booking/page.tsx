@@ -33,6 +33,18 @@ type Therapist = {
   bio_ar?: string | null;
 };
 
+type TherapistService = {
+  id: string;
+  therapist_id: string;
+  service_type: "individual" | "couples" | "family" | "group";
+  price: number;
+  duration_minutes: number;
+  price_per_participant: boolean;
+  min_participants: number | null;
+  max_participants: number | null;
+  is_active: boolean;
+};
+
 type Slot = {
   id: string;
   slot_date: string | null;
@@ -203,6 +215,9 @@ function BookingContent() {
   const directSlotId =
     searchParams.get("slotId");
 
+  const directServiceId =
+    searchParams.get("serviceId");
+
   const supportFromUrl =
     searchParams.get("support");
 
@@ -223,6 +238,12 @@ function BookingContent() {
 
   const [therapists, setTherapists] =
     useState<Therapist[]>([]);
+
+  const [therapistServices, setTherapistServices] =
+    useState<TherapistService[]>([]);
+
+  const [selectedService, setSelectedService] =
+    useState<TherapistService | null>(null);
 
   const [allSlots, setAllSlots] =
     useState<Slot[]>([]);
@@ -332,6 +353,10 @@ function BookingContent() {
           data: slotData,
           error: slotError,
         },
+        {
+          data: serviceData,
+          error: serviceError,
+        },
       ] = await Promise.all([
         supabase
           .from("therapists")
@@ -349,11 +374,18 @@ function BookingContent() {
           .order("time", {
             ascending: true,
           }),
+
+        supabase
+          .from("therapist_services")
+          .select("id, therapist_id, service_type, price, duration_minutes, price_per_participant, min_participants, max_participants, is_active")
+          .eq("is_active", true)
+          .order("service_type"),
       ]);
 
       if (
         therapistError ||
-        slotError
+        slotError ||
+        serviceError
       ) {
         console.error(
           "Therapists error:",
@@ -363,6 +395,11 @@ function BookingContent() {
         console.error(
           "Slots error:",
           slotError,
+        );
+
+        console.error(
+          "Services error:",
+          serviceError,
         );
 
         setDataError(
@@ -376,6 +413,9 @@ function BookingContent() {
       const loadedTherapists =
         (therapistData || []) as Therapist[];
 
+      const loadedServices =
+        (serviceData || []) as TherapistService[];
+
       const loadedSlots =
         ((slotData || []) as Slot[]).filter(
           (slot) =>
@@ -387,6 +427,10 @@ function BookingContent() {
 
       setTherapists(
         loadedTherapists,
+      );
+
+      setTherapistServices(
+        loadedServices,
       );
 
       setAllSlots(
@@ -412,7 +456,7 @@ function BookingContent() {
           error: existingBookingError,
         } = await supabase
           .from("bookings")
-          .select("id, patient_id, therapist_id, status, scheduled_start")
+          .select("id, patient_id, therapist_id, status, scheduled_start, therapist_service_id, service_type, duration_minutes")
           .eq("id", rescheduleBookingId)
           .eq("patient_id", user.id)
           .eq("status", "paid")
@@ -422,6 +466,9 @@ function BookingContent() {
             therapist_id: string;
             status: string;
             scheduled_start: string | null;
+            therapist_service_id: string | null;
+            service_type: string | null;
+            duration_minutes: number | null;
           }>();
 
         if (
@@ -515,6 +562,14 @@ function BookingContent() {
         setSelectedTherapist(
           rescheduleTherapist,
         );
+
+        const rescheduleService =
+          loadedServices.find(
+            (service) =>
+              service.id === existingBooking.therapist_service_id,
+          ) || null;
+
+        setSelectedService(rescheduleService);
         setSelectedSlot(null);
         setStep(4);
       } else if (directTherapistId) {
@@ -529,6 +584,16 @@ function BookingContent() {
           setSelectedTherapist(
             directTherapist,
           );
+          const directService =
+            directServiceId
+              ? loadedServices.find(
+                  (service) =>
+                    service.id === directServiceId &&
+                    service.therapist_id === directTherapist.id,
+                ) || null
+              : null;
+
+          setSelectedService(directService);
 
           setStep(4);
 
@@ -556,6 +621,7 @@ function BookingContent() {
   }, [
     directTherapistId,
     directSlotId,
+    directServiceId,
     rescheduleBookingId,
     language,
     t,
@@ -1373,6 +1439,61 @@ function BookingContent() {
       availabilityPreference,
     ]);
 
+  const selectedTherapistServices =
+    useMemo(() => {
+      if (!selectedTherapist) {
+        return [];
+      }
+
+      const order = [
+        "individual",
+        "couples",
+        "family",
+        "group",
+      ];
+
+      return therapistServices
+        .filter(
+          (service) =>
+            service.therapist_id === selectedTherapist.id &&
+            service.is_active,
+        )
+        .sort(
+          (a, b) =>
+            order.indexOf(a.service_type) -
+            order.indexOf(b.service_type),
+        );
+    }, [therapistServices, selectedTherapist]);
+
+  const getServiceLabel = (
+    serviceType: TherapistService["service_type"],
+  ) => {
+    const labels = {
+      individual: {
+        fr: "Individuelle",
+        en: "Individual",
+        ar: "فردية",
+      },
+      couples: {
+        fr: "Couple",
+        en: "Couples",
+        ar: "زوجية",
+      },
+      family: {
+        fr: "Famille",
+        en: "Family",
+        ar: "عائلية",
+      },
+      group: {
+        fr: "Groupe",
+        en: "Group",
+        ar: "جماعية",
+      },
+    };
+
+    return labels[serviceType][language];
+  };
+
   const selectedTherapistSlots =
     useMemo(() => {
       if (!selectedTherapist) {
@@ -1518,6 +1639,7 @@ function BookingContent() {
       therapist,
     );
 
+    setSelectedService(null);
     setSelectedSlot(null);
 
     window.setTimeout(() => {
@@ -1535,6 +1657,7 @@ function BookingContent() {
       if (
         !selectedSlot ||
         !selectedTherapist ||
+        (!rescheduleBookingId && !selectedService) ||
         bookingLoading
       ) {
         return;
@@ -1606,13 +1729,16 @@ function BookingContent() {
               slotId:
                 selectedSlot.id,
 
+              serviceId:
+                selectedService?.id || null,
+
               returnUrl,
             }),
           );
 
           window.location.href =
             `/login?redirect=${encodeURIComponent(
-              `/booking?therapistId=${selectedTherapist.id}&slotId=${selectedSlot.id}`,
+              `/booking?therapistId=${selectedTherapist.id}&slotId=${selectedSlot.id}${selectedService ? `&serviceId=${selectedService.id}` : ""}`,
             )}`;
 
           return;
@@ -1758,6 +1884,9 @@ function BookingContent() {
                   therapistId:
                     selectedTherapist.id,
 
+                  serviceId:
+                    selectedService!.id,
+
                   slotId:
                     selectedSlot.id,
 
@@ -1776,25 +1905,29 @@ function BookingContent() {
           );
 
           if (
-            response.status ===
-            409
+            response.status === 409 &&
+            result.code === "ACTIVE_SPECIALIST_CONFLICT"
           ) {
+            alert(
+              result.error ||
+                (language === "ar"
+                  ? "لديك بالفعل مختص نشط في هذا المجال. لتغيير المختص، يرجى التواصل مع AAN."
+                  : language === "fr"
+                    ? "Vous êtes déjà suivi(e) par un spécialiste dans ce domaine. Pour changer de spécialiste, contactez AAN."
+                    : "You already have an active specialist in this area. To change specialist, please contact AAN."),
+            );
+            return;
+          }
+
+          if (response.status === 409) {
             setAllSlots(
-              (
-                current,
-              ) =>
+              (current) =>
                 current.filter(
-                  (
-                    slot,
-                  ) =>
-                    slot.id !==
-                    selectedSlot.id,
+                  (slot) => slot.id !== selectedSlot.id,
                 ),
             );
 
-            setSelectedSlot(
-              null,
-            );
+            setSelectedSlot(null);
 
             alert(
               language === "ar"
@@ -1857,6 +1990,7 @@ function BookingContent() {
           Number(
             result.price ??
               result.booking?.price ??
+              selectedService?.price ??
               selectedTherapist.price,
           );
 
@@ -2344,16 +2478,27 @@ function BookingContent() {
 
                                   <div className="mt-auto flex items-end justify-between gap-4 pt-6">
                                     <p className="text-xl font-bold">
-                                      $
-                                      {
-                                        therapist.price
-                                      }
+                                      {(() => {
+                                        const prices = therapistServices
+                                          .filter(
+                                            (service) =>
+                                              service.therapist_id === therapist.id &&
+                                              service.is_active,
+                                          )
+                                          .map((service) => Number(service.price));
 
-                                      <span className="text-sm font-normal text-[#69747a]">
-                                        {t(
-                                          "booking.sessionPriceSuffix",
-                                        )}
-                                      </span>
+                                        if (prices.length === 0) {
+                                          return null;
+                                        }
+
+                                        const minimumPrice = Math.min(...prices);
+
+                                        return language === "ar"
+                                          ? `ابتداءً من $${minimumPrice}`
+                                          : language === "fr"
+                                            ? `À partir de $${minimumPrice}`
+                                            : `From $${minimumPrice}`;
+                                      })()}
                                     </p>
 
                                     <button
@@ -2444,6 +2589,8 @@ function BookingContent() {
                                 null,
                               );
 
+                              setSelectedService(null);
+
                               setSelectedSlot(
                                 null,
                               );
@@ -2475,6 +2622,72 @@ function BookingContent() {
                             "booking.session.description",
                           )}
                         </p>
+
+                        {!rescheduleBookingId && (
+                          <div className="mt-7 rounded-2xl border border-[#dfd5c5] bg-[#faf7f2] p-5 sm:p-6">
+                            <p className="text-sm font-bold text-[#223748]">
+                              {language === "ar"
+                                ? "نوع الجلسة"
+                                : language === "fr"
+                                  ? "Type de consultation"
+                                  : "Consultation type"}
+                            </p>
+
+                            {selectedTherapistServices.length === 0 ? (
+                              <p className="mt-3 text-sm text-[#69747a]">
+                                {language === "ar"
+                                  ? "لا توجد أنواع جلسات متاحة حالياً لهذا المختص."
+                                  : language === "fr"
+                                    ? "Aucun type de consultation n’est actuellement disponible pour ce spécialiste."
+                                    : "No consultation type is currently available for this specialist."}
+                              </p>
+                            ) : (
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                {selectedTherapistServices.map((service) => {
+                                  const selected = selectedService?.id === service.id;
+
+                                  return (
+                                    <button
+                                      key={service.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedService(service);
+                                        setSelectedSlot(null);
+                                      }}
+                                      className={`rounded-2xl border p-4 text-start transition ${
+                                        selected
+                                          ? "border-[#415a72] bg-[#eef2f5] shadow-sm"
+                                          : "border-[#e3dbcf] bg-white hover:border-[#b39668]"
+                                      }`}
+                                    >
+                                      <span className="block font-bold text-[#223748]">
+                                        {getServiceLabel(service.service_type)}
+                                      </span>
+                                      <span className="mt-2 block text-sm text-[#69747a]">
+                                        ${Number(service.price)} · {service.duration_minutes} min
+                                        {service.price_per_participant
+                                          ? language === "ar"
+                                            ? " / للمشارك"
+                                            : language === "fr"
+                                              ? " / participant"
+                                              : " / participant"
+                                          : ""}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <p className="mt-4 text-sm leading-6 text-[#69747a]">
+                              {language === "ar"
+                                ? "إذا لم تكن تعرف نوع الاستشارة المناسب، اختر «فردية» أو تواصل مع AAN لتوجيهك."
+                                : language === "fr"
+                                  ? "Vous ne savez pas quel type de consultation choisir ? Choisissez « Individuelle » ou contactez AAN pour être orienté(e)."
+                                  : "Not sure which consultation type to choose? Choose “Individual” or contact AAN for guidance."}
+                            </p>
+                          </div>
+                        )}
 
                         {timeZoneReady && (
                           <div className="mt-6 rounded-2xl border border-[#dfd5c5] bg-[#faf7f2] p-5 sm:p-6">
@@ -2553,7 +2766,17 @@ function BookingContent() {
                           </div>
                         )}
 
-                        {selectedTherapistSlots.length ===
+                        {!rescheduleBookingId && !selectedService ? (
+                          <div className="mt-8 rounded-2xl border border-dashed border-[#d8cebf] bg-[#faf7f2] p-8 text-center">
+                            <p className="text-[#69747a]">
+                              {language === "ar"
+                                ? "اختر نوع الجلسة أولاً لعرض المواعيد المتاحة."
+                                : language === "fr"
+                                  ? "Choisissez d’abord le type de consultation pour afficher les créneaux disponibles."
+                                  : "Choose the consultation type first to see available times."}
+                            </p>
+                          </div>
+                        ) : selectedTherapistSlots.length ===
                         0 ? (
                           <div className="mt-8 rounded-2xl border border-dashed border-[#d8cebf] bg-[#faf7f2] p-8 text-center">
                             <p className="text-[#69747a]">
@@ -2661,11 +2884,17 @@ function BookingContent() {
                                     {start &&
                                       end && (
                                         <p className="mt-4 text-xs leading-5 text-[#7a858b]">
-                                          {language === "ar"
-                                            ? "مدة الجلسة: حتى ساعتين"
-                                            : language === "fr"
-                                              ? "Durée de la séance : jusqu’à 2 heures"
-                                              : "Session duration: up to 2 hours"}
+                                          {selectedService
+                                            ? language === "ar"
+                                              ? `مدة الجلسة: ${selectedService.duration_minutes} دقيقة`
+                                              : language === "fr"
+                                                ? `Durée de la séance : ${selectedService.duration_minutes} min`
+                                                : `Session duration: ${selectedService.duration_minutes} min`
+                                            : language === "ar"
+                                              ? "مدة الجلسة حسب الحجز الحالي"
+                                              : language === "fr"
+                                                ? "Durée de la séance selon la réservation actuelle"
+                                                : "Session duration according to the current booking"}
                                         </p>
                                       )}
                                   </button>
@@ -2698,6 +2927,22 @@ function BookingContent() {
                                 )}
                               </p>
                             </div>
+
+                            {selectedService && (
+                              <div>
+                                <p className="text-sm text-[#7a858b]">
+                                  {language === "ar"
+                                    ? "نوع الجلسة"
+                                    : language === "fr"
+                                      ? "Consultation"
+                                      : "Consultation"}
+                                </p>
+
+                                <p className="mt-1 font-bold text-[#223748]">
+                                  {getServiceLabel(selectedService.service_type)}
+                                </p>
+                              </div>
+                            )}
 
                             <div>
                               <p className="text-sm text-[#7a858b]">
@@ -2762,7 +3007,7 @@ function BookingContent() {
                               <p className="mt-1 font-bold text-[#223748]">
                                 $
                                 {
-                                  selectedTherapist.price
+                                  selectedService?.price ?? selectedTherapist.price
                                 }
                               </p>
                             </div>
@@ -2777,10 +3022,10 @@ function BookingContent() {
                                     ? "Ce créneau remplacera votre rendez-vous actuel avec le même spécialiste. Votre paiement reste valable et aucun nouveau paiement ne sera demandé."
                                     : "This time will replace your current appointment with the same specialist. Your existing payment remains valid and no new payment will be required."
                                 : language === "ar"
-                                  ? "عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد. مدة الجلسة نفسها قد تصل إلى ساعتين."
+                                  ? `عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد.${selectedService ? ` مدة هذه الجلسة ${selectedService.duration_minutes} دقيقة.` : ""}`
                                   : language === "fr"
-                                    ? "En continuant vers le paiement, ce créneau vous sera réservé temporairement pendant 10 minutes. Sans paiement dans ce délai, il redeviendra disponible. La séance elle-même peut durer jusqu’à deux heures."
-                                    : "When you continue to payment, this slot will be held for you for 10 minutes. If payment is not completed in that time, the slot will become available again. The session itself may last up to two hours."}
+                                    ? `En continuant vers le paiement, ce créneau vous sera réservé temporairement pendant 10 minutes. Sans paiement dans ce délai, il redeviendra disponible.${selectedService ? ` La durée de cette consultation est de ${selectedService.duration_minutes} minutes.` : ""}`
+                                    : `When you continue to payment, this slot will be held for you for 10 minutes. If payment is not completed in that time, the slot will become available again.${selectedService ? ` This consultation lasts ${selectedService.duration_minutes} minutes.` : ""}`}
                             </p>
                           </div>
 
@@ -2790,7 +3035,8 @@ function BookingContent() {
                               void confirmBooking()
                             }
                             disabled={
-                              bookingLoading
+                              bookingLoading ||
+                              (!rescheduleBookingId && !selectedService)
                             }
                             className="mt-7 w-full rounded-2xl bg-[#415a72] px-6 py-4 text-lg font-bold text-white transition hover:bg-[#32495f] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                           >

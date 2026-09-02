@@ -1,3 +1,4 @@
+
 import {
   createClient,
 } from "@supabase/supabase-js";
@@ -10,28 +11,74 @@ export const runtime =
   "nodejs";
 
 const HOLD_MINUTES = 10;
-const TIME_ZONE = "Asia/Beirut";
+const TIME_ZONE =
+  "Asia/Beirut";
 
 type SlotRow = {
   id: string;
-  therapist_id: string | null;
+  therapist_id:
+    | string
+    | null;
   day: string | null;
   time: string | null;
-  slot_date: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
-  is_booked: boolean | null;
+  slot_date:
+    | string
+    | null;
+  starts_at:
+    | string
+    | null;
+  ends_at:
+    | string
+    | null;
+  is_booked:
+    | boolean
+    | null;
 };
 
 type TherapistRow = {
   id: string;
-  full_name: string | null;
-  price: number | null;
+  full_name:
+    | string
+    | null;
+  /*
+   * Domaine clinique interne utilisé
+   * pour empêcher qu'un patient soit
+   * suivi simultanément par deux
+   * spécialistes du même domaine.
+   *
+   * Exemples :
+   * psychotherapy
+   * psychology
+   * psychiatry
+   */
+  care_domain:
+    | string
+    | null;
+
   work_status:
     | "active"
     | "leaving"
     | "inactive"
     | null;
+};
+
+type TherapistServiceRow = {
+  id: string;
+  therapist_id: string;
+  service_type: string;
+  price: number;
+  duration_minutes: number;
+  price_per_participant: boolean;
+  min_participants: number | null;
+  max_participants: number | null;
+  is_active: boolean;
+};
+
+type ActiveAssignmentRow = {
+  id: string;
+  therapist_id: string;
+  care_domain: string;
+  status: string;
 };
 
 function createSupabaseAdmin() {
@@ -475,9 +522,6 @@ async function cleanupExpiredHolds(
   ) {
     /*
      * On supprime d'abord le pending expiré.
-     * La condition status=pending évite de
-     * supprimer une réservation qui aurait été
-     * confirmée entre-temps par le webhook.
      */
     const {
       data:
@@ -514,10 +558,6 @@ async function cleanupExpiredHolds(
       continue;
     }
 
-    /*
-     * Si le booking n'a pas été supprimé,
-     * il a probablement changé de statut.
-     */
     if (
       !deletedBooking ||
       !deletedBooking.slot_id
@@ -526,8 +566,7 @@ async function cleanupExpiredHolds(
     }
 
     /*
-     * Vérification de sécurité :
-     * ne jamais libérer un slot s'il existe
+     * Ne jamais libérer un slot s'il existe
      * maintenant une réservation payée dessus.
      */
     const {
@@ -641,14 +680,21 @@ export async function POST(
           "",
       ).trim();
 
+    const serviceId =
+      String(
+        body.serviceId ||
+          "",
+      ).trim();
+
     if (
       !therapistId ||
-      !slotId
+      !slotId ||
+      !serviceId
     ) {
       return NextResponse.json(
         {
           error:
-            "Specialist and slot are required.",
+            "Specialist, service and slot are required.",
         },
         {
           status: 400,
@@ -666,7 +712,9 @@ export async function POST(
 
     /*
      * 4. Vérifier le spécialiste.
-     * Le prix est relu côté serveur.
+     *
+     * Le prix et le domaine clinique
+     * sont toujours relus côté serveur.
      */
     const {
       data: therapist,
@@ -678,7 +726,7 @@ export async function POST(
         `
           id,
           full_name,
-          price,
+          care_domain,
           work_status
         `,
       )
@@ -719,30 +767,147 @@ export async function POST(
       );
     }
 
-    const price =
-      Number(
-        therapist.price,
+    /*
+     * 5. Vérifier le service choisi.
+     *
+     * Le navigateur envoie uniquement serviceId.
+     * Le prix et la durée sont toujours relus côté serveur
+     * depuis therapist_services.
+     */
+    const {
+      data: service,
+      error: serviceError,
+    } = await supabaseAdmin
+      .from("therapist_services")
+      .select(`
+        id,
+        therapist_id,
+        service_type,
+        price,
+        duration_minutes,
+        price_per_participant,
+        min_participants,
+        max_participants,
+        is_active
+      `)
+      .eq("id", serviceId)
+      .eq("therapist_id", therapist.id)
+      .eq("is_active", true)
+      .maybeSingle<TherapistServiceRow>();
+
+    if (serviceError) {
+      throw serviceError;
+    }
+
+    if (!service) {
+      return NextResponse.json(
+        {
+          error: "The selected service is not available for this specialist.",
+          code: "SERVICE_UNAVAILABLE",
+        },
+        { status: 404 },
       );
+    }
+
+    const price = Number(service.price);
+    const durationMinutes = Number(service.duration_minutes);
 
     if (
-      !Number.isFinite(
-        price,
-      ) ||
-      price <= 0
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isInteger(durationMinutes) ||
+      durationMinutes <= 0
     ) {
       return NextResponse.json(
         {
-          error:
-            "The session price is currently unavailable.",
+          error: "The selected service has an invalid price or duration.",
+          code: "INVALID_SERVICE_CONFIGURATION",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
     /*
-     * 5. Vérifier le créneau.
+     * 6. Protection du suivi clinique.
+     *
+     * Un patient peut continuer à réserver
+     * avec son spécialiste actuel.
+     *
+     * En revanche, s'il est déjà suivi
+     * activement par un AUTRE spécialiste
+     * appartenant au même care_domain,
+     * le changement doit passer par AAN.
+     */
+    const careDomain =
+      therapist.care_domain
+        ?.trim() ||
+      null;
+
+    if (careDomain) {
+      const {
+        data:
+          activeAssignment,
+        error:
+          assignmentError,
+      } = await supabaseAdmin
+        .from(
+          "patient_therapist_assignments",
+        )
+        .select(
+          `
+            id,
+            therapist_id,
+            care_domain,
+            status
+          `,
+        )
+        .eq(
+          "patient_id",
+          user.id,
+        )
+        .eq(
+          "care_domain",
+          careDomain,
+        )
+        .eq(
+          "status",
+          "active",
+        )
+        .limit(1)
+        .maybeSingle<ActiveAssignmentRow>();
+
+      if (
+        assignmentError
+      ) {
+        throw assignmentError;
+      }
+
+      /*
+       * Même domaine + autre spécialiste :
+       * réservation interdite.
+       */
+      if (
+        activeAssignment &&
+        activeAssignment
+          .therapist_id !==
+          therapist.id
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Vous êtes déjà suivi(e) par un spécialiste dans ce domaine. Pour changer de spécialiste, veuillez contacter la clinique AAN.",
+            code:
+              "ACTIVE_SPECIALIST_CONFLICT",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+    }
+
+    /*
+     * 7. Vérifier le créneau.
      */
     const {
       data: slot,
@@ -806,12 +971,13 @@ export async function POST(
     }
 
     /*
-     * 6. Calculer la vraie date/heure.
+     * 8. Calculer la vraie date/heure.
      *
-     * Important : certains anciens créneaux
-     * ont starts_at = NULL. On reconstruit alors
-     * la date avec slot_date + time en heure de
-     * Beyrouth.
+     * Certains anciens créneaux ont
+     * starts_at = NULL.
+     *
+     * On reconstruit alors la date avec
+     * slot_date + time en heure de Beyrouth.
      */
     const scheduledStart =
       buildScheduledStart(
@@ -831,9 +997,8 @@ export async function POST(
     }
 
     /*
-     * Un créneau passé ne doit jamais être
-     * réservable, même si quelqu'un appelle
-     * directement cette API avec son ID.
+     * Un créneau passé ne doit jamais
+     * être réservable.
      */
     if (
       scheduledStart.getTime() <=
@@ -851,18 +1016,17 @@ export async function POST(
     }
 
     const scheduledEnd =
-      buildScheduledEnd(
-        slot,
-        scheduledStart,
+      new Date(
+        scheduledStart.getTime() +
+          durationMinutes * 60 * 1000,
       );
 
     /*
-     * 7. Claim du slot.
+     * 9. Claim du slot.
      *
-     * On ne claim que si le slot est toujours
-     * libre au moment exact de l'UPDATE.
-     * Cela empêche deux patients de réserver
-     * simultanément le même créneau.
+     * On ne claim que si le slot est
+     * toujours libre au moment exact
+     * de l'UPDATE.
      */
     const {
       data:
@@ -916,7 +1080,7 @@ export async function POST(
       claimedSlot.id;
 
     /*
-     * 8. Hold de 10 minutes.
+     * 10. Hold de 10 minutes.
      */
     const holdExpiresAt =
       new Date(
@@ -927,11 +1091,18 @@ export async function POST(
       );
 
     /*
-     * 9. Créer la réservation temporaire.
+     * 11. Créer la réservation temporaire.
      *
-     * Le statut reste pending jusqu'à ce que
-     * le webhook Stripe confirme réellement
-     * le paiement.
+     * IMPORTANT :
+     * patient_therapist_assignments n'est
+     * PAS créé ici.
+     *
+     * Le patient n'est considéré comme
+     * réellement suivi qu'après confirmation
+     * du paiement Stripe.
+     *
+     * La création de l'assignment sera donc
+     * effectuée dans stripe-webhook.
      */
     const {
       data: booking,
@@ -968,6 +1139,15 @@ export async function POST(
         scheduled_end:
           scheduledEnd.toISOString(),
 
+        therapist_service_id:
+          service.id,
+
+        service_type:
+          service.service_type,
+
+        duration_minutes:
+          durationMinutes,
+
         price,
 
         status:
@@ -984,6 +1164,9 @@ export async function POST(
           slot_time,
           scheduled_start,
           scheduled_end,
+          therapist_service_id,
+          service_type,
+          duration_minutes,
           price,
           status,
           hold_expires_at
@@ -1025,7 +1208,15 @@ export async function POST(
     }
 
     /*
-     * 10. Succès.
+     * Le booking existe désormais.
+     * On ne veut plus que le catch général
+     * libère le slot.
+     */
+    claimedSlotId =
+      null;
+
+    /*
+     * 12. Succès.
      */
     return NextResponse.json({
       success:
@@ -1045,6 +1236,15 @@ export async function POST(
           booking.price,
         ),
 
+      serviceId:
+        booking.therapist_service_id,
+
+      serviceType:
+        booking.service_type,
+
+      durationMinutes:
+        booking.duration_minutes,
+
       slotLabel:
         `${booking.slot_day || ""} ${booking.slot_time || ""}`.trim(),
 
@@ -1053,9 +1253,9 @@ export async function POST(
   } catch (error) {
     /*
      * Rollback de sécurité :
-     * si une erreur survient après le claim mais
-     * avant la création complète du booking,
-     * on libère le créneau.
+     * si une erreur survient après le claim
+     * mais avant la création complète
+     * du booking, on libère le créneau.
      */
     if (claimedSlotId) {
       const {
