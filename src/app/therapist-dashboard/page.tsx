@@ -68,16 +68,29 @@ type TherapistProfile = {
   therapeutic_approach_fr: string | null;
   therapeutic_approach_ar: string | null;
 
-  services: string | null;
-  services_fr: string | null;
-  services_ar: string | null;
-
   languages: string | null;
   languages_fr: string | null;
   languages_ar: string | null;
 
-  price: number | null;
   photo_url: string | null;
+};
+
+type TherapistService = {
+  id: string;
+  therapist_id: string;
+
+  service_type:
+    | "individual"
+    | "couples"
+    | "family"
+    | "group";
+
+  price: number;
+  duration_minutes: number;
+  price_per_participant: boolean;
+  min_participants: number | null;
+  max_participants: number | null;
+  is_active: boolean;
 };
 
 type TranslationFields = {
@@ -88,7 +101,6 @@ type TranslationFields = {
   education: string;
   certifications: string;
   therapeuticApproach: string;
-  services: string;
   languages: string;
 };
 
@@ -133,14 +145,15 @@ export default function TherapistDashboard() {
     setTherapeuticApproach,
   ] = useState("");
 
-  const [services, setServices] =
-    useState("");
-
   const [languages, setLanguages] =
     useState("");
 
-  const [price, setPrice] =
-    useState("");
+  const [
+    therapistServices,
+    setTherapistServices,
+  ] = useState<
+    TherapistService[]
+  >([]);
 
   const [photoUrl, setPhotoUrl] =
     useState("");
@@ -787,6 +800,7 @@ export default function TherapistDashboard() {
   useEffect(() => {
     void getSlots();
     void getBookings();
+    void getTherapistServices();
   }, []);
 
   useEffect(() => {
@@ -876,6 +890,182 @@ export default function TherapistDashboard() {
 
       return result;
     };
+
+  const getTherapistServices =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        setTherapistServices(
+          [],
+        );
+        return;
+      }
+
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          "therapist_services",
+        )
+        .select(
+          `
+            id,
+            therapist_id,
+            service_type,
+            price,
+            duration_minutes,
+            price_per_participant,
+            min_participants,
+            max_participants,
+            is_active
+          `,
+        )
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .order(
+          "service_type",
+          {
+            ascending: true,
+          },
+        );
+
+      if (error) {
+        console.error(
+          "Therapist services error:",
+          error,
+        );
+
+        setTherapistServices(
+          [],
+        );
+        return;
+      }
+
+      const serviceOrder:
+        Record<
+          TherapistService["service_type"],
+          number
+        > = {
+          individual: 1,
+          couples: 2,
+          family: 3,
+          group: 4,
+        };
+
+      const normalized =
+        (
+          data as
+            | TherapistService[]
+            | null
+        ) || [];
+
+      setTherapistServices(
+        [...normalized].sort(
+          (
+            a,
+            b,
+          ) =>
+            serviceOrder[
+              a.service_type
+            ] -
+            serviceOrder[
+              b.service_type
+            ],
+        ),
+      );
+    };
+
+  const getServiceLabel = (
+    serviceType:
+      TherapistService["service_type"],
+  ) => {
+    if (
+      language === "ar"
+    ) {
+      return serviceType ===
+        "individual"
+        ? "فردية"
+        : serviceType ===
+            "couples"
+          ? "زوجية"
+          : serviceType ===
+              "family"
+            ? "عائلية"
+            : "جماعية";
+    }
+
+    if (
+      language === "fr"
+    ) {
+      return serviceType ===
+        "individual"
+        ? "Individuelle"
+        : serviceType ===
+            "couples"
+          ? "Couple"
+          : serviceType ===
+              "family"
+            ? "Famille"
+            : "Groupe";
+    }
+
+    return serviceType ===
+      "individual"
+      ? "Individual"
+      : serviceType ===
+          "couples"
+        ? "Couples"
+        : serviceType ===
+            "family"
+          ? "Family"
+          : "Group";
+  };
+
+  const formatServicePrice = (
+    service:
+      TherapistService,
+  ) => {
+    const locale =
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-US";
+
+    const amount =
+      new Intl.NumberFormat(
+        locale,
+        {
+          style:
+            "currency",
+          currency:
+            "USD",
+          minimumFractionDigits:
+            0,
+          maximumFractionDigits:
+            2,
+        },
+      ).format(
+        service.price,
+      );
+
+    if (
+      service.price_per_participant
+    ) {
+      return language === "ar"
+        ? `${amount} / مشارك`
+        : language === "fr"
+          ? `${amount} / participant`
+          : `${amount} / participant`;
+    }
+
+    return amount;
+  };
 
   const getInitial = () =>
     fullName
@@ -968,10 +1158,6 @@ export default function TherapistDashboard() {
             therapeutic_approach_fr,
             therapeutic_approach_ar,
 
-            services,
-            services_fr,
-            services_ar,
-
             languages,
             languages_fr,
             languages_ar,
@@ -1044,12 +1230,6 @@ export default function TherapistDashboard() {
             "",
         );
 
-        setServices(
-          data.services_ar ||
-            data.services ||
-            "",
-        );
-
         setLanguages(
           data.languages_ar ||
             data.languages ||
@@ -1098,12 +1278,6 @@ export default function TherapistDashboard() {
             "",
         );
 
-        setServices(
-          data.services_fr ||
-            data.services ||
-            "",
-        );
-
         setLanguages(
           data.languages_fr ||
             data.languages ||
@@ -1141,10 +1315,6 @@ export default function TherapistDashboard() {
             "",
         );
 
-        setServices(
-          data.services || "",
-        );
-
         setLanguages(
           data.languages || "",
         );
@@ -1153,11 +1323,6 @@ export default function TherapistDashboard() {
       setExperienceYears(
         data.experience_years?.toString() ||
           "",
-      );
-
-      setPrice(
-        data.price?.toString() ||
-          "0",
       );
 
       setPhotoUrl(
@@ -1447,9 +1612,6 @@ export default function TherapistDashboard() {
             therapeuticApproach:
               therapeuticApproach.trim(),
 
-            services:
-              services.trim(),
-
             languages:
               languages.trim(),
           };
@@ -1483,10 +1645,6 @@ export default function TherapistDashboard() {
 
           therapeuticApproach:
             translated.therapeuticApproach ??
-            "",
-
-          services:
-            translated.services ??
             "",
 
           languages:
@@ -1686,15 +1844,6 @@ export default function TherapistDashboard() {
             therapeutic_approach_ar:
               arabicFields.therapeuticApproach,
 
-            services:
-              englishFields.services,
-
-            services_fr:
-              frenchFields.services,
-
-            services_ar:
-              arabicFields.services,
-
             languages:
               englishFields.languages,
 
@@ -1726,6 +1875,7 @@ export default function TherapistDashboard() {
          */
         if (parsedExperience !== null) {
           await syncTherapistServices();
+          await getTherapistServices();
         }
 
         setPhotoUrl(
@@ -2499,30 +2649,109 @@ export default function TherapistDashboard() {
               </h2>
 
               <div className="mt-8 space-y-6">
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.services
-                  }
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-aan-navy">
+                        {
+                          text.services
+                        }
+                      </p>
 
-                  <textarea
-                    value={
-                      services
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setServices(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.servicesPlaceholder
-                    }
-                    className="aan-field min-h-52 resize-y p-4 font-normal leading-8"
-                  />
-                </label>
+                      <p className="mt-1 text-sm leading-6 text-aan-secondary">
+                        {language === "ar"
+                          ? "الخدمات والأسعار تحددها الإدارة وتظهر هنا تلقائياً."
+                          : language === "fr"
+                            ? "Les services et tarifs sont définis par l’administration et apparaissent ici automatiquement."
+                            : "Services and prices are managed by the administration and appear here automatically."}
+                      </p>
+                    </div>
+
+                    <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-secondary">
+                      {language === "ar"
+                        ? "إدارة AAN"
+                        : language === "fr"
+                          ? "Géré par AAN"
+                          : "Managed by AAN"}
+                    </span>
+                  </div>
+
+                  {therapistServices.length ===
+                  0 ? (
+                    <div className="mt-4 rounded-2xl border border-aan-border bg-[#f8f4ee] p-5 text-sm leading-6 text-aan-secondary">
+                      {language === "ar"
+                        ? "لا توجد خدمات مهيأة بعد. احفظ سنوات الخبرة لإنشاء الخدمات تلقائياً، ثم يمكن للإدارة تعديل الأسعار."
+                        : language === "fr"
+                          ? "Aucun service n’est encore configuré. Enregistrez vos années d’expérience pour créer les services automatiquement ; l’administration pourra ensuite ajuster les tarifs."
+                          : "No services are configured yet. Save your experience years to create them automatically; the administration can then adjust the prices."}
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-3">
+                      {therapistServices.map(
+                        (
+                          service,
+                        ) => (
+                          <div
+                            key={
+                              service.id
+                            }
+                            className="flex flex-col gap-3 rounded-2xl border border-aan-border bg-[#f8f4ee] p-5 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div>
+                              <p className="font-bold text-aan-navy">
+                                {getServiceLabel(
+                                  service.service_type,
+                                )}
+                              </p>
+
+                              <p className="mt-1 text-sm text-aan-secondary">
+                                {
+                                  service.duration_minutes
+                                }{" "}
+                                min
+                                {service.price_per_participant
+                                  ? language === "ar"
+                                    ? " · لكل مشارك"
+                                    : language === "fr"
+                                      ? " · par participant"
+                                      : " · per participant"
+                                  : ""}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-bold text-aan-navy">
+                                {formatServicePrice(
+                                  service,
+                                )}
+                              </span>
+
+                              <span
+                                className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                                  service.is_active
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-300 bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {service.is_active
+                                  ? language === "ar"
+                                    ? "نشط"
+                                    : language === "fr"
+                                      ? "Actif"
+                                      : "Active"
+                                  : language === "ar"
+                                    ? "غير نشط"
+                                    : language === "fr"
+                                      ? "Inactif"
+                                      : "Inactive"}
+                              </span>
+                            </div>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <label className="grid gap-2 font-bold text-aan-navy">
                   {
@@ -2548,26 +2777,6 @@ export default function TherapistDashboard() {
                     className="aan-field min-h-32 resize-y p-4 font-normal leading-8"
                   />
                 </label>
-
-                <div className="rounded-2xl border border-aan-border bg-[#f8f4ee] p-5">
-                  <p className="text-sm font-bold uppercase tracking-[0.2em] text-aan-gold">
-                    {
-                      text.sessionPrice
-                    }
-                  </p>
-
-                  <p className="mt-2 text-3xl font-bold text-aan-navy">
-                    $
-                    {price ||
-                      0}
-                  </p>
-
-                  <p className="mt-2 text-sm text-aan-secondary">
-                    {
-                      text.adminPrice
-                    }
-                  </p>
-                </div>
 
                 <button
                   type="button"
