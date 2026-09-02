@@ -248,6 +248,32 @@ export default function AdminTherapistsPage() {
   ] = useState("");
 
   /*
+   * Interface compacte :
+   * - recherche / filtre
+   * - panneau séparé pour les services
+   * - le départ reste toujours visible
+   */
+  const [
+    searchTerm,
+    setSearchTerm,
+  ] = useState("");
+
+  const [
+    statusFilter,
+    setStatusFilter,
+  ] = useState<
+    | "all"
+    | WorkStatus
+  >("all");
+
+  const [
+    servicesTherapist,
+    setServicesTherapist,
+  ] = useState<
+    Therapist | null
+  >(null);
+
+  /*
    * Spécialiste dont le départ
    * est actuellement géré.
    */
@@ -2303,6 +2329,48 @@ export default function AdminTherapistsPage() {
           .futurePaidBookings
           .length === 0,
     );
+
+  const normalizedSearch =
+    searchTerm
+      .trim()
+      .toLowerCase();
+
+  const filteredTherapists =
+    therapists.filter(
+      (
+        therapist,
+      ) => {
+        const status =
+          therapist.work_status ||
+          "active";
+
+        const matchesStatus =
+          statusFilter === "all" ||
+          status === statusFilter;
+
+        const searchable =
+          [
+            therapist.full_name,
+            therapist.email,
+            therapist.specialty,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+        const matchesSearch =
+          !normalizedSearch ||
+          searchable.includes(
+            normalizedSearch,
+          );
+
+        return (
+          matchesStatus &&
+          matchesSearch
+        );
+      },
+    );
+
       return (
     <ProtectedRoute
       allowedRoles={[
@@ -2375,353 +2443,655 @@ export default function AdminTherapistsPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-7 md:grid-cols-2">
-                {therapists.map(
-                  (
-                    therapist,
-                  ) => {
-                    const isProcessing =
-                      processingId ===
-                      therapist.id;
+              <div className="aan-card overflow-hidden">
+                <div className="border-b border-aan-border p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-1 flex-col gap-3 sm:flex-row">
+                      <div className="relative flex-1">
+                        <span
+                          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-aan-secondary ${
+                            isArabic
+                              ? "right-4"
+                              : "left-4"
+                          }`}
+                        >
+                          ⌕
+                        </span>
 
-                    const status =
-                      therapist.work_status ||
-                      "active";
+                        <input
+                          type="search"
+                          value={
+                            searchTerm
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setSearchTerm(
+                              event.target.value,
+                            )
+                          }
+                          placeholder={
+                            language === "ar"
+                              ? "البحث عن مختص..."
+                              : language === "fr"
+                                ? "Rechercher un spécialiste..."
+                                : "Search for a specialist..."
+                          }
+                          className={`aan-field w-full py-3 ${
+                            isArabic
+                              ? "pr-10 pl-4"
+                              : "pl-10 pr-4"
+                          }`}
+                        />
+                      </div>
 
-                    return (
-                      <article
-                        key={
-                          therapist.id
+                      <select
+                        value={
+                          statusFilter
                         }
-                        className="aan-card flex h-full flex-col p-7 sm:p-8"
+                        onChange={(
+                          event,
+                        ) =>
+                          setStatusFilter(
+                            event.target.value as
+                              | "all"
+                              | WorkStatus,
+                          )
+                        }
+                        className="aan-field min-w-[190px] px-4 py-3"
                       >
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div>
-                            <h2 className="aan-heading text-3xl">
-                              {therapist.full_name ||
-                                text.unnamed}
-                            </h2>
+                        <option value="all">
+                          {language === "ar"
+                            ? "كل الحالات"
+                            : language === "fr"
+                              ? "Tous les statuts"
+                              : "All statuses"}
+                        </option>
 
-                            <p className="mt-2 text-sm text-aan-secondary">
-                              {therapist.email ||
-                                text.emailUnavailable}
-                            </p>
-                          </div>
+                        <option value="active">
+                          {
+                            text.active
+                          }
+                        </option>
 
-                          <div className="flex flex-wrap gap-2">
-                            <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-navy">
-                              ✓{" "}
-                              {
-                                text.therapist
-                              }
-                            </span>
+                        <option value="leaving">
+                          {
+                            text.leaving
+                          }
+                        </option>
 
-                            <span
-                              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${getStatusClasses(
-                                status,
-                              )}`}
-                            >
-                              {
-                                getStatusLabel(
-                                  status,
-                                )
-                              }
-                            </span>
-                          </div>
-                        </div>
+                        <option value="inactive">
+                          {
+                            text.inactive
+                          }
+                        </option>
+                      </select>
+                    </div>
 
-                        <div className="mt-6 flex-1">
-                          <p className="font-semibold text-aan-button">
-                            {therapist.specialty ||
-                              text.noSpecialty}
-                          </p>
+                    <p className="text-sm font-semibold text-aan-secondary">
+                      {filteredTherapists.length}{" "}
+                      {language === "ar"
+                        ? "مختص"
+                        : language === "fr"
+                          ? filteredTherapists.length > 1
+                            ? "spécialistes"
+                            : "spécialiste"
+                          : filteredTherapists.length === 1
+                            ? "specialist"
+                            : "specialists"}
+                    </p>
+                  </div>
+                </div>
 
-                          <p className="mt-4 line-clamp-4 leading-7 text-aan-secondary">
-                            {therapist.bio ||
-                              text.noBio}
-                          </p>
-                        </div>
+                {filteredTherapists.length ===
+                0 ? (
+                  <div className="p-10 text-center text-aan-secondary">
+                    {language === "ar"
+                      ? "لا توجد نتائج مطابقة."
+                      : language === "fr"
+                        ? "Aucun spécialiste ne correspond à votre recherche."
+                        : "No specialist matches your search."}
+                  </div>
+                ) : (
+                  <>
+                    <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(180px,1fr)_130px_180px_190px] gap-4 border-b border-aan-border bg-[#fbf8f3] px-6 py-4 text-xs font-bold uppercase tracking-[0.13em] text-aan-secondary lg:grid">
+                      <div>
+                        {language === "ar"
+                          ? "المختص"
+                          : language === "fr"
+                            ? "Spécialiste"
+                            : "Specialist"}
+                      </div>
 
-                        <div className="mt-7 space-y-4">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
-                                {language === "ar"
-                                  ? "الخدمات والأسعار"
-                                  : language === "fr"
-                                    ? "Services et tarifs"
-                                    : "Services and prices"}
-                              </p>
+                      <div>
+                        {language === "ar"
+                          ? "التخصص"
+                          : language === "fr"
+                            ? "Spécialité"
+                            : "Specialty"}
+                      </div>
 
-                              <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                                {language === "ar"
-                                  ? "يمكن للإدارة تعديل السعر والمدة وتفعيل أو إيقاف كل خدمة."
-                                  : language === "fr"
-                                    ? "L’administration peut modifier le prix, la durée et activer ou désactiver chaque service."
-                                    : "Administrators can change the price, duration, and active status of each service."}
-                              </p>
-                            </div>
-                          </div>
+                      <div>
+                        {language === "ar"
+                          ? "الحالة"
+                          : language === "fr"
+                            ? "Statut"
+                            : "Status"}
+                      </div>
 
-                          {(therapist.services || []).length ===
-                          0 ? (
-                            <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-sm text-aan-secondary">
-                              {language === "ar"
-                                ? "لا توجد خدمات مهيأة بعد لهذا المختص. اطلب منه حفظ سنوات الخبرة مرة واحدة لإنشاء الخدمات تلقائياً."
-                                : language === "fr"
-                                  ? "Aucun service n’est encore configuré pour ce spécialiste. Demandez-lui d’enregistrer une fois ses années d’expérience afin de créer automatiquement les services."
-                                  : "No services are configured yet. Ask the specialist to save their experience years once so the services are created automatically."}
-                            </div>
-                          ) : (
-                            <div className="grid gap-4">
-                              {(therapist.services || []).map(
+                      <div>
+                        {language === "ar"
+                          ? "الخدمات"
+                          : language === "fr"
+                            ? "Services"
+                            : "Services"}
+                      </div>
+
+                      <div>
+                        {language === "ar"
+                          ? "إدارة المغادرة"
+                          : language === "fr"
+                            ? "Gérer le départ"
+                            : "Manage departure"}
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-aan-border">
+                      {filteredTherapists.map(
+                        (
+                          therapist,
+                        ) => {
+                          const status =
+                            therapist.work_status ||
+                            "active";
+
+                          const isDepartureProcessing =
+                            processingId ===
+                            therapist.id;
+
+                          const configuredServices =
+                            (
+                              therapist.services ||
+                              []
+                            ).length;
+
+                          const initials =
+                            (
+                              therapist.full_name ||
+                              "AAN"
+                            )
+                              .split(" ")
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .map(
                                 (
-                                  service,
-                                ) => {
-                                  const draft =
-                                    serviceDrafts[
-                                      therapist.id
-                                    ]?.[
-                                      service.service_type
-                                    ] || {
-                                      price:
-                                        String(
-                                          service.price,
-                                        ),
-                                      durationMinutes:
-                                        String(
-                                          service.duration_minutes,
-                                        ),
-                                      isActive:
-                                        service.is_active,
-                                    };
+                                  part,
+                                ) =>
+                                  part.charAt(0),
+                              )
+                              .join("")
+                              .toUpperCase();
 
-                                  const serviceProcessing =
-                                    processingId ===
-                                    `${therapist.id}:${service.service_type}`;
+                          return (
+                            <article
+                              key={
+                                therapist.id
+                              }
+                              className="grid gap-5 px-5 py-6 sm:px-6 lg:grid-cols-[minmax(220px,1.5fr)_minmax(180px,1fr)_130px_180px_190px] lg:items-center lg:gap-4"
+                            >
+                              <div className="flex min-w-0 items-center gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-aan-border bg-[#f7f3ed] font-bold text-aan-navy">
+                                  {
+                                    initials
+                                  }
+                                </div>
 
-                                  return (
-                                    <div
-                                      key={
-                                        service.id
+                                <div className="min-w-0">
+                                  <h2 className="truncate text-lg font-bold text-aan-navy">
+                                    {therapist.full_name ||
+                                      text.unnamed}
+                                  </h2>
+
+                                  <p className="mt-1 truncate text-sm text-aan-secondary">
+                                    {therapist.email ||
+                                      text.emailUnavailable}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-aan-secondary lg:hidden">
+                                  {language === "ar"
+                                    ? "التخصص"
+                                    : language === "fr"
+                                      ? "Spécialité"
+                                      : "Specialty"}
+                                </p>
+
+                                <p className="font-semibold text-aan-button">
+                                  {therapist.specialty ||
+                                    text.noSpecialty}
+                                </p>
+                              </div>
+
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-aan-secondary lg:hidden">
+                                  {language === "ar"
+                                    ? "الحالة"
+                                    : language === "fr"
+                                      ? "Statut"
+                                      : "Status"}
+                                </p>
+
+                                <span
+                                  className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${getStatusClasses(
+                                    status,
+                                  )}`}
+                                >
+                                  {
+                                    getStatusLabel(
+                                      status,
+                                    )
+                                  }
+                                </span>
+                              </div>
+
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSuccessMessage(
+                                      "",
+                                    );
+                                    setErrorMessage(
+                                      "",
+                                    );
+                                    setServicesTherapist(
+                                      therapist,
+                                    );
+                                  }}
+                                  className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3] lg:w-auto"
+                                >
+                                  {language === "ar"
+                                    ? "إدارة الخدمات"
+                                    : language === "fr"
+                                      ? "Gérer les services"
+                                      : "Manage services"}
+                                </button>
+
+                                <p className="mt-2 text-xs text-aan-secondary">
+                                  {configuredServices}{" "}
+                                  {language === "ar"
+                                    ? "خدمات مهيأة"
+                                    : language === "fr"
+                                      ? configuredServices > 1
+                                        ? "services configurés"
+                                        : "service configuré"
+                                      : configuredServices === 1
+                                        ? "service configured"
+                                        : "services configured"}
+                                </p>
+                              </div>
+
+                              <div>
+                                {status ===
+                                "inactive" ? (
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <p className="text-sm font-bold text-slate-600">
+                                      {
+                                        text.inactive
                                       }
-                                      className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5"
-                                    >
-                                      <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <div>
-                                          <p className="text-lg font-bold text-aan-navy">
-                                            {getServiceLabel(
-                                              service.service_type,
-                                            )}
-                                          </p>
+                                    </p>
 
-                                          {service.price_per_participant && (
-                                            <p className="mt-1 text-xs font-semibold text-aan-gold">
-                                              {language === "ar"
-                                                ? "السعر لكل مشارك"
-                                                : language === "fr"
-                                                  ? "Prix par participant"
-                                                  : "Price per participant"}
-                                            </p>
-                                          )}
-                                        </div>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {language === "ar"
+                                        ? "تم إنهاء المغادرة"
+                                        : language === "fr"
+                                          ? "Départ finalisé"
+                                          : "Departure finalized"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void loadDepartureData(
+                                        therapist,
+                                      )
+                                    }
+                                    disabled={
+                                      isDepartureProcessing
+                                    }
+                                    className={`w-full rounded-xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      status ===
+                                      "leaving"
+                                        ? "border-aan-gold bg-[#fbf8f3] text-aan-navy hover:bg-[#f4ecdf]"
+                                        : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                    }`}
+                                  >
+                                    <span className="block text-sm font-bold">
+                                      {isDepartureProcessing
+                                        ? text.processing
+                                        : status ===
+                                            "leaving"
+                                          ? text.resumeDeparture
+                                          : text.manageDeparture}
+                                    </span>
 
-                                        <label className="inline-flex items-center gap-2 text-sm font-bold text-aan-navy">
-                                          <input
-                                            type="checkbox"
-                                            checked={
-                                              draft.isActive
-                                            }
-                                            onChange={(
-                                              event,
-                                            ) =>
-                                              updateServiceDraft(
-                                                therapist.id,
-                                                service.service_type,
-                                                "isActive",
-                                                event.target.checked,
-                                              )
-                                            }
-                                            disabled={
-                                              serviceProcessing ||
-                                              status === "inactive"
-                                            }
-                                          />
-
-                                          {draft.isActive
-                                            ? language === "ar"
-                                              ? "نشطة"
-                                              : language === "fr"
-                                                ? "Actif"
-                                                : "Active"
-                                            : language === "ar"
-                                              ? "غير نشطة"
-                                              : language === "fr"
-                                                ? "Inactif"
-                                                : "Inactive"}
-                                        </label>
-                                      </div>
-
-                                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
-                                          {language === "ar"
-                                            ? "السعر بالدولار"
-                                            : language === "fr"
-                                              ? "Prix en USD"
-                                              : "Price in USD"}
-
-                                          <input
-                                            type="number"
-                                            min="0.01"
-                                            step="0.01"
-                                            value={
-                                              draft.price
-                                            }
-                                            onChange={(
-                                              event,
-                                            ) =>
-                                              updateServiceDraft(
-                                                therapist.id,
-                                                service.service_type,
-                                                "price",
-                                                event.target.value,
-                                              )
-                                            }
-                                            disabled={
-                                              serviceProcessing ||
-                                              status === "inactive"
-                                            }
-                                            className="aan-field p-3 font-normal"
-                                          />
-                                        </label>
-
-                                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
-                                          {language === "ar"
-                                            ? "المدة بالدقائق"
-                                            : language === "fr"
-                                              ? "Durée en minutes"
-                                              : "Duration in minutes"}
-
-                                          <input
-                                            type="number"
-                                            min="1"
-                                            step="1"
-                                            value={
-                                              draft.durationMinutes
-                                            }
-                                            onChange={(
-                                              event,
-                                            ) =>
-                                              updateServiceDraft(
-                                                therapist.id,
-                                                service.service_type,
-                                                "durationMinutes",
-                                                event.target.value,
-                                              )
-                                            }
-                                            disabled={
-                                              serviceProcessing ||
-                                              status === "inactive"
-                                            }
-                                            className="aan-field p-3 font-normal"
-                                          />
-                                        </label>
-                                      </div>
-
-                                      {service.service_type ===
-                                        "group" && (
-                                        <p className="mt-3 text-xs leading-5 text-aan-secondary">
-                                          {language === "ar"
-                                            ? "الجلسات الجماعية متعددة المشاركين ما زالت قيد التطوير؛ اتركها غير نشطة حالياً."
-                                            : language === "fr"
-                                              ? "La réservation multi-participants des groupes est encore en développement ; laissez ce service inactif pour le moment."
-                                              : "Multi-participant group booking is still in development; keep this service inactive for now."}
-                                        </p>
-                                      )}
-
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void updateService(
-                                            therapist.id,
-                                            service.service_type,
-                                          )
-                                        }
-                                        disabled={
-                                          serviceProcessing ||
-                                          status === "inactive"
-                                        }
-                                        className="aan-button mt-4 px-5 py-3 disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        {serviceProcessing
-                                          ? text.updating
-                                          : language === "ar"
-                                            ? "حفظ الخدمة"
-                                            : language === "fr"
-                                              ? "Enregistrer le service"
-                                              : "Save service"}
-                                      </button>
-                                    </div>
-                                  );
-                                },
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="mt-7 border-t border-aan-border pt-6">
-                          {status ===
-                          "active" ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void loadDepartureData(
-                                  therapist,
-                                )
-                              }
-                              disabled={
-                                isProcessing
-                              }
-                              className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {isProcessing
-                                ? text.processing
-                                : text.manageDeparture}
-                            </button>
-                          ) : status ===
-                            "leaving" ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void loadDepartureData(
-                                  therapist,
-                                )
-                              }
-                              disabled={
-                                isProcessing
-                              }
-                              className="rounded-xl border border-aan-gold bg-[#fbf8f3] px-5 py-3 font-semibold text-aan-navy transition hover:bg-[#f4ecdf] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {
-                                text.resumeDeparture
-                              }
-                            </button>
-                          ) : (
-                            <p className="text-sm font-semibold text-aan-secondary">
-                              {
-                                text.inactive
-                              }
-                            </p>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  },
+                                    <span className="mt-1 block text-xs opacity-75">
+                                      {status ===
+                                      "leaving"
+                                        ? language === "ar"
+                                          ? "المغادرة قيد المعالجة"
+                                          : language === "fr"
+                                            ? "Départ en cours"
+                                            : "Departure in progress"
+                                        : language === "ar"
+                                          ? "المختص نشط"
+                                          : language === "fr"
+                                            ? "Spécialiste actif"
+                                            : "Active specialist"}
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        },
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
           </section>
         </main>
+
+        {/* =================================================
+            PANNEAU / MODAL SERVICES ET TARIFS
+        ================================================= */}
+
+        {servicesTherapist && (
+          <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#162432]/60 px-4 py-8 backdrop-blur-sm sm:px-6">
+            <section
+              dir={
+                isArabic
+                  ? "rtl"
+                  : "ltr"
+              }
+              className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-aan-border bg-aan-background shadow-2xl"
+            >
+              <div className="sticky top-0 z-10 flex flex-col gap-5 border-b border-aan-border bg-white/95 px-6 py-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-8">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-aan-gold">
+                    {language === "ar"
+                      ? "الخدمات والأسعار"
+                      : language === "fr"
+                        ? "Services et tarifs"
+                        : "Services and prices"}
+                  </p>
+
+                  <h2 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                    {
+                      servicesTherapist.full_name
+                    }
+                  </h2>
+
+                  <p className="mt-2 max-w-2xl leading-7 text-aan-secondary">
+                    {language === "ar"
+                      ? "يمكن للإدارة تعديل السعر والمدة وتفعيل أو إيقاف كل خدمة."
+                      : language === "fr"
+                        ? "L’administration peut modifier le prix, la durée et activer ou désactiver chaque service."
+                        : "Administrators can change the price, duration, and active status of each service."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setServicesTherapist(
+                      null,
+                    )
+                  }
+                  className="self-start rounded-xl border border-aan-border bg-white px-4 py-3 font-semibold text-aan-navy hover:bg-aan-background"
+                >
+                  {
+                    text.close
+                  }
+                </button>
+              </div>
+
+              <div className="p-6 sm:p-8">
+                {(servicesTherapist.services || []).length ===
+                0 ? (
+                  <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6 text-aan-secondary">
+                    {language === "ar"
+                      ? "لا توجد خدمات مهيأة بعد لهذا المختص. يجب على المختص تسجيل سنوات الخبرة مرة واحدة لإنشاء الخدمات تلقائياً."
+                      : language === "fr"
+                        ? "Aucun service n’est encore configuré pour ce spécialiste. Le spécialiste doit enregistrer une fois ses années d’expérience afin de créer automatiquement les services."
+                        : "No services are configured yet. The specialist must save their experience years once so the services are created automatically."}
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {(servicesTherapist.services || []).map(
+                      (
+                        service,
+                      ) => {
+                        const draft =
+                          serviceDrafts[
+                            servicesTherapist.id
+                          ]?.[
+                            service.service_type
+                          ] || {
+                            price:
+                              String(
+                                service.price,
+                              ),
+                            durationMinutes:
+                              String(
+                                service.duration_minutes,
+                              ),
+                            isActive:
+                              service.is_active,
+                          };
+
+                        const serviceProcessing =
+                          processingId ===
+                          `${servicesTherapist.id}:${service.service_type}`;
+
+                        const therapistInactive =
+                          (
+                            servicesTherapist.work_status ||
+                            "active"
+                          ) ===
+                          "inactive";
+
+                        return (
+                          <div
+                            key={
+                              service.id
+                            }
+                            className="rounded-2xl border border-aan-border bg-white p-5 sm:p-6"
+                          >
+                            <div className="flex flex-col gap-5 xl:flex-row xl:items-end">
+                              <div className="min-w-[150px] flex-1">
+                                <p className="text-xl font-bold text-aan-navy">
+                                  {getServiceLabel(
+                                    service.service_type,
+                                  )}
+                                </p>
+
+                                <p className="mt-1 text-sm text-aan-secondary">
+                                  {service.duration_minutes}{" "}
+                                  {language === "ar"
+                                    ? "دقيقة"
+                                    : language === "fr"
+                                      ? "min"
+                                      : "min"}
+                                </p>
+
+                                {service.price_per_participant && (
+                                  <p className="mt-2 text-xs font-semibold text-aan-gold">
+                                    {language === "ar"
+                                      ? "السعر لكل مشارك"
+                                      : language === "fr"
+                                        ? "Prix par participant"
+                                        : "Price per participant"}
+                                  </p>
+                                )}
+                              </div>
+
+                              <label className="grid flex-1 gap-2 text-sm font-bold text-aan-navy">
+                                {language === "ar"
+                                  ? "السعر بالدولار"
+                                  : language === "fr"
+                                    ? "Prix en USD"
+                                    : "Price in USD"}
+
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  value={
+                                    draft.price
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateServiceDraft(
+                                      servicesTherapist.id,
+                                      service.service_type,
+                                      "price",
+                                      event.target.value,
+                                    )
+                                  }
+                                  disabled={
+                                    serviceProcessing ||
+                                    therapistInactive
+                                  }
+                                  className="aan-field p-3 font-normal"
+                                />
+                              </label>
+
+                              <label className="grid flex-1 gap-2 text-sm font-bold text-aan-navy">
+                                {language === "ar"
+                                  ? "المدة بالدقائق"
+                                  : language === "fr"
+                                    ? "Durée en minutes"
+                                    : "Duration in minutes"}
+
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={
+                                    draft.durationMinutes
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateServiceDraft(
+                                      servicesTherapist.id,
+                                      service.service_type,
+                                      "durationMinutes",
+                                      event.target.value,
+                                    )
+                                  }
+                                  disabled={
+                                    serviceProcessing ||
+                                    therapistInactive
+                                  }
+                                  className="aan-field p-3 font-normal"
+                                />
+                              </label>
+
+                              <label className="flex min-h-[48px] items-center gap-2 text-sm font-bold text-aan-navy">
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    draft.isActive
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    updateServiceDraft(
+                                      servicesTherapist.id,
+                                      service.service_type,
+                                      "isActive",
+                                      event.target.checked,
+                                    )
+                                  }
+                                  disabled={
+                                    serviceProcessing ||
+                                    therapistInactive
+                                  }
+                                />
+
+                                {draft.isActive
+                                  ? text.active
+                                  : text.inactive}
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void updateService(
+                                    servicesTherapist.id,
+                                    service.service_type,
+                                  )
+                                }
+                                disabled={
+                                  serviceProcessing ||
+                                  therapistInactive
+                                }
+                                className="aan-button min-h-[48px] whitespace-nowrap px-5 py-3 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {serviceProcessing
+                                  ? text.updating
+                                  : language === "ar"
+                                    ? "حفظ"
+                                    : language === "fr"
+                                      ? "Enregistrer"
+                                      : "Save"}
+                              </button>
+                            </div>
+
+                            {service.service_type ===
+                              "group" && (
+                              <p className="mt-4 rounded-xl bg-[#fbf8f3] px-4 py-3 text-xs leading-5 text-aan-secondary">
+                                {language === "ar"
+                                  ? "الحجز الجماعي متعدد المشاركين ما زال قيد التطوير؛ اترك هذه الخدمة غير نشطة حالياً."
+                                  : language === "fr"
+                                    ? "La réservation de groupe multi-participants est encore en développement ; laissez ce service inactif pour le moment."
+                                    : "Multi-participant group booking is still in development; keep this service inactive for now."}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setServicesTherapist(
+                        null,
+                      )
+                    }
+                    className="rounded-xl border border-aan-border bg-white px-6 py-3 font-semibold text-aan-navy hover:bg-[#fbf8f3]"
+                  >
+                    {
+                      text.close
+                    }
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
 
         {/* =================================================
             PANNEAU / MODAL DE DÉPART
