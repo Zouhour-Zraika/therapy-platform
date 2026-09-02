@@ -1,23 +1,51 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import {
+  createClient,
+} from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
+import {
+  NextResponse,
+} from "next/server";
 
-type UpdateTherapistPriceRequest = {
+export const runtime =
+  "nodejs";
+
+type UpdateTherapistServiceRequest = {
   therapistId?: string;
-  price?: number | string;
+  serviceType?:
+    | "individual"
+    | "couples"
+    | "family"
+    | "group";
+  price?:
+    | number
+    | string;
+  durationMinutes?:
+    | number
+    | string;
+  isActive?: boolean;
 };
+
+const ALLOWED_SERVICE_TYPES =
+  new Set([
+    "individual",
+    "couples",
+    "family",
+    "group",
+  ]);
 
 export async function POST(
   request: Request,
 ) {
   try {
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL;
 
     const supabaseServerKey =
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env
+        .SUPABASE_SECRET_KEY ||
+      process.env
+        .SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -91,8 +119,11 @@ export async function POST(
     }
 
     const {
-      data: { user },
-      error: userError,
+      data: {
+        user,
+      },
+      error:
+        userError,
     } =
       await supabaseAdmin.auth.getUser(
         accessToken,
@@ -115,13 +146,21 @@ export async function POST(
 
     const {
       data: profile,
-      error: profileError,
+      error:
+        profileError,
     } = await supabaseAdmin
       .from("profiles")
-      .select("role")
-      .eq("id", user.id)
+      .select(
+        "role",
+      )
+      .eq(
+        "id",
+        user.id,
+      )
       .maybeSingle<{
-        role: string | null;
+        role:
+          | string
+          | null;
       }>();
 
     if (profileError) {
@@ -157,13 +196,30 @@ export async function POST(
     }
 
     const body =
-      (await request.json()) as UpdateTherapistPriceRequest;
+      (
+        await request.json()
+      ) as UpdateTherapistServiceRequest;
 
     const therapistId =
-      body.therapistId?.trim();
+      body.therapistId
+        ?.trim();
+
+    const serviceType =
+      body.serviceType
+        ?.trim();
 
     const price =
-      Number(body.price);
+      Number(
+        body.price,
+      );
+
+    const durationMinutes =
+      Number(
+        body.durationMinutes,
+      );
+
+    const isActive =
+      body.isActive;
 
     if (!therapistId) {
       return NextResponse.json(
@@ -178,7 +234,26 @@ export async function POST(
     }
 
     if (
-      !Number.isFinite(price) ||
+      !serviceType ||
+      !ALLOWED_SERVICE_TYPES.has(
+        serviceType,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "A valid service type is required.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      !Number.isFinite(
+        price,
+      ) ||
       price <= 0
     ) {
       return NextResponse.json(
@@ -192,21 +267,47 @@ export async function POST(
       );
     }
 
-    /*
-     * Vérifier que le spécialiste
-     * existe avant la modification.
-     */
+    if (
+      !Number.isInteger(
+        durationMinutes,
+      ) ||
+      durationMinutes <= 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Duration must be a positive whole number.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      typeof isActive !==
+      "boolean"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Active status is required.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
     const {
-      data: existingTherapist,
-      error: therapistReadError,
+      data:
+        existingTherapist,
+      error:
+        therapistReadError,
     } = await supabaseAdmin
       .from("therapists")
       .select(
-        `
-          id,
-          full_name,
-          price
-        `,
+        "id, full_name",
       )
       .eq(
         "id",
@@ -214,7 +315,9 @@ export async function POST(
       )
       .maybeSingle();
 
-    if (therapistReadError) {
+    if (
+      therapistReadError
+    ) {
       console.error(
         "Therapist lookup error:",
         therapistReadError,
@@ -231,7 +334,9 @@ export async function POST(
       );
     }
 
-    if (!existingTherapist) {
+    if (
+      !existingTherapist
+    ) {
       return NextResponse.json(
         {
           error:
@@ -244,31 +349,114 @@ export async function POST(
     }
 
     const {
-      data: therapist,
-      error: updateError,
+      data:
+        existingService,
+      error:
+        serviceReadError,
     } = await supabaseAdmin
-      .from("therapists")
+      .from(
+        "therapist_services",
+      )
+      .select(
+        `
+          id,
+          therapist_id,
+          service_type,
+          price,
+          duration_minutes,
+          price_per_participant,
+          min_participants,
+          max_participants,
+          is_active
+        `,
+      )
+      .eq(
+        "therapist_id",
+        therapistId,
+      )
+      .eq(
+        "service_type",
+        serviceType,
+      )
+      .maybeSingle();
+
+    if (
+      serviceReadError
+    ) {
+      console.error(
+        "Therapist service lookup error:",
+        serviceReadError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            serviceReadError.message,
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    if (
+      !existingService
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This service has not been configured for the specialist yet.",
+        },
+        {
+          status: 404,
+        },
+      );
+    }
+
+    const {
+      data: service,
+      error:
+        updateError,
+    } = await supabaseAdmin
+      .from(
+        "therapist_services",
+      )
       .update({
         price,
+        duration_minutes:
+          durationMinutes,
+        is_active:
+          isActive,
+        updated_at:
+          new Date()
+            .toISOString(),
       })
       .eq(
         "id",
+        existingService.id,
+      )
+      .eq(
+        "therapist_id",
         therapistId,
       )
       .select(
         `
           id,
-          full_name,
-          specialty,
-          bio,
-          price
+          therapist_id,
+          service_type,
+          price,
+          duration_minutes,
+          price_per_participant,
+          min_participants,
+          max_participants,
+          is_active
         `,
       )
       .maybeSingle();
 
     if (updateError) {
       console.error(
-        "Therapist price update error:",
+        "Therapist service update error:",
         updateError,
       );
 
@@ -283,11 +471,11 @@ export async function POST(
       );
     }
 
-    if (!therapist) {
+    if (!service) {
       return NextResponse.json(
         {
           error:
-            "The specialist price could not be updated.",
+            "The specialist service could not be updated.",
         },
         {
           status: 500,
@@ -296,34 +484,48 @@ export async function POST(
     }
 
     console.log(
-      "THERAPIST PRICE UPDATED:",
+      "THERAPIST SERVICE UPDATED:",
       {
         adminUserId:
           user.id,
         therapistId,
+        serviceType,
         previousPrice:
-          existingTherapist.price,
+          existingService.price,
         newPrice:
-          therapist.price,
+          service.price,
+        previousDuration:
+          existingService
+            .duration_minutes,
+        newDuration:
+          service
+            .duration_minutes,
+        previousActive:
+          existingService
+            .is_active,
+        newActive:
+          service
+            .is_active,
       },
     );
 
     return NextResponse.json({
       success: true,
-      therapist,
+      service,
     });
   } catch (error) {
     console.error(
-      "Update therapist price error:",
+      "Update therapist service error:",
       error,
     );
 
     return NextResponse.json(
       {
         error:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
-            : "Server error while updating the price.",
+            : "Server error while updating the specialist service.",
       },
       {
         status: 500,

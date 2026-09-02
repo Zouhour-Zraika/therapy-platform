@@ -21,6 +21,21 @@ type WorkStatus =
   | "leaving"
   | "inactive";
 
+type TherapistService = {
+  id: string;
+  service_type:
+    | "individual"
+    | "couples"
+    | "family"
+    | "group";
+  price: number;
+  duration_minutes: number;
+  price_per_participant: boolean;
+  min_participants: number | null;
+  max_participants: number | null;
+  is_active: boolean;
+};
+
 type Therapist = {
   id: string;
   full_name: string;
@@ -29,6 +44,7 @@ type Therapist = {
   price: number;
   email: string | null;
   role: string | null;
+  services?: TherapistService[];
 
   work_status?: WorkStatus;
 };
@@ -186,12 +202,19 @@ export default function AdminTherapistsPage() {
   >([]);
 
   const [
-    prices,
-    setPrices,
+    serviceDrafts,
+    setServiceDrafts,
   ] = useState<
     Record<
       string,
-      string
+      Record<
+        string,
+        {
+          price: string;
+          durationMinutes: string;
+          isActive: boolean;
+        }
+      >
     >
   >({});
 
@@ -1204,23 +1227,48 @@ export default function AdminTherapistsPage() {
             ),
           );
 
-        const initialPrices:
+        const initialServiceDrafts:
           Record<
             string,
-            string
+            Record<
+              string,
+              {
+                price: string;
+                durationMinutes: string;
+                isActive: boolean;
+              }
+            >
           > = {};
 
         therapistsWithStatus.forEach(
           (
             therapist,
           ) => {
-            initialPrices[
+            initialServiceDrafts[
               therapist.id
-            ] =
-              String(
-                therapist.price ??
-                  0,
-              );
+            ] = {};
+
+            for (
+              const service
+              of therapist.services || []
+            ) {
+              initialServiceDrafts[
+                therapist.id
+              ][
+                service.service_type
+              ] = {
+                price:
+                  String(
+                    service.price,
+                  ),
+                durationMinutes:
+                  String(
+                    service.duration_minutes,
+                  ),
+                isActive:
+                  service.is_active,
+              };
+            }
           },
         );
 
@@ -1228,8 +1276,8 @@ export default function AdminTherapistsPage() {
           therapistsWithStatus,
         );
 
-        setPrices(
-          initialPrices,
+        setServiceDrafts(
+          initialServiceDrafts,
         );
       } catch (error) {
         console.error(
@@ -1245,16 +1293,115 @@ export default function AdminTherapistsPage() {
       }
     };
 
-  const updatePrice =
+  const getServiceLabel = (
+    serviceType: string,
+  ) => {
+    if (language === "ar") {
+      return serviceType === "individual"
+        ? "فردية"
+        : serviceType === "couples"
+          ? "زوجية"
+          : serviceType === "family"
+            ? "عائلية"
+            : serviceType === "group"
+              ? "جماعية"
+              : serviceType;
+    }
+
+    if (language === "fr") {
+      return serviceType === "individual"
+        ? "Individuelle"
+        : serviceType === "couples"
+          ? "Couple"
+          : serviceType === "family"
+            ? "Famille"
+            : serviceType === "group"
+              ? "Groupe"
+              : serviceType;
+    }
+
+    return serviceType === "individual"
+      ? "Individual"
+      : serviceType === "couples"
+        ? "Couples"
+        : serviceType === "family"
+          ? "Family"
+          : serviceType === "group"
+            ? "Group"
+            : serviceType;
+  };
+
+  const updateServiceDraft = (
+    therapistId: string,
+    serviceType: string,
+    field:
+      | "price"
+      | "durationMinutes"
+      | "isActive",
+    value:
+      | string
+      | boolean,
+  ) => {
+    setServiceDrafts(
+      (current) => ({
+        ...current,
+        [therapistId]: {
+          ...(current[
+            therapistId
+          ] || {}),
+          [serviceType]: {
+            price:
+              current[
+                therapistId
+              ]?.[
+                serviceType
+              ]?.price || "",
+            durationMinutes:
+              current[
+                therapistId
+              ]?.[
+                serviceType
+              ]?.durationMinutes || "",
+            isActive:
+              current[
+                therapistId
+              ]?.[
+                serviceType
+              ]?.isActive ?? false,
+            [field]:
+              value,
+          },
+        },
+      }),
+    );
+  };
+
+  const updateService =
     async (
       therapistId:
         string,
+      serviceType:
+        string,
     ) => {
+      const draft =
+        serviceDrafts[
+          therapistId
+        ]?.[
+          serviceType
+        ];
+
+      if (!draft) {
+        return;
+      }
+
       const newPrice =
         Number(
-          prices[
-            therapistId
-          ],
+          draft.price,
+        );
+
+      const durationMinutes =
+        Number(
+          draft.durationMinutes,
         );
 
       if (
@@ -1270,8 +1417,25 @@ export default function AdminTherapistsPage() {
         return;
       }
 
+      if (
+        !Number.isInteger(
+          durationMinutes,
+        ) ||
+        durationMinutes <= 0
+      ) {
+        setErrorMessage(
+          language === "ar"
+            ? "يرجى إدخال مدة صحيحة أكبر من صفر."
+            : language === "fr"
+              ? "Veuillez saisir une durée valide supérieure à 0."
+              : "Please enter a valid duration greater than 0.",
+        );
+
+        return;
+      }
+
       setProcessingId(
-        therapistId,
+        `${therapistId}:${serviceType}`,
       );
 
       setSuccessMessage(
@@ -1315,8 +1479,12 @@ export default function AdminTherapistsPage() {
               body:
                 JSON.stringify({
                   therapistId,
+                  serviceType,
                   price:
                     newPrice,
+                  durationMinutes,
+                  isActive:
+                    draft.isActive,
                 }),
             },
           );
@@ -1335,12 +1503,9 @@ export default function AdminTherapistsPage() {
           return;
         }
 
-        const savedPrice =
-          Number(
-            result
-              .therapist
-              .price,
-          );
+        const savedService =
+          result.service as
+            TherapistService;
 
         setTherapists(
           (
@@ -1354,36 +1519,67 @@ export default function AdminTherapistsPage() {
                 therapistId
                   ? {
                       ...therapist,
-                      price:
-                        savedPrice,
+                      services:
+                        (
+                          therapist.services ||
+                          []
+                        ).map(
+                          (
+                            service,
+                          ) =>
+                            service.service_type ===
+                            serviceType
+                              ? savedService
+                              : service,
+                        ),
                     }
                   : therapist,
             ),
         );
 
-        setPrices(
+        setServiceDrafts(
           (
             current,
           ) => ({
             ...current,
-
-            [therapistId]:
-              String(
-                savedPrice,
-              ),
+            [therapistId]: {
+              ...(current[
+                therapistId
+              ] || {}),
+              [serviceType]: {
+                price:
+                  String(
+                    savedService.price,
+                  ),
+                durationMinutes:
+                  String(
+                    savedService.duration_minutes,
+                  ),
+                isActive:
+                  savedService.is_active,
+              },
+            },
           }),
         );
 
         setSuccessMessage(
-          `${text.updateSuccess} ${formatPrice(
-            savedPrice,
-          )}`,
+          language === "ar"
+            ? `تم تحديث خدمة ${getServiceLabel(
+                serviceType,
+              )} بنجاح.`
+            : language === "fr"
+              ? `Le service ${getServiceLabel(
+                  serviceType,
+                )} a été mis à jour avec succès.`
+              : `${getServiceLabel(
+                  serviceType,
+                )} service updated successfully.`,
         );
       } catch (
         error
       ) {
         console.error(
-          "Update price error:",
+          "Update therapist service error:",
           error,
         );
 
@@ -2246,111 +2442,232 @@ export default function AdminTherapistsPage() {
                           </p>
                         </div>
 
-                        <div className="mt-7 rounded-2xl bg-[linear-gradient(135deg,#f8f1e7_0%,#fbf8f3_100%)] p-5">
-                          <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
-                            {
-                              text.currentPrice
-                            }
-                          </p>
+                        <div className="mt-7 space-y-4">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-aan-gold">
+                                {language === "ar"
+                                  ? "الخدمات والأسعار"
+                                  : language === "fr"
+                                    ? "Services et tarifs"
+                                    : "Services and prices"}
+                              </p>
 
-                          <p className="mt-2 text-3xl font-bold text-aan-navy">
-                            {formatPrice(
-                              therapist.price ||
-                                0,
-                            )}
-
-                            <span className="ml-2 text-base font-semibold text-aan-secondary">
-                              /{" "}
-                              {
-                                text.perSession
-                              }
-                            </span>
-                          </p>
-
-                          <p className="mt-2 text-sm text-aan-secondary">
-                            {
-                              text.managedByClinic
-                            }
-                          </p>
-                        </div>
-
-                        {status !==
-                          "inactive" && (
-                          <div className="mt-6">
-                            <label className="mb-2 block text-sm font-bold text-aan-navy">
-                              {
-                                text.newPrice
-                              }
-                            </label>
-
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <div className="relative flex-1">
-                                <span
-                                  className={`absolute top-1/2 -translate-y-1/2 font-bold text-aan-secondary ${
-                                    isArabic
-                                      ? "right-4"
-                                      : "left-4"
-                                  }`}
-                                >
-                                  $
-                                </span>
-
-                                <input
-                                  type="number"
-                                  min="0.01"
-                                  step="0.01"
-                                  value={
-                                    prices[
-                                      therapist.id
-                                    ] ??
-                                    ""
-                                  }
-                                  onChange={(
-                                    event,
-                                  ) =>
-                                    setPrices(
-                                      (
-                                        current,
-                                      ) => ({
-                                        ...current,
-
-                                        [therapist.id]:
-                                          event
-                                            .target
-                                            .value,
-                                      }),
-                                    )
-                                  }
-                                  disabled={
-                                    isProcessing
-                                  }
-                                  className={`aan-field w-full py-4 ${
-                                    isArabic
-                                      ? "pr-9 pl-4"
-                                      : "pl-9 pr-4"
-                                  }`}
-                                />
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void updatePrice(
-                                    therapist.id,
-                                  )
-                                }
-                                disabled={
-                                  isProcessing
-                                }
-                                className="aan-button whitespace-nowrap px-6 py-4 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {isProcessing
-                                  ? text.updating
-                                  : text.updatePrice}
-                              </button>
+                              <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                                {language === "ar"
+                                  ? "يمكن للإدارة تعديل السعر والمدة وتفعيل أو إيقاف كل خدمة."
+                                  : language === "fr"
+                                    ? "L’administration peut modifier le prix, la durée et activer ou désactiver chaque service."
+                                    : "Administrators can change the price, duration, and active status of each service."}
+                              </p>
                             </div>
                           </div>
-                        )}
+
+                          {(therapist.services || []).length ===
+                          0 ? (
+                            <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-sm text-aan-secondary">
+                              {language === "ar"
+                                ? "لا توجد خدمات مهيأة بعد لهذا المختص. اطلب منه حفظ سنوات الخبرة مرة واحدة لإنشاء الخدمات تلقائياً."
+                                : language === "fr"
+                                  ? "Aucun service n’est encore configuré pour ce spécialiste. Demandez-lui d’enregistrer une fois ses années d’expérience afin de créer automatiquement les services."
+                                  : "No services are configured yet. Ask the specialist to save their experience years once so the services are created automatically."}
+                            </div>
+                          ) : (
+                            <div className="grid gap-4">
+                              {(therapist.services || []).map(
+                                (
+                                  service,
+                                ) => {
+                                  const draft =
+                                    serviceDrafts[
+                                      therapist.id
+                                    ]?.[
+                                      service.service_type
+                                    ] || {
+                                      price:
+                                        String(
+                                          service.price,
+                                        ),
+                                      durationMinutes:
+                                        String(
+                                          service.duration_minutes,
+                                        ),
+                                      isActive:
+                                        service.is_active,
+                                    };
+
+                                  const serviceProcessing =
+                                    processingId ===
+                                    `${therapist.id}:${service.service_type}`;
+
+                                  return (
+                                    <div
+                                      key={
+                                        service.id
+                                      }
+                                      className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                          <p className="text-lg font-bold text-aan-navy">
+                                            {getServiceLabel(
+                                              service.service_type,
+                                            )}
+                                          </p>
+
+                                          {service.price_per_participant && (
+                                            <p className="mt-1 text-xs font-semibold text-aan-gold">
+                                              {language === "ar"
+                                                ? "السعر لكل مشارك"
+                                                : language === "fr"
+                                                  ? "Prix par participant"
+                                                  : "Price per participant"}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        <label className="inline-flex items-center gap-2 text-sm font-bold text-aan-navy">
+                                          <input
+                                            type="checkbox"
+                                            checked={
+                                              draft.isActive
+                                            }
+                                            onChange={(
+                                              event,
+                                            ) =>
+                                              updateServiceDraft(
+                                                therapist.id,
+                                                service.service_type,
+                                                "isActive",
+                                                event.target.checked,
+                                              )
+                                            }
+                                            disabled={
+                                              serviceProcessing ||
+                                              status === "inactive"
+                                            }
+                                          />
+
+                                          {draft.isActive
+                                            ? language === "ar"
+                                              ? "نشطة"
+                                              : language === "fr"
+                                                ? "Actif"
+                                                : "Active"
+                                            : language === "ar"
+                                              ? "غير نشطة"
+                                              : language === "fr"
+                                                ? "Inactif"
+                                                : "Inactive"}
+                                        </label>
+                                      </div>
+
+                                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                                          {language === "ar"
+                                            ? "السعر بالدولار"
+                                            : language === "fr"
+                                              ? "Prix en USD"
+                                              : "Price in USD"}
+
+                                          <input
+                                            type="number"
+                                            min="0.01"
+                                            step="0.01"
+                                            value={
+                                              draft.price
+                                            }
+                                            onChange={(
+                                              event,
+                                            ) =>
+                                              updateServiceDraft(
+                                                therapist.id,
+                                                service.service_type,
+                                                "price",
+                                                event.target.value,
+                                              )
+                                            }
+                                            disabled={
+                                              serviceProcessing ||
+                                              status === "inactive"
+                                            }
+                                            className="aan-field p-3 font-normal"
+                                          />
+                                        </label>
+
+                                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                                          {language === "ar"
+                                            ? "المدة بالدقائق"
+                                            : language === "fr"
+                                              ? "Durée en minutes"
+                                              : "Duration in minutes"}
+
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            step="1"
+                                            value={
+                                              draft.durationMinutes
+                                            }
+                                            onChange={(
+                                              event,
+                                            ) =>
+                                              updateServiceDraft(
+                                                therapist.id,
+                                                service.service_type,
+                                                "durationMinutes",
+                                                event.target.value,
+                                              )
+                                            }
+                                            disabled={
+                                              serviceProcessing ||
+                                              status === "inactive"
+                                            }
+                                            className="aan-field p-3 font-normal"
+                                          />
+                                        </label>
+                                      </div>
+
+                                      {service.service_type ===
+                                        "group" && (
+                                        <p className="mt-3 text-xs leading-5 text-aan-secondary">
+                                          {language === "ar"
+                                            ? "الجلسات الجماعية متعددة المشاركين ما زالت قيد التطوير؛ اتركها غير نشطة حالياً."
+                                            : language === "fr"
+                                              ? "La réservation multi-participants des groupes est encore en développement ; laissez ce service inactif pour le moment."
+                                              : "Multi-participant group booking is still in development; keep this service inactive for now."}
+                                        </p>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void updateService(
+                                            therapist.id,
+                                            service.service_type,
+                                          )
+                                        }
+                                        disabled={
+                                          serviceProcessing ||
+                                          status === "inactive"
+                                        }
+                                        className="aan-button mt-4 px-5 py-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {serviceProcessing
+                                          ? text.updating
+                                          : language === "ar"
+                                            ? "حفظ الخدمة"
+                                            : language === "fr"
+                                              ? "Enregistrer le service"
+                                              : "Save service"}
+                                      </button>
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
+                          )}
+                        </div>
 
                         <div className="mt-7 border-t border-aan-border pt-6">
                           {status ===

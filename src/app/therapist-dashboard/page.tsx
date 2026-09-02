@@ -830,6 +830,53 @@ export default function TherapistDashboard() {
       return user;
     };
 
+  const syncTherapistServices =
+    async () => {
+      const {
+        data: {
+          session,
+        },
+        error:
+          sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (
+        sessionError ||
+        !session
+      ) {
+        throw new Error(
+          text.loginRequired,
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/therapist-services/sync",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+          },
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result?.error ||
+            "Unable to configure therapist services.",
+        );
+      }
+
+      return result;
+    };
+
   const getInitial = () =>
     fullName
       .trim()
@@ -1667,6 +1714,18 @@ export default function TherapistDashboard() {
 
         if (error) {
           throw error;
+        }
+
+        /*
+         * Les tarifs/services sont configurés côté serveur
+         * à partir de experience_years.
+         *
+         * L'API crée uniquement les services manquants :
+         * elle n'écrase jamais un tarif déjà personnalisé
+         * par l'administration.
+         */
+        if (parsedExperience !== null) {
+          await syncTherapistServices();
         }
 
         setPhotoUrl(
