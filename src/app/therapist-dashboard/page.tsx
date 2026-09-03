@@ -219,6 +219,37 @@ export default function TherapistDashboard() {
     setConnectingGoogle,
   ] = useState(false);
 
+  const [
+    googleConnection,
+    setGoogleConnection,
+  ] = useState<{
+    connected: boolean;
+    email: string | null;
+  }>({
+    connected: false,
+    email: null,
+  });
+
+  const [
+    googleStatusLoading,
+    setGoogleStatusLoading,
+  ] = useState(true);
+
+  const [
+    disconnectingGoogle,
+    setDisconnectingGoogle,
+  ] = useState(false);
+
+  const [
+    showProfileEditor,
+    setShowProfileEditor,
+  ] = useState(false);
+
+  const [
+    showAvailabilityEditor,
+    setShowAvailabilityEditor,
+  ] = useState(false);
+
   const text =
     language === "ar"
       ? {
@@ -819,6 +850,7 @@ export default function TherapistDashboard() {
     void getSlots();
     void getBookings();
     void getTherapistServices();
+    void getGoogleConnection();
   }, []);
 
   useEffect(() => {
@@ -853,6 +885,10 @@ export default function TherapistDashboard() {
               : "Unable to connect the Google account. Please try again.";
 
     window.alert(message);
+
+    if (googleStatus === "connected") {
+      void getGoogleConnection();
+    }
 
     params.delete("google");
 
@@ -2275,6 +2311,169 @@ export default function TherapistDashboard() {
   };
 
 
+  const getGoogleConnection =
+    async () => {
+      setGoogleStatusLoading(true);
+
+      try {
+        const {
+          data: {
+            session,
+          },
+        } =
+          await supabase.auth.getSession();
+
+        if (!session) {
+          setGoogleConnection({
+            connected: false,
+            email: null,
+          });
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/google-calendar/status",
+            {
+              method: "GET",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result?.error ||
+              "Unable to load Google connection.",
+          );
+        }
+
+        setGoogleConnection({
+          connected:
+            Boolean(result.connected),
+          email:
+            result.googleEmail ||
+            null,
+        });
+      } catch (error) {
+        console.error(
+          "Google status error:",
+          error,
+        );
+
+        setGoogleConnection({
+          connected: false,
+          email: null,
+        });
+      } finally {
+        setGoogleStatusLoading(
+          false,
+        );
+      }
+    };
+
+
+  const disconnectGoogleCalendar =
+    async () => {
+      const confirmed =
+        window.confirm(
+          language === "ar"
+            ? "هل تريد فصل حساب Google عن Platform Aan؟"
+            : language === "fr"
+              ? "Déconnecter ce compte Google de Platform Aan ?"
+              : "Disconnect this Google account from Platform Aan?",
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setDisconnectingGoogle(
+        true,
+      );
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/google-calendar/disconnect",
+            {
+              method: "POST",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result?.error ||
+              "Unable to disconnect Google.",
+          );
+        }
+
+        setGoogleConnection({
+          connected: false,
+          email: null,
+        });
+
+        alert(
+          language === "ar"
+            ? "تم فصل حساب Google."
+            : language === "fr"
+              ? "Le compte Google a été déconnecté."
+              : "Google account disconnected.",
+        );
+      } catch (error) {
+        console.error(
+          "Google disconnect error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "تعذر فصل حساب Google."
+            : language === "fr"
+              ? "Impossible de déconnecter le compte Google."
+              : "Unable to disconnect the Google account.",
+        );
+      } finally {
+        setDisconnectingGoogle(
+          false,
+        );
+      }
+    };
+
+
   const connectGoogleCalendar =
     async () => {
       setConnectingGoogle(true);
@@ -2462,10 +2661,49 @@ export default function TherapistDashboard() {
       }
     };
 
+  const getBeirutNowKey = () => {
+    const parts =
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone:
+            "Asia/Beirut",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        },
+      ).formatToParts(
+        new Date(nowMs),
+      );
+
+    const values =
+      Object.fromEntries(
+        parts.map((part) => [
+          part.type,
+          part.value,
+        ]),
+      );
+
+    return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
+  };
+
+  const futureSlots =
+    slots.filter((slot) => {
+      if (!slot.slot_date) {
+        return true;
+      }
+
+      return `${slot.slot_date} ${slot.time}` >=
+        getBeirutNowKey();
+    });
+
   const displayedSlots =
     showAllSlots
-      ? slots
-      : slots.slice(0, 5);
+      ? futureSlots
+      : futureSlots.slice(0, 5);
 
   const upcomingBookings = bookings
     .filter(
@@ -2532,352 +2770,735 @@ export default function TherapistDashboard() {
               ? "rtl"
               : "ltr"
           }
-          className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
+          className="min-h-screen bg-aan-background"
         >
-          <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
-            <section className="aan-card p-7 sm:p-10 lg:col-span-2">
-              <p className="text-sm font-bold uppercase tracking-[0.26em] text-aan-gold">
-                AAN Psychotherapy
-              </p>
+          <div className="mx-auto flex max-w-[1500px]">
+            <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-64 shrink-0 border-r border-aan-border bg-white/80 px-5 py-8 backdrop-blur lg:flex lg:flex-col">
+              <div className="space-y-2">
+                <a
+                  href="#dashboard"
+                  className="flex items-center gap-3 rounded-2xl border border-aan-border bg-[#fbf8f3] px-4 py-3 font-bold text-aan-navy"
+                >
+                  <span className="text-aan-gold">
+                    ◫
+                  </span>
+                  {language === "ar"
+                    ? "لوحة التحكم"
+                    : language === "fr"
+                      ? "Tableau de bord"
+                      : "Dashboard"}
+                </a>
 
-              <h1 className="aan-heading mt-4 text-4xl sm:text-5xl">
-                {
-                  text.profileTitle
-                }
-              </h1>
+                <a
+                  href="#profile"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                >
+                  <span>◯</span>
+                  {language === "ar"
+                    ? "ملفي"
+                    : language === "fr"
+                      ? "Mon profil"
+                      : "My profile"}
+                </a>
 
-              <p className="mt-5 max-w-3xl leading-8 text-aan-secondary">
-                {
-                  text.profileDescription
-                }
-              </p>
+                <a
+                  href="#availability"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                >
+                  <span>▣</span>
+                  {text.availability}
+                </a>
 
-              <div className="mt-5 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-secondary">
-                {language ===
-                "ar"
-                  ? "✓ ستتم الترجمة تلقائياً إلى الإنجليزية والفرنسية عند الحفظ."
-                  : language ===
-                      "fr"
-                    ? "✓ Les versions anglaise et arabe seront générées automatiquement lors de l’enregistrement."
-                    : "✓ French and Arabic versions will be generated automatically when you save."}
+                <a
+                  href="#sessions"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                >
+                  <span>▤</span>
+                  {text.bookedSessions}
+                </a>
+
+                <a
+                  href="#services"
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                >
+                  <span>◇</span>
+                  {language === "ar"
+                    ? "الخدمات والأسعار"
+                    : language === "fr"
+                      ? "Services & tarifs"
+                      : "Services & prices"}
+                </a>
               </div>
-            </section>
 
-            <section className="aan-card p-7 sm:p-10">
-              <h2 className="aan-heading text-3xl">
-                {text.basic}
-              </h2>
+              <div className="mt-auto rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                {googleStatusLoading ? (
+                  <p className="text-sm font-semibold text-aan-secondary">
+                    {language === "ar"
+                      ? "جارٍ التحقق من Google..."
+                      : language === "fr"
+                        ? "Vérification Google..."
+                        : "Checking Google..."}
+                  </p>
+                ) : googleConnection.connected ? (
+                  <>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] font-black text-aan-gold">
+                        G
+                      </div>
 
-              <div className="mt-8 flex flex-col items-center">
-                <div className="relative h-40 w-40 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee] shadow-[var(--aan-shadow-md)]">
-                  {displayedPhoto ? (
-                    <Image
-                      src={
-                        displayedPhoto
-                      }
-                      alt={
-                        fullName ||
-                        text.photoAlt
-                      }
-                      fill
-                      sizes="160px"
-                      className="object-cover"
-                      unoptimized={displayedPhoto.startsWith(
-                        "blob:",
-                      )}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#f8f4ee_0%,#edf3f9_100%)]">
-                      <span className="text-5xl font-bold text-aan-button">
-                        {
-                          getInitial()
-                        }
-                      </span>
+                      <div className="min-w-0">
+                        <p className="font-bold text-emerald-700">
+                          {language === "ar"
+                            ? "Google متصل ✓"
+                            : language === "fr"
+                              ? "Google connecté ✓"
+                              : "Google connected ✓"}
+                        </p>
+
+                        <p className="mt-1 break-all text-xs text-aan-secondary">
+                          {googleConnection.email}
+                        </p>
+                      </div>
                     </div>
-                  )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void disconnectGoogleCalendar()
+                      }
+                      disabled={
+                        disconnectingGoogle
+                      }
+                      className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                    >
+                      {disconnectingGoogle
+                        ? language === "ar"
+                          ? "جارٍ الفصل..."
+                          : language === "fr"
+                            ? "Déconnexion..."
+                            : "Disconnecting..."
+                        : language === "ar"
+                          ? "فصل Google"
+                          : language === "fr"
+                            ? "Déconnecter Google"
+                            : "Disconnect Google"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-bold text-aan-navy">
+                      Google Calendar
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                      {language === "ar"
+                        ? "اربط حسابك لإنشاء روابط Meet تلقائياً."
+                        : language === "fr"
+                          ? "Connectez votre compte pour générer les liens Meet automatiquement."
+                          : "Connect your account to generate Meet links automatically."}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void connectGoogleCalendar()
+                      }
+                      disabled={
+                        connectingGoogle
+                      }
+                      className="aan-button mt-4 w-full py-2.5 text-sm disabled:opacity-60"
+                    >
+                      {connectingGoogle
+                        ? language === "ar"
+                          ? "جارٍ الاتصال..."
+                          : language === "fr"
+                            ? "Connexion..."
+                            : "Connecting..."
+                        : language === "ar"
+                          ? "ربط Google"
+                          : language === "fr"
+                            ? "Connecter Google"
+                            : "Connect Google"}
+                    </button>
+                  </>
+                )}
+              </div>
+            </aside>
+
+            <div
+              id="dashboard"
+              className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10"
+            >
+              <header className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-[0.22em] text-aan-gold">
+                    AAN Psychotherapy
+                  </p>
+
+                  <h1 className="aan-heading mt-2 text-4xl sm:text-5xl">
+                    {language === "ar"
+                      ? `مرحباً، ${fullName || "أخصائي"}`
+                      : language === "fr"
+                        ? `Bienvenue, ${fullName || "spécialiste"}`
+                        : `Welcome, ${fullName || "specialist"}`}
+                  </h1>
+
+                  <p className="mt-2 text-aan-secondary">
+                    {language === "ar"
+                      ? "نظرة سريعة على ملفك ومواعيدك وجلساتك."
+                      : language === "fr"
+                        ? "Voici un aperçu de votre profil, de vos disponibilités et de vos séances."
+                        : "Here is an overview of your profile, availability and sessions."}
+                  </p>
                 </div>
 
-                <label className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-xl border-2 border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-aan-gold hover:text-white">
-                  {
-                    text.choosePhoto
-                  }
+                <div className="flex flex-wrap gap-3 lg:hidden">
+                  {googleConnection.connected ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+                      Google connecté ✓
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void connectGoogleCalendar()
+                      }
+                      className="aan-button px-5 py-3"
+                    >
+                      Connecter Google
+                    </button>
+                  )}
 
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={
-                      handlePhotoChange
-                    }
-                    className="hidden"
-                  />
-                </label>
-
-                <p className="mt-3 text-center text-sm text-aan-secondary">
-                  {
-                    text.photoHelp
-                  }
-                </p>
-              </div>
-
-              <div className="mt-8 space-y-5">
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.fullName
-                  }
-
-                  <input
-                    type="text"
-                    value={
-                      fullName
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setFullName(
-                        event
-                          .target
-                          .value,
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowAvailabilityEditor(
+                        true,
                       )
                     }
-                    className="aan-field p-4 font-normal"
-                  />
-                </label>
+                    className="aan-button px-5 py-3"
+                  >
+                    + {text.addAvailability}
+                  </button>
+                </div>
+              </header>
 
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.professionalTitle
-                  }
+              <div className="grid gap-6 xl:grid-cols-2">
+                <section
+                  id="profile"
+                  className="aan-card p-6 sm:p-7"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-xl font-bold text-aan-navy">
+                      {language === "ar"
+                        ? "ملفي"
+                        : language === "fr"
+                          ? "Mon profil"
+                          : "My profile"}
+                    </h2>
 
-                  <input
-                    type="text"
-                    value={
-                      professionalTitle
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setProfessionalTitle(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.professionalTitlePlaceholder
-                    }
-                    className="aan-field p-4 font-normal"
-                  />
-                </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowProfileEditor(
+                          (current) => !current,
+                        )
+                      }
+                      className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
+                    >
+                      {showProfileEditor
+                        ? language === "ar"
+                          ? "إغلاق"
+                          : language === "fr"
+                            ? "Fermer"
+                            : "Close"
+                        : language === "ar"
+                          ? "تعديل"
+                          : language === "fr"
+                            ? "Modifier"
+                            : "Edit"}
+                    </button>
+                  </div>
 
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.specialty
-                  }
+                  <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-center">
+                    <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee]">
+                      {displayedPhoto ? (
+                        <Image
+                          src={
+                            displayedPhoto
+                          }
+                          alt={
+                            fullName ||
+                            text.photoAlt
+                          }
+                          fill
+                          sizes="112px"
+                          className="object-cover"
+                          unoptimized={displayedPhoto.startsWith(
+                            "blob:",
+                          )}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-aan-button">
+                          {getInitial()}
+                        </div>
+                      )}
+                    </div>
 
-                  <input
-                    type="text"
-                    value={
-                      specialty
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setSpecialty(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.specialtyPlaceholder
-                    }
-                    className="aan-field p-4 font-normal"
-                  />
-                </label>
+                    <div className="min-w-0">
+                      <h3 className="text-2xl font-bold text-aan-navy">
+                        {fullName ||
+                          text.unknown}
+                      </h3>
 
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.experience
-                  }
-
-                  <input
-                    type="number"
-                    min="0"
-                    max="80"
-                    step="1"
-                    value={
-                      experienceYears
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setExperienceYears(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    className="aan-field p-4 font-normal"
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="aan-card p-7 sm:p-10">
-              <h2 className="aan-heading text-3xl">
-                {
-                  text.biographySection
-                }
-              </h2>
-
-              <div className="mt-8 space-y-6">
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.biography
-                  }
-
-                  <textarea
-                    value={bio}
-                    onChange={(
-                      event,
-                    ) =>
-                      setBio(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.biographyPlaceholder
-                    }
-                    className="aan-field min-h-64 resize-y p-4 font-normal leading-7"
-                  />
-                </label>
-
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.education
-                  }
-
-                  <textarea
-                    value={
-                      education
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setEducation(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.educationPlaceholder
-                    }
-                    className="aan-field min-h-32 resize-y p-4 font-normal leading-7"
-                  />
-                </label>
-
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.certifications
-                  }
-
-                  <textarea
-                    value={
-                      certifications
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setCertifications(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.certificationsPlaceholder
-                    }
-                    className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
-                  />
-                </label>
-
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.approach
-                  }
-
-                  <textarea
-                    value={
-                      therapeuticApproach
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setTherapeuticApproach(
-                        event
-                          .target
-                          .value,
-                      )
-                    }
-                    placeholder={
-                      text.approachPlaceholder
-                    }
-                    className="aan-field min-h-48 resize-y p-4 font-normal leading-7"
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="aan-card p-7 sm:p-10">
-              <h2 className="aan-heading text-3xl">
-                {
-                  text.servicesLanguages
-                }
-              </h2>
-
-              <div className="mt-8 space-y-6">
-                <div>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-bold text-aan-navy">
-                        {
-                          text.services
-                        }
+                      <p className="mt-1 text-aan-secondary">
+                        {professionalTitle ||
+                          specialty ||
+                          text.unknown}
                       </p>
 
-                      <p className="mt-1 text-sm leading-6 text-aan-secondary">
+                      <span className="mt-3 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-secondary">
                         {language === "ar"
-                          ? "الخدمات والأسعار تحددها الإدارة وتظهر هنا تلقائياً."
+                          ? "أخصائي"
                           : language === "fr"
-                            ? "Les services et tarifs sont définis par l’administration et apparaissent ici automatiquement."
-                            : "Services and prices are managed by the administration and appear here automatically."}
+                            ? "Spécialiste"
+                            : "Specialist"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 grid gap-4 border-t border-aan-border pt-5 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                        {text.experience}
+                      </p>
+                      <p className="mt-1 font-semibold text-aan-navy">
+                        {experienceYears
+                          ? `${experienceYears} ${
+                              language === "ar"
+                                ? "سنوات"
+                                : language === "fr"
+                                  ? "ans"
+                                  : "years"
+                            }`
+                          : "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                        {text.specialty}
+                      </p>
+                      <p className="mt-1 font-semibold text-aan-navy">
+                        {specialty || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                        {text.languages}
+                      </p>
+                      <p className="mt-1 whitespace-pre-line font-semibold text-aan-navy">
+                        {languages || "—"}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section
+                  id="availability"
+                  className="aan-card p-6 sm:p-7"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-xl font-bold text-aan-navy">
+                      {language === "ar"
+                        ? "المواعيد القادمة"
+                        : language === "fr"
+                          ? "Disponibilités prochaines"
+                          : "Upcoming availability"}
+                    </h2>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowAvailabilityEditor(
+                          (current) => !current,
+                        )
+                      }
+                      className="aan-button px-4 py-2.5 text-sm"
+                    >
+                      + {text.addAvailability}
+                    </button>
+                  </div>
+
+                  {showAvailabilityEditor ? (
+                    <div className="mt-5 grid gap-3 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4 sm:grid-cols-[1fr_1fr_auto]">
+                      <input
+                        type="date"
+                        value={slotDate}
+                        onChange={(
+                          event,
+                        ) =>
+                          setSlotDate(
+                            event.target.value,
+                          )
+                        }
+                        className="aan-field p-3"
+                      />
+
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={(
+                          event,
+                        ) =>
+                          setTime(
+                            event.target.value,
+                          )
+                        }
+                        className="aan-field p-3"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void addSlot()
+                        }
+                        className="aan-button px-5 py-3"
+                      >
+                        {language === "ar"
+                          ? "إضافة"
+                          : language === "fr"
+                            ? "Ajouter"
+                            : "Add"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-5 divide-y divide-aan-border overflow-hidden rounded-2xl border border-aan-border bg-white">
+                    {displayedSlots.length ===
+                    0 ? (
+                      <p className="p-5 text-aan-secondary">
+                        {text.noAvailability}
+                      </p>
+                    ) : (
+                      displayedSlots.map(
+                        (slot) => (
+                          <div
+                            key={slot.id}
+                            className="flex items-center justify-between gap-4 px-4 py-4"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-bold capitalize text-aan-navy">
+                                {formatDate(
+                                  slot.slot_date,
+                                )}
+                              </p>
+
+                              <p className="mt-1 text-sm text-aan-secondary">
+                                {slot.time} ·{" "}
+                                {
+                                  text.therapistTimeZone
+                                }
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void deleteSlot(
+                                  slot.id,
+                                )
+                              }
+                              className="shrink-0 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50"
+                            >
+                              {text.delete}
+                            </button>
+                          </div>
+                        ),
+                      )
+                    )}
+                  </div>
+
+                  {futureSlots.length > 5 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowAllSlots(
+                          (current) => !current,
+                        )
+                      }
+                      className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-white"
+                    >
+                      {showAllSlots
+                        ? language === "ar"
+                          ? "عرض أقل"
+                          : language === "fr"
+                            ? "Réduire"
+                            : "Show less"
+                        : language === "ar"
+                          ? `عرض الكل (${futureSlots.length})`
+                          : language === "fr"
+                            ? `Voir tout (${futureSlots.length})`
+                            : `View all (${futureSlots.length})`}
+                    </button>
+                  ) : null}
+                </section>
+
+                <section
+                  id="sessions"
+                  className="aan-card p-6 sm:p-7"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-xl font-bold text-aan-navy">
+                      {language === "ar"
+                        ? "الجلسات القادمة"
+                        : language === "fr"
+                          ? "Séances à venir"
+                          : "Upcoming sessions"}
+                    </h2>
+
+                    <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-secondary">
+                      {
+                        upcomingBookings.length
+                      }
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-3">
+                    {displayedUpcomingBookings.length ===
+                    0 ? (
+                      <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-aan-secondary">
+                        {language === "ar"
+                          ? "لا توجد جلسات قادمة."
+                          : language === "fr"
+                            ? "Aucune séance à venir."
+                            : "No upcoming sessions."}
+                      </div>
+                    ) : (
+                      displayedUpcomingBookings.map(
+                        (booking) => {
+                          const sessionUrl =
+                            booking.meeting_url ||
+                            booking.zoom_start_url;
+
+                          return (
+                            <article
+                              key={
+                                booking.id
+                              }
+                              className="rounded-2xl border border-aan-border bg-white p-4"
+                            >
+                              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="font-bold capitalize text-aan-navy">
+                                    {formatBookingSessionDate(
+                                      booking,
+                                    )}{" "}
+                                    ·{" "}
+                                    {formatBookingSessionTime(
+                                      booking,
+                                    )}
+                                  </p>
+
+                                  <p className="mt-1 break-all text-sm text-aan-secondary">
+                                    {text.patientEmail}:{" "}
+                                    {booking.patient_email ||
+                                      text.unknown}
+                                  </p>
+                                </div>
+
+                                <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                                  {language === "ar"
+                                    ? "مؤكدة"
+                                    : language === "fr"
+                                      ? "Confirmée"
+                                      : "Confirmed"}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                {sessionUrl ? (
+                                  <a
+                                    href={
+                                      sessionUrl
+                                    }
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="aan-button px-4 py-2 text-sm"
+                                  >
+                                    {text.startSession}
+                                  </a>
+                                ) : (
+                                  <span className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
+                                    {text.meetingNotReady}
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "request_reschedule",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-aan-gold bg-white px-4 py-2 text-sm font-bold text-aan-navy"
+                                >
+                                  {text.requestReschedule}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "cancel_and_refund",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700"
+                                >
+                                  {text.cancelSession}
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        },
+                      )
+                    )}
+                  </div>
+
+                  {upcomingBookings.length > 5 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowAllUpcomingBookings(
+                          (current) => !current,
+                        )
+                      }
+                      className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy"
+                    >
+                      {showAllUpcomingBookings
+                        ? language === "ar"
+                          ? "عرض أقل"
+                          : language === "fr"
+                            ? "Réduire"
+                            : "Show less"
+                        : language === "ar"
+                          ? `عرض الكل (${upcomingBookings.length})`
+                          : language === "fr"
+                            ? `Voir tout (${upcomingBookings.length})`
+                            : `View all (${upcomingBookings.length})`}
+                    </button>
+                  ) : null}
+
+                  {pastBookings.length > 0 ? (
+                    <div className="mt-5 border-t border-aan-border pt-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPastBookings(
+                            (current) => !current,
+                          )
+                        }
+                        className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-secondary"
+                      >
+                        {showPastBookings
+                          ? language === "ar"
+                            ? "إخفاء الجلسات السابقة"
+                            : language === "fr"
+                              ? "Masquer les séances passées"
+                              : "Hide past sessions"
+                          : language === "ar"
+                            ? `عرض الجلسات السابقة (${pastBookings.length})`
+                            : language === "fr"
+                              ? `Voir les séances passées (${pastBookings.length})`
+                              : `View past sessions (${pastBookings.length})`}
+                      </button>
+
+                      {showPastBookings ? (
+                        <div className="mt-3 grid gap-2">
+                          {pastBookings.map(
+                            (booking) => (
+                              <div
+                                key={
+                                  booking.id
+                                }
+                                className="rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3"
+                              >
+                                <p className="font-semibold capitalize text-aan-navy">
+                                  {formatBookingSessionDate(
+                                    booking,
+                                  )}{" "}
+                                  ·{" "}
+                                  {formatBookingSessionTime(
+                                    booking,
+                                  )}
+                                </p>
+
+                                <p className="mt-1 text-sm text-aan-secondary">
+                                  {booking.patient_email ||
+                                    text.unknown}
+                                </p>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </section>
+
+                <section
+                  id="services"
+                  className="aan-card p-6 sm:p-7"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-bold text-aan-navy">
+                        {language === "ar"
+                          ? "الخدمات والأسعار"
+                          : language === "fr"
+                            ? "Mes services & tarifs"
+                            : "My services & prices"}
+                      </h2>
+
+                      <p className="mt-1 text-xs text-aan-secondary">
+                        {language === "ar"
+                          ? "تُدار بواسطة AAN"
+                          : language === "fr"
+                            ? "Gérés par AAN"
+                            : "Managed by AAN"}
                       </p>
                     </div>
 
                     <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-secondary">
-                      {language === "ar"
-                        ? "إدارة AAN"
-                        : language === "fr"
-                          ? "Géré par AAN"
-                          : "Managed by AAN"}
+                      {
+                        therapistServices.length
+                      }
                     </span>
                   </div>
 
-                  {therapistServices.length ===
-                  0 ? (
-                    <div className="mt-4 rounded-2xl border border-aan-border bg-[#f8f4ee] p-5 text-sm leading-6 text-aan-secondary">
-                      {language === "ar"
-                        ? "لا توجد خدمات مهيأة بعد. احفظ سنوات الخبرة لإنشاء الخدمات تلقائياً، ثم يمكن للإدارة تعديل الأسعار."
-                        : language === "fr"
-                          ? "Aucun service n’est encore configuré. Enregistrez vos années d’expérience pour créer les services automatiquement ; l’administration pourra ensuite ajuster les tarifs."
-                          : "No services are configured yet. Save your experience years to create them automatically; the administration can then adjust the prices."}
-                    </div>
-                  ) : (
-                    <div className="mt-4 grid gap-3">
-                      {therapistServices.map(
+                  <div className="mt-5 divide-y divide-aan-border overflow-hidden rounded-2xl border border-aan-border">
+                    {therapistServices.length ===
+                    0 ? (
+                      <p className="p-5 text-aan-secondary">
+                        {language === "ar"
+                          ? "لا توجد خدمات مهيأة."
+                          : language === "fr"
+                            ? "Aucun service configuré."
+                            : "No services configured."}
+                      </p>
+                    ) : (
+                      therapistServices.map(
                         (
                           service,
                         ) => (
@@ -2885,7 +3506,7 @@ export default function TherapistDashboard() {
                             key={
                               service.id
                             }
-                            className="flex flex-col gap-3 rounded-2xl border border-aan-border bg-[#f8f4ee] p-5 sm:flex-row sm:items-center sm:justify-between"
+                            className="flex flex-col gap-3 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                           >
                             <div>
                               <p className="font-bold text-aan-navy">
@@ -2899,18 +3520,11 @@ export default function TherapistDashboard() {
                                   service.duration_minutes
                                 }{" "}
                                 min
-                                {service.price_per_participant
-                                  ? language === "ar"
-                                    ? " · لكل مشارك"
-                                    : language === "fr"
-                                      ? " · par participant"
-                                      : " · per participant"
-                                  : ""}
                               </p>
                             </div>
 
                             <div className="flex items-center gap-3">
-                              <span className="text-lg font-bold text-aan-navy">
+                              <span className="font-bold text-aan-navy">
                                 {formatServicePrice(
                                   service,
                                 )}
@@ -2938,611 +3552,375 @@ export default function TherapistDashboard() {
                             </div>
                           </div>
                         ),
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <label className="grid gap-2 font-bold text-aan-navy">
-                  {
-                    text.languages
-                  }
-
-                  <textarea
-                    value={
-                      languages
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setLanguages(
-                        event
-                          .target
-                          .value,
                       )
-                    }
-                    placeholder={
-                      text.languagesPlaceholder
-                    }
-                    className="aan-field min-h-32 resize-y p-4 font-normal leading-8"
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    void saveProfile()
-                  }
-                  disabled={
-                    isSaving
-                  }
-                  className="aan-button w-full py-4 text-lg disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSaving
-                    ? text.saving
-                    : text.save}
-                </button>
+                    )}
+                  </div>
+                </section>
               </div>
-            </section>
 
-            <section className="aan-card p-7 sm:p-10 lg:col-span-2">
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="max-w-3xl">
-                  <p className="text-sm font-bold uppercase tracking-[0.22em] text-aan-gold">
-                    Google Calendar · Google Meet
-                  </p>
-
-                  <h2 className="aan-heading mt-3 text-3xl sm:text-4xl">
+              <section className="aan-card mt-6 p-6 sm:p-7">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-xl font-bold text-aan-navy">
                     {language === "ar"
-                      ? "ربط حساب Google"
+                      ? "نبذة عنك"
                       : language === "fr"
-                        ? "Connecter mon compte Google"
-                        : "Connect my Google account"}
+                        ? "À propos de vous"
+                        : "About you"}
                   </h2>
 
-                  <p className="mt-4 leading-7 text-aan-secondary">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowProfileEditor(
+                        true,
+                      )
+                    }
+                    className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-navy"
+                  >
                     {language === "ar"
-                      ? "اربط حساب Google الذي ستستخدمه للاستشارات. ستستخدم Platform Aan هذا التفويض لإنشاء مواعيد Google Calendar وروابط Google Meet الخاصة بجلساتك."
+                      ? "تعديل"
                       : language === "fr"
-                        ? "Connectez le compte Google que vous utiliserez pour vos consultations. Platform Aan utilisera cette autorisation pour créer les événements Google Calendar et les liens Google Meet de vos séances."
-                        : "Connect the Google account you will use for consultations. Platform Aan will use this authorization to create your Google Calendar events and Google Meet links."}
-                  </p>
-
-                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                    {language === "ar"
-                      ? "لن تطلب Platform Aan كلمة مرور Google الخاصة بك ولن تخزنها."
-                      : language === "fr"
-                        ? "Platform Aan ne vous demandera jamais votre mot de passe Google et ne le stockera pas."
-                        : "Platform Aan will never ask for or store your Google password."}
-                  </p>
+                        ? "Modifier"
+                        : "Edit"}
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    void connectGoogleCalendar()
-                  }
-                  disabled={
-                    connectingGoogle
-                  }
-                  className="aan-button shrink-0 px-6 py-4 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {connectingGoogle
-                    ? language === "ar"
-                      ? "جارٍ الاتصال..."
-                      : language === "fr"
-                        ? "Connexion..."
-                        : "Connecting..."
-                    : language === "ar"
-                      ? "ربط Google"
-                      : language === "fr"
-                        ? "Connecter Google"
-                        : "Connect Google"}
-                </button>
-              </div>
-            </section>
-
-            <section className="aan-card p-7 sm:p-10">
-              <h2 className="aan-heading text-3xl sm:text-4xl">
-                {
-                  text.availability
-                }
-              </h2>
-
-              <div className="mt-8 space-y-3">
-                {slots.length === 0 ? (
-                  <p className="text-aan-secondary">
-                    {text.noAvailability}
-                  </p>
-                ) : (
-                  <>
-                    {displayedSlots.map((slot) => (
-                      <div
-                        key={slot.id}
-                        className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] px-4 py-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-bold text-aan-navy">
-                            {formatDate(slot.slot_date)}
-                          </p>
-                          <p className="mt-0.5 text-sm text-aan-secondary">
-                            {slot.time}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void deleteSlot(slot.id)
-                          }
-                          className="shrink-0 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-                        >
-                          {text.delete}
-                        </button>
-                      </div>
-                    ))}
-
-                    {slots.length > 5 ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowAllSlots(
-                            (current) => !current,
-                          )
-                        }
-                        className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
-                      >
-                        {showAllSlots
-                          ? language === "ar"
-                            ? "عرض أقل"
-                            : language === "fr"
-                              ? "Réduire"
-                              : "Show less"
-                          : language === "ar"
-                            ? `عرض جميع المواعيد المتاحة (${slots.length})`
-                            : language === "fr"
-                              ? `Afficher toutes les disponibilités (${slots.length})`
-                              : `Show all availability (${slots.length})`}
-                      </button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </section>
-
-            <section className="aan-card p-7 sm:p-10">
-              <h2 className="aan-heading text-3xl sm:text-4xl">
-                {text.bookedSessions}
-              </h2>
-
-              {bookings.length === 0 ? (
-                <p className="mt-8 text-aan-secondary">
-                  {text.noBookings}
-                </p>
-              ) : (
-                <div className="mt-8">
-                  <h3 className="mb-4 text-lg font-bold text-aan-navy">
-                    {language === "ar"
-                      ? `الجلسات القادمة (${upcomingBookings.length})`
-                      : language === "fr"
-                        ? `Séances à venir (${upcomingBookings.length})`
-                        : `Upcoming sessions (${upcomingBookings.length})`}
-                  </h3>
-
-                  {upcomingBookings.length === 0 ? (
-                    <p className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-aan-secondary">
-                      {language === "ar"
-                        ? "لا توجد جلسات قادمة."
-                        : language === "fr"
-                          ? "Aucune séance à venir."
-                          : "No upcoming sessions."}
+                <div className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                      {text.experience}
                     </p>
-                  ) : (
-                    <div className="grid gap-4">
-                      {displayedUpcomingBookings.map(
-                    (
-                      booking,
-                    ) => {
-                      const sessionUrl =
-                        booking.meeting_url ||
-                        booking.zoom_start_url;
+                    <p className="mt-1 text-aan-secondary">
+                      {experienceYears
+                        ? `${experienceYears} ${
+                            language === "fr"
+                              ? "ans"
+                              : language === "ar"
+                                ? "سنوات"
+                                : "years"
+                          }`
+                        : "—"}
+                    </p>
+                  </div>
 
-                      return (
-                        <article
-                          key={
-                            booking.id
-                          }
-                          className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
-                        >
-                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                            {
-                              text.sessionDate
-                            }
-                          </p>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                      {text.specialty}
+                    </p>
+                    <p className="mt-1 text-aan-secondary">
+                      {specialty || "—"}
+                    </p>
+                  </div>
 
-                          <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
-                            {formatBookingSessionDate(
-                              booking,
-                            )}{" "}
-                            {language ===
-                            "fr"
-                              ? "à"
-                              : language ===
-                                  "ar"
-                                ? "في"
-                                : "at"}{" "}
-                            {formatBookingSessionTime(
-                              booking,
-                            )}
-                          </h3>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                      {text.approach}
+                    </p>
+                    <p className="mt-1 line-clamp-3 whitespace-pre-line text-aan-secondary">
+                      {therapeuticApproach ||
+                        "—"}
+                    </p>
+                  </div>
 
-                          <p className="mt-1 text-sm font-semibold text-aan-secondary">
-                            {
-                              text.therapistTimeZone
-                            }
-                          </p>
-
-                          <p className="mt-4 text-aan-secondary">
-                            {
-                              text.price
-                            }
-                            : $
-                            {
-                              booking.price
-                            }
-                          </p>
-
-                          <p className="mt-2 break-words text-aan-secondary">
-                            {
-                              text.patientEmail
-                            }
-                            :{" "}
-                            <span className="font-semibold text-aan-navy">
-                              {booking.patient_email ||
-                                text.unknown}
-                            </span>
-                          </p>
-
-                          <p className="mt-2 font-bold text-green-700">
-                            {
-                              text.status
-                            }
-                            :{" "}
-                            {
-                              booking.status
-                            }
-                          </p>
-
-                          <p className="mt-2 text-sm text-aan-secondary">
-                            {
-                              text.created
-                            }
-                            :{" "}
-                            {new Date(
-                              booking.created_at,
-                            ).toLocaleString(
-                              language ===
-                              "ar"
-                                ? "ar-LB"
-                                : language ===
-                                    "fr"
-                                  ? "fr-FR"
-                                  : "en-US",
-                            )}
-                          </p>
-
-                          {isPastBooking(
-                            booking,
-                          ) ? (
-                            <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
-                              {
-                                text.sessionPast
-                              }
-                            </div>
-                          ) : (
-                            <>
-                              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void runBookingAction(
-                                      booking,
-                                      "request_reschedule",
-                                    )
-                                  }
-                                  disabled={
-                                    bookingActionId ===
-                                    booking.id
-                                  }
-                                  className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {
-                                    text.requestReschedule
-                                  }
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void runBookingAction(
-                                      booking,
-                                      "cancel_and_refund",
-                                    )
-                                  }
-                                  disabled={
-                                    bookingActionId ===
-                                    booking.id
-                                  }
-                                  className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {
-                                    text.cancelSession
-                                  }
-                                </button>
-                              </div>
-
-                              {sessionUrl ? (
-                                <a
-                                  href={
-                                    sessionUrl
-                                  }
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="aan-button mt-3 flex w-full py-3"
-                                >
-                                  {
-                                    text.startSession
-                                  }
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
-                                >
-                                  {
-                                    text.meetingNotReady
-                                  }
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </article>
-                      );
-                    },
-)}
-
-                      {upcomingBookings.length > 5 ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setShowAllUpcomingBookings(
-                              (current) => !current,
-                            )
-                          }
-                          className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
-                        >
-                          {showAllUpcomingBookings
-                            ? language === "ar"
-                              ? "عرض أقل"
-                              : language === "fr"
-                                ? "Réduire"
-                                : "Show less"
-                            : language === "ar"
-                              ? `عرض جميع الجلسات القادمة (${upcomingBookings.length})`
-                              : language === "fr"
-                                ? `Afficher toutes les séances à venir (${upcomingBookings.length})`
-                                : `Show all upcoming sessions (${upcomingBookings.length})`}
-                        </button>
-                      ) : null}
-                    </div>
-                  )}
-
-                  {pastBookings.length > 0 ? (
-                    <div className="mt-6 border-t border-aan-border pt-5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowPastBookings(
-                            (current) => !current,
-                          )
-                        }
-                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-white"
-                      >
-                        {showPastBookings
-                          ? language === "ar"
-                            ? "إخفاء الجلسات السابقة"
-                            : language === "fr"
-                              ? "Masquer les séances passées"
-                              : "Hide past sessions"
-                          : language === "ar"
-                            ? `عرض الجلسات السابقة (${pastBookings.length})`
-                            : language === "fr"
-                              ? `Voir les séances passées (${pastBookings.length})`
-                              : `View past sessions (${pastBookings.length})`}
-                      </button>
-
-                      {showPastBookings ? (
-                        <div className="mt-4 grid gap-4">
-                          {pastBookings.map(
-                    (
-                      booking,
-                    ) => {
-                      const sessionUrl =
-                        booking.meeting_url ||
-                        booking.zoom_start_url;
-
-                      return (
-                        <article
-                          key={
-                            booking.id
-                          }
-                          className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
-                        >
-                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                            {
-                              text.sessionDate
-                            }
-                          </p>
-
-                          <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
-                            {formatBookingSessionDate(
-                              booking,
-                            )}{" "}
-                            {language ===
-                            "fr"
-                              ? "à"
-                              : language ===
-                                  "ar"
-                                ? "في"
-                                : "at"}{" "}
-                            {formatBookingSessionTime(
-                              booking,
-                            )}
-                          </h3>
-
-                          <p className="mt-1 text-sm font-semibold text-aan-secondary">
-                            {
-                              text.therapistTimeZone
-                            }
-                          </p>
-
-                          <p className="mt-4 text-aan-secondary">
-                            {
-                              text.price
-                            }
-                            : $
-                            {
-                              booking.price
-                            }
-                          </p>
-
-                          <p className="mt-2 break-words text-aan-secondary">
-                            {
-                              text.patientEmail
-                            }
-                            :{" "}
-                            <span className="font-semibold text-aan-navy">
-                              {booking.patient_email ||
-                                text.unknown}
-                            </span>
-                          </p>
-
-                          <p className="mt-2 font-bold text-green-700">
-                            {
-                              text.status
-                            }
-                            :{" "}
-                            {
-                              booking.status
-                            }
-                          </p>
-
-                          <p className="mt-2 text-sm text-aan-secondary">
-                            {
-                              text.created
-                            }
-                            :{" "}
-                            {new Date(
-                              booking.created_at,
-                            ).toLocaleString(
-                              language ===
-                              "ar"
-                                ? "ar-LB"
-                                : language ===
-                                    "fr"
-                                  ? "fr-FR"
-                                  : "en-US",
-                            )}
-                          </p>
-
-                          {isPastBooking(
-                            booking,
-                          ) ? (
-                            <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
-                              {
-                                text.sessionPast
-                              }
-                            </div>
-                          ) : (
-                            <>
-                              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void runBookingAction(
-                                      booking,
-                                      "request_reschedule",
-                                    )
-                                  }
-                                  disabled={
-                                    bookingActionId ===
-                                    booking.id
-                                  }
-                                  className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {
-                                    text.requestReschedule
-                                  }
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void runBookingAction(
-                                      booking,
-                                      "cancel_and_refund",
-                                    )
-                                  }
-                                  disabled={
-                                    bookingActionId ===
-                                    booking.id
-                                  }
-                                  className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {
-                                    text.cancelSession
-                                  }
-                                </button>
-                              </div>
-
-                              {sessionUrl ? (
-                                <a
-                                  href={
-                                    sessionUrl
-                                  }
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="aan-button mt-3 flex w-full py-3"
-                                >
-                                  {
-                                    text.startSession
-                                  }
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
-                                >
-                                  {
-                                    text.meetingNotReady
-                                  }
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </article>
-                      );
-                    },
-)}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                      {text.languages}
+                    </p>
+                    <p className="mt-1 whitespace-pre-line text-aan-secondary">
+                      {languages || "—"}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </section>
+              </section>
+
+              {showProfileEditor ? (
+                <section className="aan-card mt-6 p-6 sm:p-8">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-bold uppercase tracking-[0.22em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+
+                      <h2 className="aan-heading mt-2 text-3xl">
+                        {text.profileTitle}
+                      </h2>
+
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-aan-secondary">
+                        {text.profileDescription}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowProfileEditor(
+                          false,
+                        )
+                      }
+                      className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-navy"
+                    >
+                      {language === "ar"
+                        ? "إغلاق"
+                        : language === "fr"
+                          ? "Fermer"
+                          : "Close"}
+                    </button>
+                  </div>
+
+                  <div className="mt-7 grid gap-6 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                      <h3 className="text-xl font-bold text-aan-navy">
+                        {text.basic}
+                      </h3>
+
+                      <div className="mt-5 flex flex-col items-center">
+                        <div className="relative h-28 w-28 overflow-hidden rounded-full border-2 border-aan-gold bg-white">
+                          {displayedPhoto ? (
+                            <Image
+                              src={
+                                displayedPhoto
+                              }
+                              alt={
+                                fullName ||
+                                text.photoAlt
+                              }
+                              fill
+                              sizes="112px"
+                              className="object-cover"
+                              unoptimized={displayedPhoto.startsWith(
+                                "blob:",
+                              )}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-aan-button">
+                              {getInitial()}
+                            </div>
+                          )}
+                        </div>
+
+                        <label className="mt-4 inline-flex cursor-pointer rounded-xl border border-aan-gold bg-white px-4 py-2 text-sm font-bold text-aan-navy">
+                          {text.choosePhoto}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={
+                              handlePhotoChange
+                            }
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.fullName}
+                          <input
+                            type="text"
+                            value={fullName}
+                            onChange={(
+                              event,
+                            ) =>
+                              setFullName(
+                                event.target.value,
+                              )
+                            }
+                            className="aan-field p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.experience}
+                          <input
+                            type="number"
+                            min="0"
+                            max="80"
+                            step="1"
+                            value={
+                              experienceYears
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setExperienceYears(
+                                event.target.value,
+                              )
+                            }
+                            className="aan-field p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy sm:col-span-2">
+                          {text.professionalTitle}
+                          <input
+                            type="text"
+                            value={
+                              professionalTitle
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setProfessionalTitle(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.professionalTitlePlaceholder
+                            }
+                            className="aan-field p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy sm:col-span-2">
+                          {text.specialty}
+                          <input
+                            type="text"
+                            value={specialty}
+                            onChange={(
+                              event,
+                            ) =>
+                              setSpecialty(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.specialtyPlaceholder
+                            }
+                            className="aan-field p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy sm:col-span-2">
+                          {text.languages}
+                          <textarea
+                            value={languages}
+                            onChange={(
+                              event,
+                            ) =>
+                              setLanguages(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.languagesPlaceholder
+                            }
+                            className="aan-field min-h-28 resize-y p-3 font-normal"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                      <h3 className="text-xl font-bold text-aan-navy">
+                        {text.biographySection}
+                      </h3>
+
+                      <div className="mt-5 grid gap-4">
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.biography}
+                          <textarea
+                            value={bio}
+                            onChange={(
+                              event,
+                            ) =>
+                              setBio(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.biographyPlaceholder
+                            }
+                            className="aan-field min-h-36 resize-y p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.education}
+                          <textarea
+                            value={education}
+                            onChange={(
+                              event,
+                            ) =>
+                              setEducation(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.educationPlaceholder
+                            }
+                            className="aan-field min-h-28 resize-y p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.certifications}
+                          <textarea
+                            value={
+                              certifications
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setCertifications(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.certificationsPlaceholder
+                            }
+                            className="aan-field min-h-28 resize-y p-3 font-normal"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-bold text-aan-navy">
+                          {text.approach}
+                          <textarea
+                            value={
+                              therapeuticApproach
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setTherapeuticApproach(
+                                event.target.value,
+                              )
+                            }
+                            placeholder={
+                              text.approachPlaceholder
+                            }
+                            className="aan-field min-h-32 resize-y p-3 font-normal"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                    <p className="text-sm text-aan-secondary">
+                      {language === "ar"
+                        ? "ستُنشأ الترجمات الإنجليزية والفرنسية والعربية تلقائياً عند الحفظ."
+                        : language === "fr"
+                          ? "Les versions anglaise et arabe seront générées automatiquement lors de l’enregistrement."
+                          : "French and Arabic versions will be generated automatically when you save."}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void saveProfile()
+                      }
+                      disabled={
+                        isSaving
+                      }
+                      className="aan-button min-w-56 px-6 py-3 disabled:opacity-60"
+                    >
+                      {isSaving
+                        ? text.saving
+                        : text.save}
+                    </button>
+                  </div>
+                </section>
+              ) : null}
+            </div>
           </div>
         </main>
       </>
