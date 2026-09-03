@@ -178,6 +178,19 @@ export default function TherapistDashboard() {
   const [bookings, setBookings] =
     useState<Booking[]>([]);
 
+  const [showAllSlots, setShowAllSlots] =
+    useState(false);
+
+  const [
+    showAllUpcomingBookings,
+    setShowAllUpcomingBookings,
+  ] = useState(false);
+
+  const [
+    showPastBookings,
+    setShowPastBookings,
+  ] = useState(false);
+
   const [nowMs, setNowMs] =
     useState(() => Date.now());
 
@@ -2319,6 +2332,53 @@ export default function TherapistDashboard() {
       }
     };
 
+  const displayedSlots =
+    showAllSlots
+      ? slots
+      : slots.slice(0, 5);
+
+  const upcomingBookings = bookings
+    .filter(
+      (booking) =>
+        !isPastBooking(booking),
+    )
+    .sort((a, b) => {
+      const aTime =
+        a.scheduled_start
+          ? new Date(a.scheduled_start).getTime()
+          : Number.MAX_SAFE_INTEGER;
+
+      const bTime =
+        b.scheduled_start
+          ? new Date(b.scheduled_start).getTime()
+          : Number.MAX_SAFE_INTEGER;
+
+      return aTime - bTime;
+    });
+
+  const pastBookings = bookings
+    .filter((booking) =>
+      isPastBooking(booking),
+    )
+    .sort((a, b) => {
+      const aTime =
+        a.scheduled_start
+          ? new Date(a.scheduled_start).getTime()
+          : 0;
+
+      const bTime =
+        b.scheduled_start
+          ? new Date(b.scheduled_start).getTime()
+          : 0;
+
+      return bTime - aTime;
+    });
+
+  const displayedUpcomingBookings =
+    showAllUpcomingBookings
+      ? upcomingBookings
+      : upcomingBookings.slice(0, 5);
+
   const displayedPhoto =
     photoPreview ||
     photoUrl;
@@ -2802,122 +2862,97 @@ export default function TherapistDashboard() {
                 }
               </h2>
 
-              <div className="mt-8 space-y-4">
-                <input
-                  type="date"
-                  value={
-                    slotDate
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setSlotDate(
-                      event
-                        .target
-                        .value,
-                    )
-                  }
-                  className="aan-field p-4"
-                />
-
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(
-                    event,
-                  ) =>
-                    setTime(
-                      event
-                        .target
-                        .value,
-                    )
-                  }
-                  className="aan-field p-4"
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    void addSlot()
-                  }
-                  className="aan-button w-full py-4 text-lg"
-                >
-                  {
-                    text.addAvailability
-                  }
-                </button>
-              </div>
-
-              <div className="mt-8 space-y-4">
-                {slots.length ===
-                0 ? (
+              <div className="mt-8 space-y-3">
+                {slots.length === 0 ? (
                   <p className="text-aan-secondary">
-                    {
-                      text.noAvailability
-                    }
+                    {text.noAvailability}
                   </p>
                 ) : (
-                  slots.map(
-                    (
-                      slot,
-                    ) => (
+                  <>
+                    {displayedSlots.map((slot) => (
                       <div
-                        key={
-                          slot.id
-                        }
-                        className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
+                        key={slot.id}
+                        className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] px-4 py-3"
                       >
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-bold text-aan-navy">
-                            {formatDate(
-                              slot.slot_date,
-                            )}
+                            {formatDate(slot.slot_date)}
                           </p>
-
-                          <p className="mt-1 text-aan-secondary">
-                            {
-                              slot.time
-                            }
+                          <p className="mt-0.5 text-sm text-aan-secondary">
+                            {slot.time}
                           </p>
                         </div>
 
                         <button
                           type="button"
                           onClick={() =>
-                            void deleteSlot(
-                              slot.id,
-                            )
+                            void deleteSlot(slot.id)
                           }
-                          className="rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50"
+                          className="shrink-0 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
                         >
-                          {
-                            text.delete
-                          }
+                          {text.delete}
                         </button>
                       </div>
-                    ),
-                  )
+                    ))}
+
+                    {slots.length > 5 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowAllSlots(
+                            (current) => !current,
+                          )
+                        }
+                        className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
+                      >
+                        {showAllSlots
+                          ? language === "ar"
+                            ? "عرض أقل"
+                            : language === "fr"
+                              ? "Réduire"
+                              : "Show less"
+                          : language === "ar"
+                            ? `عرض جميع المواعيد المتاحة (${slots.length})`
+                            : language === "fr"
+                              ? `Afficher toutes les disponibilités (${slots.length})`
+                              : `Show all availability (${slots.length})`}
+                      </button>
+                    ) : null}
+                  </>
                 )}
               </div>
             </section>
 
             <section className="aan-card p-7 sm:p-10">
               <h2 className="aan-heading text-3xl sm:text-4xl">
-                {
-                  text.bookedSessions
-                }
+                {text.bookedSessions}
               </h2>
 
-              {bookings.length ===
-              0 ? (
+              {bookings.length === 0 ? (
                 <p className="mt-8 text-aan-secondary">
-                  {
-                    text.noBookings
-                  }
+                  {text.noBookings}
                 </p>
               ) : (
-                <div className="mt-8 grid gap-6">
-                  {bookings.map(
+                <div className="mt-8">
+                  <h3 className="mb-4 text-lg font-bold text-aan-navy">
+                    {language === "ar"
+                      ? `الجلسات القادمة (${upcomingBookings.length})`
+                      : language === "fr"
+                        ? `Séances à venir (${upcomingBookings.length})`
+                        : `Upcoming sessions (${upcomingBookings.length})`}
+                  </h3>
+
+                  {upcomingBookings.length === 0 ? (
+                    <p className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-aan-secondary">
+                      {language === "ar"
+                        ? "لا توجد جلسات قادمة."
+                        : language === "fr"
+                          ? "Aucune séance à venir."
+                          : "No upcoming sessions."}
+                    </p>
+                  ) : (
+                    <div className="grid gap-4">
+                      {displayedUpcomingBookings.map(
                     (
                       booking,
                     ) => {
@@ -3088,7 +3123,236 @@ export default function TherapistDashboard() {
                         </article>
                       );
                     },
+)}
+
+                      {upcomingBookings.length > 5 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowAllUpcomingBookings(
+                              (current) => !current,
+                            )
+                          }
+                          className="w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
+                        >
+                          {showAllUpcomingBookings
+                            ? language === "ar"
+                              ? "عرض أقل"
+                              : language === "fr"
+                                ? "Réduire"
+                                : "Show less"
+                            : language === "ar"
+                              ? `عرض جميع الجلسات القادمة (${upcomingBookings.length})`
+                              : language === "fr"
+                                ? `Afficher toutes les séances à venir (${upcomingBookings.length})`
+                                : `Show all upcoming sessions (${upcomingBookings.length})`}
+                        </button>
+                      ) : null}
+                    </div>
                   )}
+
+                  {pastBookings.length > 0 ? (
+                    <div className="mt-6 border-t border-aan-border pt-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowPastBookings(
+                            (current) => !current,
+                          )
+                        }
+                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy transition hover:bg-white"
+                      >
+                        {showPastBookings
+                          ? language === "ar"
+                            ? "إخفاء الجلسات السابقة"
+                            : language === "fr"
+                              ? "Masquer les séances passées"
+                              : "Hide past sessions"
+                          : language === "ar"
+                            ? `عرض الجلسات السابقة (${pastBookings.length})`
+                            : language === "fr"
+                              ? `Voir les séances passées (${pastBookings.length})`
+                              : `View past sessions (${pastBookings.length})`}
+                      </button>
+
+                      {showPastBookings ? (
+                        <div className="mt-4 grid gap-4">
+                          {pastBookings.map(
+                    (
+                      booking,
+                    ) => {
+                      const sessionUrl =
+                        booking.meeting_url ||
+                        booking.zoom_start_url;
+
+                      return (
+                        <article
+                          key={
+                            booking.id
+                          }
+                          className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
+                        >
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                            {
+                              text.sessionDate
+                            }
+                          </p>
+
+                          <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
+                            {formatBookingSessionDate(
+                              booking,
+                            )}{" "}
+                            {language ===
+                            "fr"
+                              ? "à"
+                              : language ===
+                                  "ar"
+                                ? "في"
+                                : "at"}{" "}
+                            {formatBookingSessionTime(
+                              booking,
+                            )}
+                          </h3>
+
+                          <p className="mt-1 text-sm font-semibold text-aan-secondary">
+                            {
+                              text.therapistTimeZone
+                            }
+                          </p>
+
+                          <p className="mt-4 text-aan-secondary">
+                            {
+                              text.price
+                            }
+                            : $
+                            {
+                              booking.price
+                            }
+                          </p>
+
+                          <p className="mt-2 break-words text-aan-secondary">
+                            {
+                              text.patientEmail
+                            }
+                            :{" "}
+                            <span className="font-semibold text-aan-navy">
+                              {booking.patient_email ||
+                                text.unknown}
+                            </span>
+                          </p>
+
+                          <p className="mt-2 font-bold text-green-700">
+                            {
+                              text.status
+                            }
+                            :{" "}
+                            {
+                              booking.status
+                            }
+                          </p>
+
+                          <p className="mt-2 text-sm text-aan-secondary">
+                            {
+                              text.created
+                            }
+                            :{" "}
+                            {new Date(
+                              booking.created_at,
+                            ).toLocaleString(
+                              language ===
+                              "ar"
+                                ? "ar-LB"
+                                : language ===
+                                    "fr"
+                                  ? "fr-FR"
+                                  : "en-US",
+                            )}
+                          </p>
+
+                          {isPastBooking(
+                            booking,
+                          ) ? (
+                            <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
+                              {
+                                text.sessionPast
+                              }
+                            </div>
+                          ) : (
+                            <>
+                              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "request_reschedule",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {
+                                    text.requestReschedule
+                                  }
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void runBookingAction(
+                                      booking,
+                                      "cancel_and_refund",
+                                    )
+                                  }
+                                  disabled={
+                                    bookingActionId ===
+                                    booking.id
+                                  }
+                                  className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {
+                                    text.cancelSession
+                                  }
+                                </button>
+                              </div>
+
+                              {sessionUrl ? (
+                                <a
+                                  href={
+                                    sessionUrl
+                                  }
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="aan-button mt-3 flex w-full py-3"
+                                >
+                                  {
+                                    text.startSession
+                                  }
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
+                                >
+                                  {
+                                    text.meetingNotReady
+                                  }
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </article>
+                      );
+                    },
+)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </section>
