@@ -214,6 +214,11 @@ export default function TherapistDashboard() {
     setTranslating,
   ] = useState(false);
 
+  const [
+    connectingGoogle,
+    setConnectingGoogle,
+  ] = useState(false);
+
   const text =
     language === "ar"
       ? {
@@ -815,6 +820,55 @@ export default function TherapistDashboard() {
     void getBookings();
     void getTherapistServices();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(
+      window.location.search,
+    );
+
+    const googleStatus =
+      params.get("google");
+
+    if (!googleStatus) {
+      return;
+    }
+
+    const message =
+      googleStatus === "connected"
+        ? language === "ar"
+          ? "تم ربط حساب Google بنجاح."
+          : language === "fr"
+            ? "Votre compte Google a été connecté avec succès."
+            : "Your Google account was connected successfully."
+        : googleStatus === "denied"
+          ? language === "ar"
+            ? "تم إلغاء ربط حساب Google."
+            : language === "fr"
+              ? "La connexion à Google a été annulée."
+              : "Google connection was cancelled."
+          : language === "ar"
+            ? "تعذر ربط حساب Google. يرجى المحاولة مرة أخرى."
+            : language === "fr"
+              ? "Impossible de connecter le compte Google. Veuillez réessayer."
+              : "Unable to connect the Google account. Please try again.";
+
+    window.alert(message);
+
+    params.delete("google");
+
+    const cleanQuery =
+      params.toString();
+
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${
+        cleanQuery
+          ? `?${cleanQuery}`
+          : ""
+      }${window.location.hash}`,
+    );
+  }, [language]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2221,6 +2275,82 @@ export default function TherapistDashboard() {
   };
 
 
+  const connectGoogleCalendar =
+    async () => {
+      setConnectingGoogle(true);
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          window.location.href =
+            "/login";
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/google-calendar/connect",
+            {
+              method: "GET",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (
+          !response.ok ||
+          !result.authorizationUrl
+        ) {
+          throw new Error(
+            result?.error ||
+              "Unable to start Google connection.",
+          );
+        }
+
+        window.location.href =
+          result.authorizationUrl;
+      } catch (error) {
+        console.error(
+          "Google Calendar connection error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "تعذر بدء الاتصال بـ Google. يرجى المحاولة مرة أخرى."
+            : language === "fr"
+              ? "Impossible de démarrer la connexion à Google. Veuillez réessayer."
+              : "Unable to start the Google connection. Please try again.",
+        );
+      } finally {
+        setConnectingGoogle(
+          false,
+        );
+      }
+    };
+
+
   const runBookingAction =
     async (
       booking: Booking,
@@ -2851,6 +2981,63 @@ export default function TherapistDashboard() {
                   {isSaving
                     ? text.saving
                     : text.save}
+                </button>
+              </div>
+            </section>
+
+            <section className="aan-card p-7 sm:p-10 lg:col-span-2">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="max-w-3xl">
+                  <p className="text-sm font-bold uppercase tracking-[0.22em] text-aan-gold">
+                    Google Calendar · Google Meet
+                  </p>
+
+                  <h2 className="aan-heading mt-3 text-3xl sm:text-4xl">
+                    {language === "ar"
+                      ? "ربط حساب Google"
+                      : language === "fr"
+                        ? "Connecter mon compte Google"
+                        : "Connect my Google account"}
+                  </h2>
+
+                  <p className="mt-4 leading-7 text-aan-secondary">
+                    {language === "ar"
+                      ? "اربط حساب Google الذي ستستخدمه للاستشارات. ستستخدم Platform Aan هذا التفويض لإنشاء مواعيد Google Calendar وروابط Google Meet الخاصة بجلساتك."
+                      : language === "fr"
+                        ? "Connectez le compte Google que vous utiliserez pour vos consultations. Platform Aan utilisera cette autorisation pour créer les événements Google Calendar et les liens Google Meet de vos séances."
+                        : "Connect the Google account you will use for consultations. Platform Aan will use this authorization to create your Google Calendar events and Google Meet links."}
+                  </p>
+
+                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                    {language === "ar"
+                      ? "لن تطلب Platform Aan كلمة مرور Google الخاصة بك ولن تخزنها."
+                      : language === "fr"
+                        ? "Platform Aan ne vous demandera jamais votre mot de passe Google et ne le stockera pas."
+                        : "Platform Aan will never ask for or store your Google password."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void connectGoogleCalendar()
+                  }
+                  disabled={
+                    connectingGoogle
+                  }
+                  className="aan-button shrink-0 px-6 py-4 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {connectingGoogle
+                    ? language === "ar"
+                      ? "جارٍ الاتصال..."
+                      : language === "fr"
+                        ? "Connexion..."
+                        : "Connecting..."
+                    : language === "ar"
+                      ? "ربط Google"
+                      : language === "fr"
+                        ? "Connecter Google"
+                        : "Connect Google"}
                 </button>
               </div>
             </section>
