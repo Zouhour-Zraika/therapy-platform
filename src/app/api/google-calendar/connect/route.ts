@@ -11,92 +11,197 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get("authorization");
 
     if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Non autorisé." },
+        { status: 401 },
+      );
     }
 
     const token = authHeader.substring(7);
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const supabaseAnonKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    const supabaseServiceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (
+      !supabaseUrl ||
+      !supabaseAnonKey ||
+      !supabaseServiceRoleKey
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Configuration Supabase incomplète.",
+        },
+        { status: 500 },
+      );
+    }
+
+    /*
+     * Client public uniquement pour vérifier
+     * le JWT Supabase envoyé par le dashboard.
+     */
+    const supabaseAuth = createClient(
+      supabaseUrl,
+      supabaseAnonKey,
       {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
         },
-      }
+      },
     );
 
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(token);
+    } = await supabaseAuth.auth.getUser(token);
 
     if (userError || !user) {
-      return NextResponse.json({ error: "Session invalide." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Session invalide." },
+        { status: 401 },
+      );
     }
 
-    const { data: profile } = await supabase
+    /*
+     * IMPORTANT :
+     * auth.getUser(token) valide le JWT mais
+     * n'installe pas ce JWT comme session pour
+     * les requêtes .from(...).
+     *
+     * On utilise donc le client serveur
+     * Service Role pour lire le rôle du profil.
+     * La Service Role reste uniquement côté serveur.
+     */
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      },
+    );
+
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabaseAdmin
       .from("profiles")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile || !["therapist", "admin"].includes(profile.role)) {
+    if (profileError) {
+      console.error(
+        "Google connect profile error:",
+        profileError,
+      );
+
       return NextResponse.json(
-        { error: "Accès réservé aux spécialistes." },
-        { status: 403 }
+        {
+          error:
+            "Impossible de vérifier le profil.",
+        },
+        { status: 500 },
       );
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    if (
+      !profile ||
+      !["therapist", "admin"].includes(
+        profile.role,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Accès réservé aux spécialistes.",
+        },
+        { status: 403 },
+      );
+    }
+
+    const clientId =
+      process.env.GOOGLE_CLIENT_ID;
+
+    const redirectUri =
+      process.env.GOOGLE_REDIRECT_URI;
 
     if (!clientId || !redirectUri) {
       return NextResponse.json(
-        { error: "Configuration Google incomplète." },
-        { status: 500 }
+        {
+          error:
+            "Configuration Google incomplète.",
+        },
+        { status: 500 },
       );
     }
 
-    const state = crypto.randomBytes(32).toString("hex");
+    const state =
+      crypto.randomBytes(32).toString("hex");
 
-    const response = NextResponse.json({
-      authorizationUrl: `${GOOGLE_AUTH_URL}?${new URLSearchParams({
+    const authorizationUrl =
+      `${GOOGLE_AUTH_URL}?${new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirectUri,
         response_type: "code",
-        scope: "https://www.googleapis.com/auth/calendar.events",
+        scope:
+          "https://www.googleapis.com/auth/calendar.events",
         access_type: "offline",
         prompt: "consent",
         include_granted_scopes: "true",
         state,
-      }).toString()}`,
+      }).toString()}`;
+
+    const response = NextResponse.json({
+      authorizationUrl,
     });
 
-    response.cookies.set("google_oauth_state", state, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 600,
-      path: "/",
-    });
+    response.cookies.set(
+      "google_oauth_state",
+      state,
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      },
+    );
 
-    response.cookies.set("google_oauth_user", user.id, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 600,
-      path: "/",
-    });
+    response.cookies.set(
+      "google_oauth_user",
+      user.id,
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      },
+    );
 
     return response;
   } catch (error) {
-    console.error("Google connect error:", error);
+    console.error(
+      "Google connect error:",
+      error,
+    );
 
     return NextResponse.json(
-      { error: "Erreur lors de la connexion Google." },
-      { status: 500 }
+      {
+        error:
+          "Erreur lors de la connexion Google.",
+      },
+      { status: 500 },
     );
   }
 }
