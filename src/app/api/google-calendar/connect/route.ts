@@ -4,29 +4,46 @@ import crypto from "crypto";
 
 export const runtime = "nodejs";
 
-const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_AUTH_URL =
+  "https://accounts.google.com/o/oauth2/v2/auth";
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+) {
   try {
-    const authHeader = request.headers.get("authorization");
+    const authHeader =
+      request.headers.get(
+        "authorization",
+      );
 
-    if (!authHeader?.startsWith("Bearer ")) {
+    if (
+      !authHeader?.startsWith(
+        "Bearer ",
+      )
+    ) {
       return NextResponse.json(
-        { error: "Non autorisé." },
+        {
+          error:
+            "Non autorisé.",
+        },
         { status: 401 },
       );
     }
 
-    const token = authHeader.substring(7);
+    const token =
+      authHeader.substring(7);
 
     const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL;
 
     const supabaseAnonKey =
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      process.env
+        .NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     const supabaseServiceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env
+        .SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -43,61 +60,72 @@ export async function GET(request: NextRequest) {
     }
 
     /*
-     * Client public uniquement pour vérifier
-     * le JWT Supabase envoyé par le dashboard.
+     * Vérifie le JWT Supabase envoyé
+     * par le dashboard.
      */
-    const supabaseAuth = createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
+    const supabaseAuth =
+      createClient(
+        supabaseUrl,
+        supabaseAnonKey,
+        {
+          auth: {
+            persistSession:
+              false,
+            autoRefreshToken:
+              false,
+          },
         },
-      },
-    );
+      );
 
     const {
       data: { user },
       error: userError,
-    } = await supabaseAuth.auth.getUser(token);
+    } =
+      await supabaseAuth.auth.getUser(
+        token,
+      );
 
-    if (userError || !user) {
+    if (
+      userError ||
+      !user
+    ) {
       return NextResponse.json(
-        { error: "Session invalide." },
+        {
+          error:
+            "Session invalide.",
+        },
         { status: 401 },
       );
     }
 
     /*
-     * IMPORTANT :
-     * auth.getUser(token) valide le JWT mais
-     * n'installe pas ce JWT comme session pour
-     * les requêtes .from(...).
-     *
-     * On utilise donc le client serveur
-     * Service Role pour lire le rôle du profil.
-     * La Service Role reste uniquement côté serveur.
+     * Lecture serveur du rôle.
+     * La Service Role ne quitte jamais
+     * cette route serveur.
      */
-    const supabaseAdmin = createClient(
-      supabaseUrl,
-      supabaseServiceRoleKey,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
+    const supabaseAdmin =
+      createClient(
+        supabaseUrl,
+        supabaseServiceRoleKey,
+        {
+          auth: {
+            persistSession:
+              false,
+            autoRefreshToken:
+              false,
+          },
         },
-      },
-    );
+      );
 
     const {
       data: profile,
       error: profileError,
-    } = await supabaseAdmin
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
+    } =
+      await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
 
     if (profileError) {
       console.error(
@@ -116,7 +144,10 @@ export async function GET(request: NextRequest) {
 
     if (
       !profile ||
-      !["therapist", "admin"].includes(
+      ![
+        "therapist",
+        "admin",
+      ].includes(
         profile.role,
       )
     ) {
@@ -130,12 +161,17 @@ export async function GET(request: NextRequest) {
     }
 
     const clientId =
-      process.env.GOOGLE_CLIENT_ID;
+      process.env
+        .GOOGLE_CLIENT_ID;
 
     const redirectUri =
-      process.env.GOOGLE_REDIRECT_URI;
+      process.env
+        .GOOGLE_REDIRECT_URI;
 
-    if (!clientId || !redirectUri) {
+    if (
+      !clientId ||
+      !redirectUri
+    ) {
       return NextResponse.json(
         {
           error:
@@ -145,25 +181,54 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    /*
+     * State aléatoire pour protéger
+     * le retour OAuth.
+     */
     const state =
-      crypto.randomBytes(32).toString("hex");
+      crypto
+        .randomBytes(32)
+        .toString("hex");
+
+    /*
+     * openid + email + profile permettent
+     * au callback de récupérer l'adresse
+     * Google connectée.
+     *
+     * calendar.events permet à AAN de créer
+     * les événements Calendar et les liens Meet.
+     */
+    const scope = [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.events",
+    ].join(" ");
 
     const authorizationUrl =
-      `${GOOGLE_AUTH_URL}?${new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope:
-          "https://www.googleapis.com/auth/calendar.events",
-        access_type: "offline",
-        prompt: "consent",
-        include_granted_scopes: "true",
-        state,
-      }).toString()}`;
+      `${GOOGLE_AUTH_URL}?${new URLSearchParams(
+        {
+          client_id:
+            clientId,
+          redirect_uri:
+            redirectUri,
+          response_type:
+            "code",
+          scope,
+          access_type:
+            "offline",
+          prompt:
+            "consent",
+          include_granted_scopes:
+            "true",
+          state,
+        },
+      ).toString()}`;
 
-    const response = NextResponse.json({
-      authorizationUrl,
-    });
+    const response =
+      NextResponse.json({
+        authorizationUrl,
+      });
 
     response.cookies.set(
       "google_oauth_state",
