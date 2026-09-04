@@ -2703,7 +2703,7 @@ export default function TherapistDashboard() {
   const displayedSlots =
     showAllSlots
       ? futureSlots
-      : futureSlots.slice(0, 5);
+      : futureSlots.slice(0, 3);
 
   const upcomingBookings = bookings
     .filter(
@@ -3220,7 +3220,7 @@ export default function TherapistDashboard() {
                     )}
                   </div>
 
-                  {futureSlots.length > 5 ? (
+                  {futureSlots.length > 3 ? (
                     <button
                       type="button"
                       onClick={() =>
@@ -3237,10 +3237,10 @@ export default function TherapistDashboard() {
                             ? "Réduire"
                             : "Show less"
                         : language === "ar"
-                          ? `عرض الكل (${futureSlots.length})`
+                          ? `عرض كل المواعيد (${futureSlots.length})`
                           : language === "fr"
-                            ? `Voir tout (${futureSlots.length})`
-                            : `View all (${futureSlots.length})`}
+                            ? `Voir toutes les disponibilités (${futureSlots.length})`
+                            : `View all availability (${futureSlots.length})`}
                     </button>
                   ) : null}
                 </section>
