@@ -250,6 +250,20 @@ export default function TherapistDashboard() {
     setShowAvailabilityEditor,
   ] = useState(false);
 
+  type DashboardView =
+    | "dashboard"
+    | "profile"
+    | "availability"
+    | "sessions"
+    | "services";
+
+  const [
+    activeView,
+    setActiveView,
+  ] = useState<DashboardView>(
+    "dashboard",
+  );
+
   const text =
     language === "ar"
       ? {
@@ -2745,7 +2759,7 @@ export default function TherapistDashboard() {
   const displayedUpcomingBookings =
     showAllUpcomingBookings
       ? upcomingBookings
-      : upcomingBookings.slice(0, 5);
+      : upcomingBookings.slice(0, 3);
 
   const displayedPhoto =
     photoPreview ||
@@ -2775,9 +2789,19 @@ export default function TherapistDashboard() {
           <div className="mx-auto flex max-w-[1500px]">
             <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-64 shrink-0 border-r border-aan-border bg-white/80 px-5 py-8 backdrop-blur lg:flex lg:flex-col">
               <div className="space-y-2">
-                <a
-                  href="#dashboard"
-                  className="flex items-center gap-3 rounded-2xl border border-aan-border bg-[#fbf8f3] px-4 py-3 font-bold text-aan-navy"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "dashboard",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-bold transition ${
+                    activeView ===
+                    "dashboard"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
                 >
                   <span className="text-aan-gold">
                     ◫
@@ -2787,11 +2811,24 @@ export default function TherapistDashboard() {
                     : language === "fr"
                       ? "Tableau de bord"
                       : "Dashboard"}
-                </a>
+                </button>
 
-                <a
-                  href="#profile"
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView(
+                      "profile",
+                    );
+                    setShowProfileEditor(
+                      false,
+                    );
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "profile"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
                 >
                   <span>◯</span>
                   {language === "ar"
@@ -2799,27 +2836,57 @@ export default function TherapistDashboard() {
                     : language === "fr"
                       ? "Mon profil"
                       : "My profile"}
-                </a>
+                </button>
 
-                <a
-                  href="#availability"
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "availability",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "availability"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
                 >
                   <span>▣</span>
                   {text.availability}
-                </a>
+                </button>
 
-                <a
-                  href="#sessions"
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "sessions",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "sessions"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
                 >
                   <span>▤</span>
                   {text.bookedSessions}
-                </a>
+                </button>
 
-                <a
-                  href="#services"
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold text-aan-secondary transition hover:bg-white hover:text-aan-navy"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "services",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "services"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
                 >
                   <span>◇</span>
                   {language === "ar"
@@ -2827,7 +2894,7 @@ export default function TherapistDashboard() {
                     : language === "fr"
                       ? "Services & tarifs"
                       : "Services & prices"}
-                </a>
+                </button>
               </div>
 
               <div className="mt-auto rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
@@ -2936,19 +3003,67 @@ export default function TherapistDashboard() {
                   </p>
 
                   <h1 className="aan-heading mt-2 text-4xl sm:text-5xl">
-                    {language === "ar"
-                      ? `مرحباً، ${fullName || "أخصائي"}`
-                      : language === "fr"
-                        ? `Bienvenue, ${fullName || "spécialiste"}`
-                        : `Welcome, ${fullName || "specialist"}`}
+                    {activeView ===
+                    "dashboard"
+                      ? language === "ar"
+                        ? `مرحباً، ${fullName || "أخصائي"}`
+                        : language === "fr"
+                          ? `Bienvenue, ${fullName || "spécialiste"}`
+                          : `Welcome, ${fullName || "specialist"}`
+                      : activeView ===
+                          "profile"
+                        ? language === "ar"
+                          ? "ملفي المهني"
+                          : language === "fr"
+                            ? "Mon profil professionnel"
+                            : "My professional profile"
+                        : activeView ===
+                            "availability"
+                          ? text.availability
+                          : activeView ===
+                              "sessions"
+                            ? text.bookedSessions
+                            : language === "ar"
+                              ? "الخدمات والأسعار"
+                              : language === "fr"
+                                ? "Services & tarifs"
+                                : "Services & prices"}
                   </h1>
 
                   <p className="mt-2 text-aan-secondary">
-                    {language === "ar"
-                      ? "نظرة سريعة على ملفك ومواعيدك وجلساتك."
-                      : language === "fr"
-                        ? "Voici un aperçu de votre profil, de vos disponibilités et de vos séances."
-                        : "Here is an overview of your profile, availability and sessions."}
+                    {activeView ===
+                    "dashboard"
+                      ? language === "ar"
+                        ? "نظرة سريعة على ملفك ومواعيدك وجلساتك."
+                        : language === "fr"
+                          ? "Voici un aperçu de votre profil, de vos disponibilités et de vos séances."
+                          : "Here is an overview of your profile, availability and sessions."
+                      : activeView ===
+                          "profile"
+                        ? language === "ar"
+                          ? "راجع معلوماتك المهنية وعدّلها عند الحاجة."
+                          : language === "fr"
+                            ? "Consultez et modifiez vos informations professionnelles."
+                            : "Review and edit your professional information."
+                        : activeView ===
+                            "availability"
+                          ? language === "ar"
+                            ? "أضف مواعيدك القادمة وأدرها بسهولة."
+                            : language === "fr"
+                              ? "Ajoutez et gérez vos prochaines disponibilités."
+                              : "Add and manage your upcoming availability."
+                          : activeView ===
+                              "sessions"
+                            ? language === "ar"
+                              ? "تابع جلساتك القادمة والسابقة."
+                              : language === "fr"
+                                ? "Retrouvez vos séances à venir et vos séances passées."
+                                : "Review your upcoming and past sessions."
+                            : language === "ar"
+                              ? "راجع الخدمات والأسعار المفعّلة لحسابك."
+                              : language === "fr"
+                                ? "Consultez les services et tarifs actifs de votre compte."
+                                : "Review the active services and prices on your account."}
                   </p>
                 </div>
 
@@ -2969,21 +3084,36 @@ export default function TherapistDashboard() {
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowAvailabilityEditor(
-                        true,
-                      )
-                    }
-                    className="aan-button px-5 py-3"
-                  >
-                    + {text.addAvailability}
-                  </button>
+                  {(activeView === "dashboard" ||
+                    activeView === "availability") ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveView(
+                          "availability",
+                        );
+                        setShowAvailabilityEditor(
+                          true,
+                        );
+                      }}
+                      className="aan-button px-5 py-3"
+                    >
+                      + {text.addAvailability}
+                    </button>
+                  ) : null}
                 </div>
               </header>
 
-              <div className="grid gap-6 xl:grid-cols-2">
+              <div
+                className={`grid gap-6 ${
+                  activeView ===
+                  "dashboard"
+                    ? "xl:grid-cols-2"
+                    : "grid-cols-1"
+                }`}
+              >
+                {(activeView === "dashboard" ||
+                  activeView === "profile") ? (
                 <section
                   id="profile"
                   className="aan-card p-6 sm:p-7"
@@ -3105,6 +3235,10 @@ export default function TherapistDashboard() {
                   </div>
                 </section>
 
+                ) : null}
+
+                {(activeView === "dashboard" ||
+                  activeView === "availability") ? (
                 <section
                   id="availability"
                   className="aan-card p-6 sm:p-7"
@@ -3245,6 +3379,10 @@ export default function TherapistDashboard() {
                   ) : null}
                 </section>
 
+                ) : null}
+
+                {(activeView === "dashboard" ||
+                  activeView === "sessions") ? (
                 <section
                   id="sessions"
                   className="aan-card p-6 sm:p-7"
@@ -3376,7 +3514,7 @@ export default function TherapistDashboard() {
                     )}
                   </div>
 
-                  {upcomingBookings.length > 5 ? (
+                  {upcomingBookings.length > 3 ? (
                     <button
                       type="button"
                       onClick={() =>
@@ -3395,8 +3533,8 @@ export default function TherapistDashboard() {
                         : language === "ar"
                           ? `عرض الكل (${upcomingBookings.length})`
                           : language === "fr"
-                            ? `Voir tout (${upcomingBookings.length})`
-                            : `View all (${upcomingBookings.length})`}
+                            ? `Voir toutes les séances (${upcomingBookings.length})`
+                            : `View all sessions (${upcomingBookings.length})`}
                     </button>
                   ) : null}
 
@@ -3457,6 +3595,10 @@ export default function TherapistDashboard() {
                   ) : null}
                 </section>
 
+                ) : null}
+
+                {(activeView === "dashboard" ||
+                  activeView === "services") ? (
                 <section
                   id="services"
                   className="aan-card p-6 sm:p-7"
@@ -3556,8 +3698,12 @@ export default function TherapistDashboard() {
                     )}
                   </div>
                 </section>
+                ) : null}
+
               </div>
 
+              {(activeView === "dashboard" ||
+                activeView === "profile") ? (
               <section className="aan-card mt-6 p-6 sm:p-7">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-xl font-bold text-aan-navy">
@@ -3633,7 +3779,11 @@ export default function TherapistDashboard() {
                 </div>
               </section>
 
-              {showProfileEditor ? (
+              ) : null}
+
+              {showProfileEditor &&
+              (activeView === "dashboard" ||
+                activeView === "profile") ? (
                 <section className="aan-card mt-6 p-6 sm:p-8">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
