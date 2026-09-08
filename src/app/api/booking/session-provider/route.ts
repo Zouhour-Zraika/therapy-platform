@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createGoogleMeetForBooking } from "@/lib/googleCalendar";
 
 export const runtime = "nodejs";
 
@@ -19,10 +20,12 @@ type BookingRow = {
   therapist_id: string;
   status: string;
   therapist_name: string | null;
+  patient_email: string | null;
   scheduled_start: string | null;
-  duration_minutes: number | null;
+  scheduled_end: string | null;
   meeting_url: string | null;
   meeting_provider: string | null;
+  calendar_event_id: string | null;
   zoom_join_url: string | null;
   zoom_start_url: string | null;
 };
@@ -46,6 +49,8 @@ type ZoomMeetingResponse = {
   id?: number;
   join_url?: string;
   start_url?: string;
+  message?: string;
+  code?: number;
 };
 
 async function refreshZoomAccessToken(
@@ -324,10 +329,12 @@ export async function POST(
             "therapist_id",
             "status",
             "therapist_name",
+            "patient_email",
             "scheduled_start",
-            "duration_minutes",
+            "scheduled_end",
             "meeting_url",
             "meeting_provider",
+            "calendar_event_id",
             "zoom_join_url",
             "zoom_start_url",
           ].join(","),
@@ -386,38 +393,155 @@ export async function POST(
       );
     }
 
+    if (
+      !booking.scheduled_start
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "L'heure de la séance est manquante.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+    const startDate =
+      new Date(
+        booking.scheduled_start,
+      );
+
+    if (
+      Number.isNaN(
+        startDate.getTime(),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "L'heure de la séance est invalide.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+    const endDate =
+      booking.scheduled_end
+        ? new Date(
+            booking.scheduled_end,
+          )
+        : new Date(
+            startDate.getTime() +
+              60 * 60 * 1000,
+          );
+
+    if (
+      Number.isNaN(
+        endDate.getTime(),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "L'heure de fin de la séance est invalide.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
     /*
-     * Google Meet :
-     * meeting_url reste le lien Google historique.
-     * On ne l'écrase jamais avec Zoom afin de pouvoir
-     * conserver les deux fournisseurs pour une séance.
+     * =======================================================
+     * GOOGLE MEET
+     * =======================================================
+     *
+     * Si un Meet existe déjà pour cette réservation,
+     * on le réutilise.
+     *
+     * Sinon, on le crée au moment où le spécialiste
+     * choisit Google Meet.
      */
     if (
       provider === "google"
     ) {
       if (
-        !booking.meeting_url
+        booking.meeting_url
       ) {
-        return NextResponse.json(
-          {
-            error:
-              "Le lien Google Meet n'est pas disponible pour cette séance.",
-          },
-          {
-            status: 409,
-          },
-        );
+        const {
+          error:
+            providerUpdateError,
+        } =
+          await supabaseAdmin
+            .from("bookings")
+            .update({
+              meeting_provider:
+                "google_meet",
+            })
+            .eq(
+              "id",
+              booking.id,
+            );
+
+        if (
+          providerUpdateError
+        ) {
+          throw providerUpdateError;
+        }
+
+        return NextResponse.json({
+          startUrl:
+            booking.meeting_url,
+          meetingUrl:
+            booking.meeting_url,
+          meetingProvider:
+            "google_meet",
+          calendarEventId:
+            booking.calendar_event_id,
+          zoomJoinUrl:
+            booking.zoom_join_url,
+          zoomStartUrl:
+            booking.zoom_start_url,
+        });
       }
+
+      const googleMeeting =
+        await createGoogleMeetForBooking({
+          therapistId:
+            user.id,
+          summary:
+            `AAN Psychotherapy — ${
+              booking.therapist_name ||
+              "Session"
+            }`,
+          description:
+            "AAN psychotherapy session",
+          start:
+            startDate.toISOString(),
+          end:
+            endDate.toISOString(),
+          timeZone:
+            "Asia/Beirut",
+          attendeeEmail:
+            booking.patient_email,
+        });
 
       const {
         error:
-          providerUpdateError,
+          googleUpdateError,
       } =
         await supabaseAdmin
           .from("bookings")
           .update({
+            meeting_url:
+              googleMeeting.meetingUrl,
             meeting_provider:
-              "google",
+              "google_meet",
+            calendar_event_id:
+              googleMeeting.calendarEventId,
           })
           .eq(
             "id",
@@ -425,16 +549,20 @@ export async function POST(
           );
 
       if (
-        providerUpdateError
+        googleUpdateError
       ) {
-        throw providerUpdateError;
+        throw googleUpdateError;
       }
 
       return NextResponse.json({
         startUrl:
-          booking.meeting_url,
+          googleMeeting.meetingUrl,
+        meetingUrl:
+          googleMeeting.meetingUrl,
         meetingProvider:
-          "google",
+          "google_meet",
+        calendarEventId:
+          googleMeeting.calendarEventId,
         zoomJoinUrl:
           booking.zoom_join_url,
         zoomStartUrl:
@@ -443,9 +571,12 @@ export async function POST(
     }
 
     /*
-     * Si la réunion Zoom existe déjà,
-     * on la réutilise au lieu de créer
-     * une nouvelle réunion à chaque clic.
+     * =======================================================
+     * ZOOM
+     * =======================================================
+     *
+     * Si une réunion Zoom existe déjà pour cette réservation,
+     * on la réutilise.
      */
     if (
       booking.zoom_start_url &&
@@ -475,6 +606,8 @@ export async function POST(
       return NextResponse.json({
         startUrl:
           booking.zoom_start_url,
+        meetingUrl:
+          booking.meeting_url,
         meetingProvider:
           "zoom",
         zoomJoinUrl:
@@ -606,41 +739,6 @@ export async function POST(
       }
     }
 
-    if (
-      !booking.scheduled_start
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "L'heure de la séance est manquante.",
-        },
-        {
-          status: 409,
-        },
-      );
-    }
-
-    const startDate =
-      new Date(
-        booking.scheduled_start,
-      );
-
-    if (
-      Number.isNaN(
-        startDate.getTime(),
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "L'heure de la séance est invalide.",
-        },
-        {
-          status: 409,
-        },
-      );
-    }
-
     const zoomResponse =
       await fetch(
         "https://api.zoom.us/v2/users/me/meetings",
@@ -663,8 +761,16 @@ export async function POST(
               start_time:
                 startDate.toISOString(),
               duration:
-                booking.duration_minutes ||
-                60,
+                Math.max(
+                  1,
+                  Math.round(
+                    (
+                      endDate.getTime() -
+                      startDate.getTime()
+                    ) /
+                      60_000,
+                  ),
+                ),
               timezone:
                 "Asia/Beirut",
               agenda:
@@ -683,10 +789,7 @@ export async function POST(
 
     const zoomMeeting =
       (await zoomResponse.json()) as
-        ZoomMeetingResponse & {
-          message?: string;
-          code?: number;
-        };
+        ZoomMeetingResponse;
 
     if (
       !zoomResponse.ok ||
@@ -745,6 +848,8 @@ export async function POST(
     return NextResponse.json({
       startUrl:
         zoomMeeting.start_url,
+      meetingUrl:
+        booking.meeting_url,
       meetingProvider:
         "zoom",
       zoomJoinUrl:
@@ -761,7 +866,9 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "Impossible de préparer la séance.",
+          error instanceof Error
+            ? error.message
+            : "Impossible de préparer la séance.",
       },
       {
         status: 500,

@@ -3161,6 +3161,9 @@ export default function TherapistDashboard() {
                       meeting_provider:
                         result.meetingProvider ||
                         provider,
+                      meeting_url:
+                        result.meetingUrl ??
+                        item.meeting_url,
                       zoom_join_url:
                         result.zoomJoinUrl ??
                         item.zoom_join_url,
@@ -3210,10 +3213,7 @@ export default function TherapistDashboard() {
       booking: Booking,
     ) => {
       const googleAvailable =
-        googleConnection.connected &&
-        Boolean(
-          booking.meeting_url,
-        );
+        googleConnection.connected;
 
       const zoomAvailable =
         zoomConnection.connected;
@@ -4657,12 +4657,7 @@ export default function TherapistDashboard() {
                       displayedUpcomingBookings.map(
                         (booking) => {
                           const canStartSession =
-                            (
-                              googleConnection.connected &&
-                              Boolean(
-                                booking.meeting_url,
-                              )
-                            ) ||
+                            googleConnection.connected ||
                             zoomConnection.connected;
 
                           return (
@@ -5573,8 +5568,7 @@ export default function TherapistDashboard() {
               </p>
 
               <div className="mt-6 grid gap-3">
-                {googleConnection.connected &&
-                sessionProviderBooking.meeting_url ? (
+                {googleConnection.connected ? (
                   <button
                     type="button"
                     onClick={() =>
