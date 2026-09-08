@@ -7,6 +7,15 @@ export const runtime = "nodejs";
 const GOOGLE_AUTH_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
 
+type SpecialistRow = {
+  id: string;
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive"
+    | null;
+};
+
 export async function GET(
   request: NextRequest,
 ) {
@@ -99,9 +108,25 @@ export async function GET(
     }
 
     /*
-     * Lecture serveur du rôle.
+     * Lecture serveur du profil spécialiste.
+     *
      * La Service Role ne quitte jamais
      * cette route serveur.
+     *
+     * IMPORTANT :
+     * on ne dépend plus de
+     * profiles.role === "therapist"
+     * ni de profiles.role === "admin".
+     *
+     * Pour cette fonction clinique,
+     * la source de vérité est la présence
+     * de l'utilisateur dans public.therapists.
+     *
+     * Cela permet notamment à un compte
+     * admin + spécialiste d'utiliser
+     * Google Calendar, tandis qu'un admin
+     * purement administratif sans ligne
+     * dans therapists reste bloqué.
      */
     const supabaseAdmin =
       createClient(
@@ -118,43 +143,63 @@ export async function GET(
       );
 
     const {
-      data: profile,
-      error: profileError,
+      data: specialist,
+      error: specialistError,
     } =
       await supabaseAdmin
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+        .from("therapists")
+        .select(
+          "id, work_status",
+        )
+        .eq(
+          "id",
+          user.id,
+        )
+        .maybeSingle<SpecialistRow>();
 
-    if (profileError) {
+    if (specialistError) {
       console.error(
-        "Google connect profile error:",
-        profileError,
+        "Google connect specialist error:",
+        specialistError,
       );
 
       return NextResponse.json(
         {
           error:
-            "Impossible de vérifier le profil.",
+            "Impossible de vérifier le profil spécialiste.",
         },
         { status: 500 },
       );
     }
 
-    if (
-      !profile ||
-      ![
-        "therapist",
-        "admin",
-      ].includes(
-        profile.role,
-      )
-    ) {
+    if (!specialist) {
       return NextResponse.json(
         {
           error:
             "Accès réservé aux spécialistes.",
+        },
+        { status: 403 },
+      );
+    }
+
+    /*
+     * active
+     * → accès normal
+     *
+     * leaving
+     * → accès encore autorisé
+     *
+     * inactive
+     * → accès clinique refusé
+     */
+    if (
+      specialist.work_status ===
+      "inactive"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Votre accès spécialiste est désactivé.",
         },
         { status: 403 },
       );

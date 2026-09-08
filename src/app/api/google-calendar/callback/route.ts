@@ -1,127 +1,383 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-export const runtime = "nodejs";
+import {
+  createClient,
+} from "@supabase/supabase-js";
 
-export async function GET(request: NextRequest) {
+export const runtime =
+  "nodejs";
+
+type SpecialistRow = {
+  id: string;
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive"
+    | null;
+};
+
+type ExistingGoogleConnection = {
+  refresh_token:
+    | string
+    | null;
+};
+
+type GoogleTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+  error?: string;
+  error_description?: string;
+};
+
+type GoogleUserInfo = {
+  id?: string;
+  email?: string;
+  verified_email?: boolean;
+  name?: string;
+};
+
+function redirectWithGoogleStatus(
+  request: NextRequest,
+  status:
+    | "denied"
+    | "invalid_state"
+    | "inactive"
+    | "not_specialist"
+    | "connected"
+    | "error",
+) {
+  const response =
+    NextResponse.redirect(
+      new URL(
+        `/therapist-dashboard?google=${status}`,
+        request.url,
+      ),
+    );
+
+  response.cookies.delete(
+    "google_oauth_state",
+  );
+
+  response.cookies.delete(
+    "google_oauth_user",
+  );
+
+  return response;
+}
+
+export async function GET(
+  request: NextRequest,
+) {
   try {
-    const code = request.nextUrl.searchParams.get("code");
-    const state = request.nextUrl.searchParams.get("state");
-    const error = request.nextUrl.searchParams.get("error");
+    const code =
+      request.nextUrl.searchParams.get(
+        "code",
+      );
 
-    if (error) {
-      return NextResponse.redirect(
-        new URL("/therapist-dashboard?google=denied", request.url)
+    const state =
+      request.nextUrl.searchParams.get(
+        "state",
+      );
+
+    const oauthError =
+      request.nextUrl.searchParams.get(
+        "error",
+      );
+
+    if (oauthError) {
+      return redirectWithGoogleStatus(
+        request,
+        "denied",
       );
     }
 
-    const savedState = request.cookies.get("google_oauth_state")?.value;
-    const therapistId = request.cookies.get("google_oauth_user")?.value;
+    const savedState =
+      request.cookies.get(
+        "google_oauth_state",
+      )?.value;
 
-    if (!code || !state || !savedState || state !== savedState || !therapistId) {
-      return NextResponse.redirect(
-        new URL("/therapist-dashboard?google=invalid_state", request.url)
+    const specialistId =
+      request.cookies.get(
+        "google_oauth_user",
+      )?.value;
+
+    if (
+      !code ||
+      !state ||
+      !savedState ||
+      state !== savedState ||
+      !specialistId
+    ) {
+      return redirectWithGoogleStatus(
+        request,
+        "invalid_state",
       );
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    const clientId =
+      process.env
+        .GOOGLE_CLIENT_ID;
 
-    if (!clientId || !clientSecret || !redirectUri) {
-      throw new Error("Google OAuth configuration missing.");
+    const clientSecret =
+      process.env
+        .GOOGLE_CLIENT_SECRET;
+
+    const redirectUri =
+      process.env
+        .GOOGLE_REDIRECT_URI;
+
+    const supabaseUrl =
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL;
+
+    const supabaseServiceRoleKey =
+      process.env
+        .SUPABASE_SERVICE_ROLE_KEY ||
+      process.env
+        .SUPABASE_SECRET_KEY;
+
+    if (
+      !clientId ||
+      !clientSecret ||
+      !redirectUri
+    ) {
+      throw new Error(
+        "Google OAuth configuration missing.",
+      );
     }
 
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
-    });
-
-    const tokenData = await tokenResponse.json();
-
-    if (!tokenResponse.ok || !tokenData.access_token) {
-      console.error("Google token exchange failed:", tokenData);
-      throw new Error("Google token exchange failed.");
+    if (
+      !supabaseUrl ||
+      !supabaseServiceRoleKey
+    ) {
+      throw new Error(
+        "Supabase server configuration missing.",
+      );
     }
 
-    const userInfoResponse = await fetch(
-      "https://www.googleapis.com/oauth2/v2/userinfo",
-      {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
+    const tokenResponse =
+      await fetch(
+        "https://oauth2.googleapis.com/token",
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+
+          body:
+            new URLSearchParams({
+              code,
+              client_id:
+                clientId,
+              client_secret:
+                clientSecret,
+              redirect_uri:
+                redirectUri,
+              grant_type:
+                "authorization_code",
+            }),
         },
-      }
-    );
+      );
 
-    const userInfo = await userInfoResponse.json();
+    const tokenData =
+      (await tokenResponse.json()) as
+        GoogleTokenResponse;
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
+    if (
+      !tokenResponse.ok ||
+      !tokenData.access_token
+    ) {
+      console.error(
+        "Google token exchange failed:",
+        {
+          status:
+            tokenResponse.status,
+          error:
+            tokenData.error,
+          description:
+            tokenData.error_description,
         },
-      }
-    );
+      );
 
-    const expiresAt = tokenData.expires_in
-      ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-      : null;
+      throw new Error(
+        "Google token exchange failed.",
+      );
+    }
 
-    const { data: existingConnection } = await supabaseAdmin
-      .from("therapist_google_connections")
-      .select("refresh_token")
-      .eq("therapist_id", therapistId)
-      .maybeSingle();
+    const userInfoResponse =
+      await fetch(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        {
+          headers: {
+            Authorization:
+              `Bearer ${tokenData.access_token}`,
+          },
+        },
+      );
+
+    if (!userInfoResponse.ok) {
+      throw new Error(
+        "Unable to load Google account information.",
+      );
+    }
+
+    const userInfo =
+      (await userInfoResponse.json()) as
+        GoogleUserInfo;
+
+    const supabaseAdmin =
+      createClient(
+        supabaseUrl,
+        supabaseServiceRoleKey,
+        {
+          auth: {
+            persistSession:
+              false,
+            autoRefreshToken:
+              false,
+          },
+        },
+      );
+
+    const {
+      data: specialist,
+      error:
+        specialistError,
+    } = await supabaseAdmin
+      .from("therapists")
+      .select(
+        "id, work_status",
+      )
+      .eq(
+        "id",
+        specialistId,
+      )
+      .maybeSingle<SpecialistRow>();
+
+    if (specialistError) {
+      throw specialistError;
+    }
+
+    if (!specialist) {
+      return redirectWithGoogleStatus(
+        request,
+        "not_specialist",
+      );
+    }
+
+    if (
+      specialist.work_status ===
+      "inactive"
+    ) {
+      return redirectWithGoogleStatus(
+        request,
+        "inactive",
+      );
+    }
+
+    const expiresAt =
+      tokenData.expires_in
+        ? new Date(
+            Date.now() +
+              tokenData.expires_in *
+                1000,
+          ).toISOString()
+        : null;
+
+    const {
+      data:
+        existingConnection,
+      error:
+        existingConnectionError,
+    } = await supabaseAdmin
+      .from(
+        "therapist_google_connections",
+      )
+      .select(
+        "refresh_token",
+      )
+      .eq(
+        "therapist_id",
+        specialistId,
+      )
+      .maybeSingle<ExistingGoogleConnection>();
+
+    if (
+      existingConnectionError
+    ) {
+      throw existingConnectionError;
+    }
 
     const refreshToken =
-      tokenData.refresh_token || existingConnection?.refresh_token || null;
+      tokenData.refresh_token ||
+      existingConnection
+        ?.refresh_token ||
+      null;
 
-    const { error: upsertError } = await supabaseAdmin
-      .from("therapist_google_connections")
+    const {
+      error:
+        upsertError,
+    } = await supabaseAdmin
+      .from(
+        "therapist_google_connections",
+      )
       .upsert(
         {
-          therapist_id: therapistId,
-          google_email: userInfo.email ?? null,
-          access_token: tokenData.access_token,
-          refresh_token: refreshToken,
-          token_expires_at: expiresAt,
-          scope: tokenData.scope ?? null,
-          updated_at: new Date().toISOString(),
+          therapist_id:
+            specialistId,
+
+          google_email:
+            userInfo.email ??
+            null,
+
+          access_token:
+            tokenData.access_token,
+
+          refresh_token:
+            refreshToken,
+
+          token_expires_at:
+            expiresAt,
+
+          scope:
+            tokenData.scope ??
+            null,
+
+          updated_at:
+            new Date().toISOString(),
         },
         {
-          onConflict: "therapist_id",
-        }
+          onConflict:
+            "therapist_id",
+        },
       );
 
     if (upsertError) {
       throw upsertError;
     }
 
-    const response = NextResponse.redirect(
-      new URL("/therapist-dashboard?google=connected", request.url)
+    return redirectWithGoogleStatus(
+      request,
+      "connected",
+    );
+  } catch (error) {
+    console.error(
+      "Google callback error:",
+      error,
     );
 
-    response.cookies.delete("google_oauth_state");
-    response.cookies.delete("google_oauth_user");
-
-    return response;
-  } catch (error) {
-    console.error("Google callback error:", error);
-
-    return NextResponse.redirect(
-      new URL("/therapist-dashboard?google=error", request.url)
+    return redirectWithGoogleStatus(
+      request,
+      "error",
     );
   }
 }

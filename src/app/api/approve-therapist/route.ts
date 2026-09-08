@@ -352,6 +352,39 @@ export async function POST(request: Request) {
      * =========================================================
      */
 
+    /*
+     * =========================================================
+     * Profil général
+     * =========================================================
+     *
+     * Un spécialiste peut également être administrateur.
+     *
+     * - un profil admin existant conserve le rôle "admin" ;
+     * - les autres nouveaux spécialistes gardent le rôle
+     *   "therapist" pour la compatibilité actuelle du projet.
+     *
+     * L'accès clinique est déterminé par la présence de
+     * l'utilisateur dans public.therapists.
+     */
+
+    const {
+      data: existingGeneralProfile,
+      error: existingGeneralProfileError,
+    } = await supabaseAdmin
+      .from("profiles")
+      .select("id, role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (existingGeneralProfileError) {
+      throw existingGeneralProfileError;
+    }
+
+    const roleToKeep =
+      existingGeneralProfile?.role === "admin"
+        ? "admin"
+        : "therapist";
+
     const {
       error: profileError,
     } = await supabaseAdmin
@@ -360,7 +393,7 @@ export async function POST(request: Request) {
         {
           id: userId,
           email,
-          role: "therapist",
+          role: roleToKeep,
         },
         {
           onConflict: "id",

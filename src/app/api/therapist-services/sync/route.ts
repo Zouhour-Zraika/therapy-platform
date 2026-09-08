@@ -9,10 +9,15 @@ import {
 export const runtime =
   "nodejs";
 
-type TherapistRow = {
+type SpecialistRow = {
   id: string;
   experience_years:
     | number
+    | null;
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive"
     | null;
 };
 
@@ -128,7 +133,7 @@ async function getAuthenticatedUser(
 }
 
 function buildServices(
-  therapistId: string,
+  specialistId: string,
   experienceYears: number,
 ): ServiceDefinition[] {
   const standardPrice =
@@ -152,7 +157,7 @@ function buildServices(
   return [
     {
       therapist_id:
-        therapistId,
+        specialistId,
       service_type:
         "individual",
       price:
@@ -166,7 +171,7 @@ function buildServices(
     },
     {
       therapist_id:
-        therapistId,
+        specialistId,
       service_type:
         "couples",
       price:
@@ -180,7 +185,7 @@ function buildServices(
     },
     {
       therapist_id:
-        therapistId,
+        specialistId,
       service_type:
         "family",
       price:
@@ -194,7 +199,7 @@ function buildServices(
     },
     {
       therapist_id:
-        therapistId,
+        specialistId,
       service_type:
         "group",
       price:
@@ -242,43 +247,49 @@ export async function POST(
       );
     }
 
+    /*
+     * SYSTÈME GÉNÉRIQUE SPÉCIALISTE
+     *
+     * Pour cette API clinique, la source de vérité
+     * est la présence de l'utilisateur connecté
+     * dans public.therapists.
+     *
+     * Le rôle général profiles.role n'est pas utilisé
+     * pour déterminer l'accès spécialiste.
+     *
+     * Ainsi :
+     * - un spécialiste classique fonctionne ;
+     * - un admin + spécialiste fonctionne ;
+     * - un admin purement administratif sans ligne
+     *   dans therapists n'a pas accès à cette API.
+     *
+     * "therapists" et "therapist_id" sont des noms
+     * historiques de la base conservés pour compatibilité.
+     */
     const {
-      data: profile,
+      data: specialist,
       error:
-        profileError,
+        specialistError,
     } = await supabaseAdmin
-      .from("profiles")
+      .from("therapists")
       .select(
-        "id, role",
+        "id, experience_years, work_status",
       )
       .eq(
         "id",
         user.id,
       )
-      .maybeSingle<{
-        id: string;
-        role:
-          | string
-          | null;
-      }>();
+      .maybeSingle<SpecialistRow>();
 
-    if (profileError) {
-      throw profileError;
+    if (specialistError) {
+      throw specialistError;
     }
 
-    if (
-      !profile ||
-      (
-        profile.role !==
-          "therapist" &&
-        profile.role !==
-          "admin"
-      )
-    ) {
+    if (!specialist) {
       return NextResponse.json(
         {
           error:
-            "Therapist access is required.",
+            "Specialist access is required.",
         },
         {
           status: 403,
@@ -286,44 +297,41 @@ export async function POST(
       );
     }
 
-    const {
-      data: therapist,
-      error:
-        therapistError,
-    } = await supabaseAdmin
-      .from("therapists")
-      .select(
-        "id, experience_years",
-      )
-      .eq(
-        "id",
-        user.id,
-      )
-      .maybeSingle<TherapistRow>();
-
-    if (therapistError) {
-      throw therapistError;
-    }
-
-    if (!therapist) {
+    /*
+     * active
+     * → accès normal
+     *
+     * leaving
+     * → accès encore autorisé
+     *
+     * inactive
+     * → accès clinique refusé
+     *
+     * Même règle que dans les autres
+     * protections de l'espace spécialiste.
+     */
+    if (
+      specialist.work_status ===
+      "inactive"
+    ) {
       return NextResponse.json(
         {
           error:
-            "Therapist profile was not found.",
+            "Specialist access is inactive.",
         },
         {
-          status: 404,
+          status: 403,
         },
       );
     }
 
     const experienceYears =
       Number(
-        therapist.experience_years,
+        specialist.experience_years,
       );
 
     if (
-      therapist.experience_years ===
+      specialist.experience_years ===
         null ||
       !Number.isInteger(
         experienceYears,
@@ -346,7 +354,7 @@ export async function POST(
 
     const serviceDefinitions =
       buildServices(
-        therapist.id,
+        specialist.id,
         experienceYears,
       );
 
@@ -363,7 +371,7 @@ export async function POST(
       )
       .eq(
         "therapist_id",
-        therapist.id,
+        specialist.id,
       );
 
     if (existingServicesError) {
@@ -433,7 +441,7 @@ export async function POST(
     });
   } catch (error) {
     console.error(
-      "Therapist services sync error:",
+      "Specialist services sync error:",
       error,
     );
 
@@ -443,7 +451,7 @@ export async function POST(
           error instanceof
           Error
             ? error.message
-            : "Unable to configure therapist services.",
+            : "Unable to configure specialist services.",
       },
       {
         status: 500,

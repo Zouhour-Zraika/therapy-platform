@@ -103,6 +103,7 @@ type AvailabilitySlot = {
 
 type Booking = {
   id: string;
+  patient_id: string | null;
   slot_id: string | null;
   slot_day: string;
   slot_time: string;
@@ -114,6 +115,15 @@ type Booking = {
   zoom_start_url: string | null;
   meeting_url?: string | null;
   meeting_provider?: string | null;
+};
+
+type PatientRecordSummary = {
+  id: string;
+  patient_id: string;
+  created_at: string;
+  updated_at: string;
+  patient_email: string | null;
+  patient_name: string | null;
 };
 
 type TranslationFields = {
@@ -213,6 +223,33 @@ export default function AdminProfilePage() {
   const [bookings, setBookings] =
     useState<Booking[]>([]);
 
+  const [
+    patientRecords,
+    setPatientRecords,
+  ] = useState<PatientRecordSummary[]>(
+    [],
+  );
+
+  const [
+    showAllSlots,
+    setShowAllSlots,
+  ] = useState(false);
+
+  const [
+    showAllBookings,
+    setShowAllBookings,
+  ] = useState(false);
+
+  const [
+    patientSearch,
+    setPatientSearch,
+  ] = useState("");
+
+  const [
+    visiblePatientCount,
+    setVisiblePatientCount,
+  ] = useState(10);
+
   const [nowMs, setNowMs] =
     useState(() => Date.now());
 
@@ -233,6 +270,21 @@ export default function AdminProfilePage() {
     successMessage,
     setSuccessMessage,
   ] = useState("");
+
+  type AdminDashboardView =
+    | "dashboard"
+    | "profile"
+    | "availability"
+    | "sessions"
+    | "patients"
+    | "services";
+
+  const [
+    activeView,
+    setActiveView,
+  ] = useState<AdminDashboardView>(
+    "dashboard",
+  );
 
   const text =
     language === "ar"
@@ -794,6 +846,7 @@ export default function AdminProfilePage() {
   useEffect(() => {
     void getSlots();
     void getBookings();
+    void getPatientRecords();
   }, []);
 
   useEffect(() => {
@@ -1413,6 +1466,148 @@ export default function AdminProfilePage() {
       setBookings(
         (data as Booking[]) ||
           [],
+      );
+    };
+
+  const getPatientRecords =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        return;
+      }
+
+      const {
+        data: records,
+        error: recordsError,
+      } = await supabase
+        .from("patient_records")
+        .select(
+          "id, patient_id, created_at, updated_at",
+        )
+        .eq(
+          "therapist_id",
+          user.id,
+        )
+        .order(
+          "updated_at",
+          {
+            ascending: false,
+          },
+        );
+
+      if (recordsError) {
+        console.error(
+          "Patient records error:",
+          recordsError,
+        );
+        return;
+      }
+
+      const normalizedRecords =
+        (records || []) as Array<{
+          id: string;
+          patient_id: string;
+          created_at: string;
+          updated_at: string;
+        }>;
+
+      if (
+        normalizedRecords.length ===
+        0
+      ) {
+        setPatientRecords([]);
+        return;
+      }
+
+      const patientIds = [
+        ...new Set(
+          normalizedRecords.map(
+            (record) =>
+              record.patient_id,
+          ),
+        ),
+      ];
+
+      let profiles: Array<{
+        id: string;
+        email: string | null;
+        full_name?: string | null;
+      }> = [];
+
+      const {
+        data: profilesWithName,
+        error:
+          profilesWithNameError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          "id, email, full_name",
+        )
+        .in(
+          "id",
+          patientIds,
+        );
+
+      if (
+        !profilesWithNameError
+      ) {
+        profiles =
+          (profilesWithName ||
+            []) as Array<{
+              id: string;
+              email: string | null;
+              full_name?: string | null;
+            }>;
+      } else {
+        const {
+          data: basicProfiles,
+        } = await supabase
+          .from("profiles")
+          .select("id, email")
+          .in(
+            "id",
+            patientIds,
+          );
+
+        profiles =
+          (basicProfiles ||
+            []) as Array<{
+              id: string;
+              email: string | null;
+            }>;
+      }
+
+      const profileById =
+        new Map(
+          profiles.map(
+            (profile) => [
+              profile.id,
+              profile,
+            ],
+          ),
+        );
+
+      setPatientRecords(
+        normalizedRecords.map(
+          (record) => {
+            const profile =
+              profileById.get(
+                record.patient_id,
+              );
+
+            return {
+              ...record,
+              patient_email:
+                profile?.email ||
+                null,
+              patient_name:
+                profile?.full_name ||
+                null,
+            };
+          },
+        ),
       );
     };
 
@@ -2320,6 +2515,182 @@ export default function AdminProfilePage() {
       }
     };
 
+  const visibleSlots =
+    showAllSlots
+      ? slots
+      : slots.slice(0, 3);
+
+  const visibleBookings =
+    showAllBookings
+      ? bookings
+      : bookings.slice(0, 3);
+
+  const adminPatients =
+    patientRecords
+      .map((patient) => {
+        const patientBookings =
+          bookings.filter(
+            (booking) =>
+              booking.patient_id ===
+                patient.patient_id,
+          );
+
+        const latestBooking =
+          [...patientBookings]
+            .filter(
+              (booking) =>
+                Boolean(
+                  booking.scheduled_start,
+                ),
+            )
+            .sort(
+              (a, b) =>
+                new Date(
+                  b.scheduled_start ||
+                    0,
+                ).getTime() -
+                new Date(
+                  a.scheduled_start ||
+                    0,
+                ).getTime(),
+            )[0] ||
+          patientBookings[0] ||
+          null;
+
+        return {
+          ...patient,
+          sessionCount:
+            patientBookings.length,
+          lastSessionAt:
+            latestBooking?.scheduled_start ||
+            null,
+        };
+      })
+      .sort((a, b) => {
+        const aTime =
+          a.lastSessionAt
+            ? new Date(
+                a.lastSessionAt,
+              ).getTime()
+            : new Date(
+                a.updated_at,
+              ).getTime();
+
+        const bTime =
+          b.lastSessionAt
+            ? new Date(
+                b.lastSessionAt,
+              ).getTime()
+            : new Date(
+                b.updated_at,
+              ).getTime();
+
+        return bTime - aTime;
+      });
+
+  const normalizedPatientSearch =
+    patientSearch
+      .trim()
+      .toLowerCase();
+
+  const filteredAdminPatients =
+    normalizedPatientSearch
+      ? adminPatients.filter(
+          (patient) =>
+            (
+              patient.patient_name ||
+              ""
+            )
+              .toLowerCase()
+              .includes(
+                normalizedPatientSearch,
+              ) ||
+            (
+              patient.patient_email ||
+              ""
+            )
+              .toLowerCase()
+              .includes(
+                normalizedPatientSearch,
+              ),
+        )
+      : adminPatients;
+
+  const displayedAdminPatients =
+    filteredAdminPatients.slice(
+      0,
+      visiblePatientCount,
+    );
+
+  const remainingAdminPatients =
+    Math.max(
+      0,
+      filteredAdminPatients.length -
+        visiblePatientCount,
+    );
+
+  const formatPatientLastSession = (
+    value: string | null,
+  ) => {
+    if (!value) {
+      return language === "ar"
+        ? "لا توجد جلسة"
+        : language === "fr"
+          ? "Aucune séance"
+          : "No session";
+    }
+
+    const date = new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime(),
+      )
+    ) {
+      return "—";
+    }
+
+    return new Intl.DateTimeFormat(
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB",
+      {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "Asia/Beirut",
+      },
+    ).format(date);
+  };
+
+  const upcomingAdminBookings =
+    bookings
+      .filter(
+        (booking) =>
+          !isPastBooking(
+            booking,
+          ),
+      )
+      .sort((a, b) => {
+        const aTime =
+          a.scheduled_start
+            ? new Date(
+                a.scheduled_start,
+              ).getTime()
+            : Number.MAX_SAFE_INTEGER;
+
+        const bTime =
+          b.scheduled_start
+            ? new Date(
+                b.scheduled_start,
+              ).getTime()
+            : Number.MAX_SAFE_INTEGER;
+
+        return aTime - bTime;
+      });
+
   const displayedPhoto =
     photoPreview ||
     photoUrl;
@@ -2330,7 +2701,7 @@ export default function AdminProfilePage() {
       .charAt(0)
       .toUpperCase() ||
     "A";
-      return (
+  return (
     <ProtectedRoute
       allowedRoles={[
         "admin",
@@ -2345,710 +2716,1532 @@ export default function AdminProfilePage() {
               ? "rtl"
               : "ltr"
           }
-          className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
+          className="min-h-screen bg-aan-background"
         >
-          <section className="mx-auto max-w-7xl">
-            <div className="aan-card p-7 sm:p-10 lg:p-12">
-              <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
-                AAN Psychotherapy
-              </p>
+          <div className="mx-auto grid max-w-[1440px] lg:grid-cols-[240px_minmax(0,1fr)]">
+            <aside className="hidden min-h-[calc(100vh-88px)] border-r border-aan-border bg-white px-4 py-7 lg:flex lg:flex-col">
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "dashboard",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "dashboard"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>▣</span>
+                  {language === "ar"
+                    ? "لوحة التحكم"
+                    : language === "fr"
+                      ? "Tableau de bord"
+                      : "Dashboard"}
+                </button>
 
-              <h1 className="aan-heading mt-4 text-4xl sm:text-5xl">
-                {text.title}
-              </h1>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "profile",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "profile"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>◯</span>
+                  {language === "ar"
+                    ? "ملفي"
+                    : language === "fr"
+                      ? "Mon profil"
+                      : "My profile"}
+                </button>
 
-              <p className="mt-5 max-w-3xl leading-8 text-aan-secondary">
-                {
-                  text.description
-                }
-              </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "availability",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "availability"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>▣</span>
+                  {text.availability}
+                </button>
 
-              <div className="mt-5 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-secondary">
-                ✓{" "}
-                {
-                  text.translationNotice
-                }
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "sessions",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "sessions"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>▤</span>
+                  {text.bookedSessions}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "patients",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "patients"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>◎</span>
+                  {language === "ar"
+                    ? "مرضاي"
+                    : language === "fr"
+                      ? "Mes patients"
+                      : "My patients"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "services",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "services"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-[#fbf8f3] hover:text-aan-navy"
+                  }`}
+                >
+                  <span>◇</span>
+                  {language === "ar"
+                    ? "الخدمات والأسعار"
+                    : language === "fr"
+                      ? "Services & tarifs"
+                      : "Services & prices"}
+                </button>
               </div>
 
-              {loading ? (
-                <p className="mt-10 text-aan-secondary">
-                  {
-                    text.loading
-                  }
+              <div className="mt-auto rounded-2xl border border-aan-border bg-[#fbf8f3] p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-aan-gold">
+                  {language === "ar"
+                    ? "الحساب"
+                    : language === "fr"
+                      ? "Compte"
+                      : "Account"}
                 </p>
-              ) : (
-                <div className="mt-10 grid gap-8 lg:grid-cols-2">
-                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
-                    <h2 className="aan-heading text-3xl">
-                      {
-                        text.basic
-                      }
-                    </h2>
 
-                    <div className="mt-8 flex flex-col items-center">
-                      <div className="relative h-44 w-44 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee] shadow-[var(--aan-shadow-md)]">
-                        {displayedPhoto ? (
-                          <Image
-                            src={
-                              displayedPhoto
-                            }
-                            alt={
-                              fullName ||
-                              text.photoAlt
-                            }
-                            fill
-                            sizes="176px"
-                            className="object-cover"
-                            unoptimized={displayedPhoto.startsWith(
-                              "blob:",
+                <p className="mt-2 font-bold text-aan-navy">
+                  {fullName ||
+                    text.unknown}
+                </p>
+
+                <p className="mt-1 break-all text-xs text-aan-secondary">
+                  {email}
+                </p>
+
+                <div className="mt-3 inline-flex rounded-full border border-aan-border bg-white px-3 py-1 text-xs font-bold text-aan-navy">
+                  {language === "ar"
+                    ? "مسؤولة + اختصاصية"
+                    : language === "fr"
+                      ? "Admin + spécialiste"
+                      : "Admin + specialist"}
+                </div>
+              </div>
+            </aside>
+
+            <section className="min-w-0 px-5 py-8 sm:px-8 lg:px-10">
+              {loading ? (
+                <div className="aan-card p-8 text-aan-secondary">
+                  {text.loading}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-7 flex flex-wrap gap-2 lg:hidden">
+                    {(
+                      [
+                        [
+                          "dashboard",
+                          language === "ar"
+                            ? "لوحة التحكم"
+                            : language === "fr"
+                              ? "Tableau de bord"
+                              : "Dashboard",
+                        ],
+                        [
+                          "profile",
+                          language === "ar"
+                            ? "ملفي"
+                            : language === "fr"
+                              ? "Mon profil"
+                              : "My profile",
+                        ],
+                        [
+                          "availability",
+                          text.availability,
+                        ],
+                        [
+                          "sessions",
+                          text.bookedSessions,
+                        ],
+                        [
+                          "patients",
+                          language === "ar"
+                            ? "مرضاي"
+                            : language === "fr"
+                              ? "Mes patients"
+                              : "My patients",
+                        ],
+                        [
+                          "services",
+                          language === "ar"
+                            ? "الخدمات والأسعار"
+                            : language === "fr"
+                              ? "Services & tarifs"
+                              : "Services & prices",
+                        ],
+                      ] as Array<
+                        [
+                          AdminDashboardView,
+                          string,
+                        ]
+                      >
+                    ).map(
+                      ([
+                        view,
+                        label,
+                      ]) => (
+                        <button
+                          key={view}
+                          type="button"
+                          onClick={() =>
+                            setActiveView(
+                              view,
+                            )
+                          }
+                          className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+                            activeView ===
+                            view
+                              ? "border-aan-gold bg-white text-aan-navy"
+                              : "border-aan-border bg-[#fbf8f3] text-aan-secondary"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+
+                  {activeView ===
+                  "dashboard" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {language === "ar"
+                          ? `مرحباً، ${fullName || ""}`
+                          : language === "fr"
+                            ? `Bienvenue, ${fullName || ""}`
+                            : `Welcome, ${fullName || ""}`}
+                      </h1>
+
+                      <p className="mt-3 text-aan-secondary">
+                        {language === "ar"
+                          ? "نظرة عامة على ملفك ومواعيدك وجلساتك ومرضاك."
+                          : language === "fr"
+                            ? "Voici un aperçu de votre profil, de vos disponibilités, de vos séances et de vos patients."
+                            : "Here is an overview of your profile, availability, sessions and patients."}
+                      </p>
+
+                      <div className="mt-7 grid gap-6 xl:grid-cols-2">
+                        <section className="aan-card p-6 sm:p-7">
+                          <div className="flex items-start justify-between gap-4">
+                            <h2 className="text-xl font-bold text-aan-navy">
+                              {language === "ar"
+                                ? "ملفي"
+                                : language === "fr"
+                                  ? "Mon profil"
+                                  : "My profile"}
+                            </h2>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveView(
+                                  "profile",
+                                )
+                              }
+                              className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-semibold text-aan-navy"
+                            >
+                              {language === "ar"
+                                ? "تعديل"
+                                : language === "fr"
+                                  ? "Modifier"
+                                  : "Edit"}
+                            </button>
+                          </div>
+
+                          <div className="mt-6 flex items-center gap-5">
+                            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee]">
+                              {displayedPhoto ? (
+                                <Image
+                                  src={
+                                    displayedPhoto
+                                  }
+                                  alt={
+                                    fullName ||
+                                    text.photoAlt
+                                  }
+                                  fill
+                                  sizes="96px"
+                                  className="object-cover"
+                                  unoptimized={displayedPhoto.startsWith(
+                                    "blob:",
+                                  )}
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-aan-button">
+                                  {initial}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="min-w-0">
+                              <p className="truncate text-xl font-bold text-aan-navy">
+                                {fullName}
+                              </p>
+                              <p className="mt-1 text-aan-secondary">
+                                {jobTitle}
+                              </p>
+                              <span className="mt-2 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-navy">
+                                {language === "ar"
+                                  ? "مسؤولة + اختصاصية"
+                                  : language === "fr"
+                                    ? "Admin + spécialiste"
+                                    : "Admin + specialist"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-6 grid gap-4 border-t border-aan-border pt-5 sm:grid-cols-3">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                                {text.experience}
+                              </p>
+                              <p className="mt-1 font-bold text-aan-navy">
+                                {experienceYears ||
+                                  "—"}{" "}
+                                {language === "ar"
+                                  ? "سنة"
+                                  : language === "fr"
+                                    ? "ans"
+                                    : "years"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                                {text.specialty}
+                              </p>
+                              <p className="mt-1 font-bold text-aan-navy">
+                                {specialty ||
+                                  "—"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                                {text.languages}
+                              </p>
+                              <p className="mt-1 font-bold text-aan-navy">
+                                {languages ||
+                                  "—"}
+                              </p>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="aan-card p-6 sm:p-7">
+                          <div className="flex flex-wrap items-center justify-between gap-4">
+                            <h2 className="text-xl font-bold text-aan-navy">
+                              {language === "ar"
+                                ? "المواعيد القادمة"
+                                : language === "fr"
+                                  ? "Disponibilités prochaines"
+                                  : "Upcoming availability"}
+                            </h2>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveView(
+                                  "availability",
+                                )
+                              }
+                              className="aan-button px-4 py-2.5 text-sm"
+                            >
+                              + {text.addAvailability}
+                            </button>
+                          </div>
+
+                          <div className="mt-5 divide-y divide-aan-border overflow-hidden rounded-2xl border border-aan-border bg-white">
+                            {slots.length ===
+                            0 ? (
+                              <p className="p-5 text-aan-secondary">
+                                {text.noAvailability}
+                              </p>
+                            ) : (
+                              slots
+                                .slice(
+                                  0,
+                                  3,
+                                )
+                                .map(
+                                  (
+                                    slot,
+                                  ) => (
+                                    <div
+                                      key={
+                                        slot.id
+                                      }
+                                      className="flex items-center justify-between gap-4 p-4"
+                                    >
+                                      <div>
+                                        <p className="font-bold text-aan-navy">
+                                          {formatDate(
+                                            slot.slot_date,
+                                          )}
+                                        </p>
+                                        <p className="mt-1 text-sm text-aan-secondary">
+                                          {
+                                            slot.time
+                                          }
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ),
+                                )
                             )}
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#f8f4ee_0%,#edf3f9_100%)]">
-                            <span className="text-6xl font-bold text-aan-button">
+                          </div>
+
+                          {slots.length >
+                          3 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveView(
+                                  "availability",
+                                )
+                              }
+                              className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy"
+                            >
+                              {language === "ar"
+                                ? `عرض جميع المواعيد (${slots.length})`
+                                : language === "fr"
+                                  ? `Voir toutes les disponibilités (${slots.length})`
+                                  : `View all availability (${slots.length})`}
+                            </button>
+                          ) : null}
+                        </section>
+
+                        <section className="aan-card p-6 sm:p-7">
+                          <div className="flex items-center justify-between gap-4">
+                            <h2 className="text-xl font-bold text-aan-navy">
+                              {language === "ar"
+                                ? "الجلسات القادمة"
+                                : language === "fr"
+                                  ? "Séances à venir"
+                                  : "Upcoming sessions"}
+                            </h2>
+
+                            <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-secondary">
                               {
-                                initial
+                                upcomingAdminBookings.length
                               }
                             </span>
                           </div>
-                        )}
-                      </div>
 
-                      <label className="mt-6 inline-flex cursor-pointer items-center justify-center rounded-xl border-2 border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-aan-gold hover:text-white">
-                        {
-                          text.choosePhoto
-                        }
-
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={
-                            handlePhotoChange
-                          }
-                          className="hidden"
-                        />
-                      </label>
-
-                      <p className="mt-3 text-center text-sm text-aan-secondary">
-                        {
-                          text.photoHelp
-                        }
-                      </p>
-                    </div>
-
-                    <div className="mt-8 space-y-5">
-                      <Field
-                        label={
-                          text.email
-                        }
-                      >
-                        <input
-                          type="email"
-                          value={
-                            email
-                          }
-                          disabled
-                          className="aan-field bg-[#f4f1ec] p-4 font-normal opacity-75"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.fullName
-                        }
-                      >
-                        <input
-                          type="text"
-                          value={
-                            fullName
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setFullName(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field p-4 font-normal"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.professionalTitle
-                        }
-                      >
-                        <input
-                          type="text"
-                          value={
-                            jobTitle
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setJobTitle(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field p-4 font-normal"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.specialty
-                        }
-                      >
-                        <input
-                          type="text"
-                          value={
-                            specialty
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setSpecialty(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field p-4 font-normal"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.experience
-                        }
-                      >
-                        <input
-                          type="number"
-                          min="0"
-                          max="80"
-                          step="1"
-                          value={
-                            experienceYears
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setExperienceYears(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field p-4 font-normal"
-                        />
-                      </Field>
-                    </div>
-                  </section>
-
-                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
-                    <h2 className="aan-heading text-3xl">
-                      {
-                        text.biographySection
-                      }
-                    </h2>
-
-                    <div className="mt-8 space-y-6">
-                      <Field
-                        label={
-                          text.biography
-                        }
-                      >
-                        <textarea
-                          value={
-                            bio
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setBio(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-64 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.education
-                        }
-                      >
-                        <textarea
-                          value={
-                            education
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setEducation(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.certifications
-                        }
-                      >
-                        <textarea
-                          value={
-                            certifications
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setCertifications(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.approach
-                        }
-                      >
-                        <textarea
-                          value={
-                            therapeuticApproach
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setTherapeuticApproach(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.services
-                        }
-                      >
-                        <textarea
-                          value={
-                            services
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setServices(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-40 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-                      <Field
-                        label={
-                          text.languages
-                        }
-                      >
-                        <textarea
-                          value={
-                            languages
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setLanguages(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field min-h-28 resize-y p-4 font-normal leading-7"
-                        />
-                      </Field>
-
-
-                      <Field
-                        label={
-                          text.sessionPrice
-                        }
-                      >
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={
-                            price
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            setPrice(
-                              event
-                                .target
-                                .value,
-                            )
-                          }
-                          className="aan-field p-4 font-normal"
-                        />
-
-                        <span className="text-sm font-normal leading-6 text-aan-secondary">
-                          {
-                            text.priceHelp
-                          }
-                        </span>
-                      </Field>
-
-                      {successMessage && (
-                        <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 font-semibold text-green-700">
-                          {
-                            successMessage
-                          }
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void saveProfile()
-                        }
-                        disabled={
-                          saving
-                        }
-                        className="aan-button w-full py-4 text-lg disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {saving
-                          ? text.saving
-                          : text.save}
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
-                    <h2 className="aan-heading text-3xl">
-                      {
-                        text.availability
-                      }
-                    </h2>
-
-                    <div className="mt-8 space-y-4">
-                      <input
-                        type="date"
-                        value={
-                          slotDate
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          setSlotDate(
-                            event
-                              .target
-                              .value,
-                          )
-                        }
-                        className="aan-field p-4"
-                      />
-
-                      <input
-                        type="time"
-                        value={
-                          time
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          setTime(
-                            event
-                              .target
-                              .value,
-                          )
-                        }
-                        className="aan-field p-4"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void addSlot()
-                        }
-                        className="aan-button w-full py-4 text-lg"
-                      >
-                        {
-                          text.addAvailability
-                        }
-                      </button>
-                    </div>
-
-                    <div className="mt-8 space-y-4">
-                      {slots.length ===
-                      0 ? (
-                        <p className="text-aan-secondary">
-                          {
-                            text.noAvailability
-                          }
-                        </p>
-                      ) : (
-                        slots.map(
-                          (
-                            slot,
-                          ) => (
-                            <div
-                              key={
-                                slot.id
-                              }
-                              className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
-                            >
-                              <div>
-                                <p className="font-bold text-aan-navy">
-                                  {formatDate(
-                                    slot.slot_date,
-                                  )}
-                                </p>
-
-                                <p className="mt-1 text-aan-secondary">
-                                  {
-                                    slot.time
-                                  }
-                                </p>
+                          <div className="mt-5 space-y-3">
+                            {upcomingAdminBookings.length ===
+                            0 ? (
+                              <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-aan-secondary">
+                                {language === "ar"
+                                  ? "لا توجد جلسة قادمة."
+                                  : language === "fr"
+                                    ? "Aucune séance à venir."
+                                    : "No upcoming session."}
                               </div>
+                            ) : (
+                              upcomingAdminBookings
+                                .slice(
+                                  0,
+                                  3,
+                                )
+                                .map(
+                                  (
+                                    booking,
+                                  ) => (
+                                    <div
+                                      key={
+                                        booking.id
+                                      }
+                                      className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
+                                    >
+                                      <p className="font-bold text-aan-navy">
+                                        {formatBookingSessionDate(
+                                          booking,
+                                        )}{" "}
+                                        ·{" "}
+                                        {formatBookingSessionTime(
+                                          booking,
+                                        )}
+                                      </p>
+                                      <p className="mt-1 text-sm text-aan-secondary">
+                                        {booking.patient_email ||
+                                          text.unknown}
+                                      </p>
+                                    </div>
+                                  ),
+                                )
+                            )}
+                          </div>
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void deleteSlot(
-                                    slot.id,
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveView(
+                                "sessions",
+                              )
+                            }
+                            className="mt-4 w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy"
+                          >
+                            {language === "ar"
+                              ? "عرض الجلسات"
+                              : language === "fr"
+                                ? "Voir les séances"
+                                : "View sessions"}
+                          </button>
+                        </section>
+
+                        <section className="aan-card p-6 sm:p-7">
+                          <div className="flex items-center justify-between gap-4">
+                            <h2 className="text-xl font-bold text-aan-navy">
+                              {language === "ar"
+                                ? "مرضاي"
+                                : language === "fr"
+                                  ? "Mes patients"
+                                  : "My patients"}
+                            </h2>
+
+                            <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-secondary">
+                              {
+                                adminPatients.length
+                              }
+                            </span>
+                          </div>
+
+                          <div className="mt-5 space-y-3">
+                            {adminPatients.length ===
+                            0 ? (
+                              <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 text-aan-secondary">
+                                {language === "ar"
+                                  ? "لا يوجد مرضى بعد."
+                                  : language === "fr"
+                                    ? "Aucun patient pour le moment."
+                                    : "No patients yet."}
+                              </div>
+                            ) : (
+                              adminPatients
+                                .slice(
+                                  0,
+                                  3,
+                                )
+                                .map(
+                                  (
+                                    patient,
+                                  ) => (
+                                    <div
+                                      key={
+                                        patient.id
+                                      }
+                                      className="flex items-center justify-between gap-4 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="truncate font-bold text-aan-navy">
+                                          {patient.patient_name ||
+                                            (language === "ar"
+                                              ? "مريض"
+                                              : "Patient")}
+                                        </p>
+                                        <p className="mt-1 truncate text-sm text-aan-secondary">
+                                          {patient.patient_email ||
+                                            text.unknown}
+                                        </p>
+                                      </div>
+
+                                      <a
+                                        href={`/therapist-dashboard/patients/${patient.id}`}
+                                        className="shrink-0 rounded-xl border border-aan-border bg-white px-3 py-2 text-xs font-bold text-aan-navy"
+                                      >
+                                        {language === "ar"
+                                          ? "فتح"
+                                          : language === "fr"
+                                            ? "Ouvrir"
+                                            : "Open"}
+                                      </a>
+                                    </div>
+                                  ),
+                                )
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveView(
+                                "patients",
+                              )
+                            }
+                            className="mt-4 w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-navy"
+                          >
+                            {language === "ar"
+                              ? "عرض المرضى"
+                              : language === "fr"
+                                ? "Voir les patients"
+                                : "View patients"}
+                          </button>
+                        </section>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeView ===
+                  "profile" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {language === "ar"
+                          ? "ملفي المهني"
+                          : language === "fr"
+                            ? "Mon profil professionnel"
+                            : "My professional profile"}
+                      </h1>
+
+                      <p className="mt-3 max-w-3xl text-aan-secondary">
+                        {text.description}
+                      </p>
+
+                      <div className="mt-7 grid gap-6 xl:grid-cols-2">
+                        <section className="aan-card p-6 sm:p-7">
+                          <h2 className="text-xl font-bold text-aan-navy">
+                            {text.basic}
+                          </h2>
+
+                          <div className="mt-6 flex flex-col items-center">
+                            <div className="relative h-36 w-36 overflow-hidden rounded-full border-2 border-aan-gold bg-[#f8f4ee]">
+                              {displayedPhoto ? (
+                                <Image
+                                  src={
+                                    displayedPhoto
+                                  }
+                                  alt={
+                                    fullName ||
+                                    text.photoAlt
+                                  }
+                                  fill
+                                  sizes="144px"
+                                  className="object-cover"
+                                  unoptimized={displayedPhoto.startsWith(
+                                    "blob:",
+                                  )}
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-5xl font-bold text-aan-button">
+                                  {initial}
+                                </div>
+                              )}
+                            </div>
+
+                            <label className="mt-4 cursor-pointer rounded-xl border-2 border-aan-gold bg-white px-4 py-2.5 text-sm font-bold text-aan-navy">
+                              {text.choosePhoto}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={
+                                  handlePhotoChange
+                                }
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-6 space-y-4">
+                            <Field
+                              label={
+                                text.email
+                              }
+                            >
+                              <input
+                                type="email"
+                                value={
+                                  email
+                                }
+                                disabled
+                                className="aan-field bg-[#f4f1ec] p-3.5 font-normal opacity-75"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.fullName
+                              }
+                            >
+                              <input
+                                type="text"
+                                value={
+                                  fullName
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setFullName(
+                                    event.target.value,
                                   )
                                 }
-                                className="rounded-xl border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 transition hover:bg-red-50"
-                              >
+                                className="aan-field p-3.5 font-normal"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.professionalTitle
+                              }
+                            >
+                              <input
+                                type="text"
+                                value={
+                                  jobTitle
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setJobTitle(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field p-3.5 font-normal"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.specialty
+                              }
+                            >
+                              <input
+                                type="text"
+                                value={
+                                  specialty
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setSpecialty(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field p-3.5 font-normal"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.experience
+                              }
+                            >
+                              <input
+                                type="number"
+                                min="0"
+                                max="80"
+                                step="1"
+                                value={
+                                  experienceYears
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setExperienceYears(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field p-3.5 font-normal"
+                              />
+                            </Field>
+                          </div>
+                        </section>
+
+                        <section className="aan-card p-6 sm:p-7">
+                          <h2 className="text-xl font-bold text-aan-navy">
+                            {text.biographySection}
+                          </h2>
+
+                          <div className="mt-6 space-y-4">
+                            <Field
+                              label={
+                                text.biography
+                              }
+                            >
+                              <textarea
+                                value={
+                                  bio
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setBio(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-40 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.education
+                              }
+                            >
+                              <textarea
+                                value={
+                                  education
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setEducation(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-28 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.certifications
+                              }
+                            >
+                              <textarea
+                                value={
+                                  certifications
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setCertifications(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-32 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.approach
+                              }
+                            >
+                              <textarea
+                                value={
+                                  therapeuticApproach
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setTherapeuticApproach(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-32 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.services
+                              }
+                            >
+                              <textarea
+                                value={
+                                  services
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setServices(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-28 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.languages
+                              }
+                            >
+                              <textarea
+                                value={
+                                  languages
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setLanguages(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field min-h-24 resize-y p-3.5 font-normal leading-7"
+                              />
+                            </Field>
+
+                            <Field
+                              label={
+                                text.sessionPrice
+                              }
+                            >
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={
+                                  price
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  setPrice(
+                                    event.target.value,
+                                  )
+                                }
+                                className="aan-field p-3.5 font-normal"
+                              />
+                            </Field>
+
+                            {successMessage ? (
+                              <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-4 font-semibold text-green-700">
                                 {
-                                  text.delete
+                                  successMessage
                                 }
-                              </button>
-                            </div>
-                          ),
-                        )
-                      )}
-                    </div>
-                  </section>
+                              </div>
+                            ) : null}
 
-                  <section className="rounded-[2rem] border border-aan-border bg-white p-7 shadow-[var(--aan-shadow-sm)] sm:p-9">
-                    <h2 className="aan-heading text-3xl">
-                      {
-                        text.bookedSessions
-                      }
-                    </h2>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void saveProfile()
+                              }
+                              disabled={
+                                saving
+                              }
+                              className="aan-button w-full py-3.5 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {saving
+                                ? text.saving
+                                : text.save}
+                            </button>
+                          </div>
+                        </section>
+                      </div>
+                    </>
+                  ) : null}
 
-                    {bookings.length ===
-                    0 ? (
-                      <p className="mt-8 text-aan-secondary">
-                        {
-                          text.noBookings
-                        }
+                  {activeView ===
+                  "availability" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
                       </p>
-                    ) : (
-                      <div className="mt-8 grid gap-6">
-                        {bookings.map(
-                          (
-                            booking,
-                          ) => {
-                            const sessionUrl =
-                              booking.meeting_url ||
-                              booking.zoom_start_url;
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {text.availability}
+                      </h1>
 
-                            return (
-                              <article
-                                key={
-                                  booking.id
-                                }
-                                className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-6"
-                              >
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                  {
-                                    text.sessionDate
-                                  }
-                                </p>
+                      <section className="aan-card mt-7 p-6 sm:p-7">
+                        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                          <input
+                            type="date"
+                            value={
+                              slotDate
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setSlotDate(
+                                event.target.value,
+                              )
+                            }
+                            className="aan-field p-3.5"
+                          />
 
-                                <h3 className="mt-2 text-2xl font-bold capitalize text-aan-navy">
-                                  {formatBookingSessionDate(
-                                    booking,
-                                  )}{" "}
-                                  {language ===
-                                  "fr"
-                                    ? "à"
-                                    : language ===
-                                        "ar"
-                                      ? "في"
-                                      : "at"}{" "}
-                                  {formatBookingSessionTime(
-                                    booking,
-                                  )}
-                                </h3>
+                          <input
+                            type="time"
+                            value={
+                              time
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setTime(
+                                event.target.value,
+                              )
+                            }
+                            className="aan-field p-3.5"
+                          />
 
-                                <p className="mt-1 text-sm font-semibold text-aan-secondary">
-                                  {
-                                    text.therapistTimeZone
-                                  }
-                                </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void addSlot()
+                            }
+                            className="aan-button px-5 py-3.5"
+                          >
+                            {text.addAvailability}
+                          </button>
+                        </div>
 
-                                <p className="mt-4 text-aan-secondary">
-                                  {
-                                    text.priceLabel
+                        <div className="mt-6 divide-y divide-aan-border overflow-hidden rounded-2xl border border-aan-border bg-white">
+                          {slots.length ===
+                          0 ? (
+                            <p className="p-5 text-aan-secondary">
+                              {text.noAvailability}
+                            </p>
+                          ) : (
+                            visibleSlots.map(
+                              (
+                                slot,
+                              ) => (
+                                <div
+                                  key={
+                                    slot.id
                                   }
-                                  : $
-                                  {
-                                    booking.price
-                                  }
-                                </p>
-
-                                <p className="mt-2 break-words text-aan-secondary">
-                                  {
-                                    text.patientEmail
-                                  }
-                                  :{" "}
-                                  <span className="font-semibold text-aan-navy">
-                                    {booking.patient_email ||
-                                      text.unknown}
-                                  </span>
-                                </p>
-
-                                <p className="mt-2 font-bold text-green-700">
-                                  {
-                                    text.status
-                                  }
-                                  :{" "}
-                                  {
-                                    booking.status
-                                  }
-                                </p>
-
-                                <p className="mt-2 text-sm text-aan-secondary">
-                                  {
-                                    text.created
-                                  }
-                                  :{" "}
-                                  {new Date(
-                                    booking.created_at,
-                                  ).toLocaleString(
-                                    language ===
-                                    "ar"
-                                      ? "ar-LB"
-                                      : language ===
-                                          "fr"
-                                        ? "fr-FR"
-                                        : "en-US",
-                                  )}
-                                </p>
-
-                                {isPastBooking(
-                                  booking,
-                                ) ? (
-                                  <div className="mt-5 rounded-2xl border border-aan-border bg-white px-5 py-4 text-center font-bold text-aan-secondary">
-                                    {
-                                      text.sessionPast
-                                    }
+                                  className="flex items-center justify-between gap-4 p-4"
+                                >
+                                  <div>
+                                    <p className="font-bold text-aan-navy">
+                                      {formatDate(
+                                        slot.slot_date,
+                                      )}
+                                    </p>
+                                    <p className="mt-1 text-sm text-aan-secondary">
+                                      {
+                                        slot.time
+                                      }
+                                    </p>
                                   </div>
-                                ) : (
-                                  <>
-                                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void runBookingAction(
-                                            booking,
-                                            "request_reschedule",
-                                          )
-                                        }
-                                        disabled={
-                                          bookingActionId ===
-                                          booking.id
-                                        }
-                                        className="rounded-xl border border-aan-gold bg-white px-4 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        {
-                                          text.requestReschedule
-                                        }
-                                      </button>
 
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void runBookingAction(
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void deleteSlot(
+                                        slot.id,
+                                      )
+                                    }
+                                    className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700"
+                                  >
+                                    {
+                                      text.delete
+                                    }
+                                  </button>
+                                </div>
+                              ),
+                            )
+                          )}
+                        </div>
+
+                        {slots.length >
+                        3 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowAllSlots(
+                                (current) =>
+                                  !current,
+                              )
+                            }
+                            className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy"
+                          >
+                            {showAllSlots
+                              ? language === "ar"
+                                ? "عرض أقل"
+                                : language === "fr"
+                                  ? "Réduire les disponibilités"
+                                  : "Show fewer availabilities"
+                              : language === "ar"
+                                ? `عرض كل المواعيد (${slots.length})`
+                                : language === "fr"
+                                  ? `Voir toutes les disponibilités (${slots.length})`
+                                  : `View all availability (${slots.length})`}
+                          </button>
+                        ) : null}
+                      </section>
+                    </>
+                  ) : null}
+
+                  {activeView ===
+                  "sessions" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {text.bookedSessions}
+                      </h1>
+
+                      <section className="aan-card mt-7 p-6 sm:p-7">
+                        {bookings.length ===
+                        0 ? (
+                          <p className="text-aan-secondary">
+                            {text.noBookings}
+                          </p>
+                        ) : (
+                          <div className="grid gap-4">
+                            {visibleBookings.map(
+                              (
+                                booking,
+                              ) => {
+                                const sessionUrl =
+                                  booking.meeting_url ||
+                                  booking.zoom_start_url;
+
+                                return (
+                                  <article
+                                    key={
+                                      booking.id
+                                    }
+                                    className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-4">
+                                      <div>
+                                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-aan-gold">
+                                          {text.sessionDate}
+                                        </p>
+                                        <h3 className="mt-2 text-lg font-bold capitalize text-aan-navy">
+                                          {formatBookingSessionDate(
                                             booking,
-                                            "cancel_and_refund",
-                                          )
-                                        }
-                                        disabled={
-                                          bookingActionId ===
-                                          booking.id
-                                        }
-                                        className="rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
+                                          )}{" "}
+                                          ·{" "}
+                                          {formatBookingSessionTime(
+                                            booking,
+                                          )}
+                                        </h3>
+                                        <p className="mt-1 text-sm text-aan-secondary">
+                                          {booking.patient_email ||
+                                            text.unknown}
+                                        </p>
+                                      </div>
+
+                                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
                                         {
-                                          text.cancelSession
+                                          booking.status
                                         }
-                                      </button>
+                                      </span>
                                     </div>
 
-                                    {sessionUrl ? (
-                                      <a
-                                        href={
-                                          sessionUrl
-                                        }
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="aan-button mt-3 flex w-full py-3"
-                                      >
-                                        {
-                                          text.startSession
-                                        }
-                                      </a>
+                                    {!isPastBooking(
+                                      booking,
+                                    ) ? (
+                                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void runBookingAction(
+                                              booking,
+                                              "request_reschedule",
+                                            )
+                                          }
+                                          disabled={
+                                            bookingActionId ===
+                                            booking.id
+                                          }
+                                          className="rounded-xl border border-aan-gold bg-white px-4 py-3 text-sm font-bold text-aan-navy"
+                                        >
+                                          {
+                                            text.requestReschedule
+                                          }
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void runBookingAction(
+                                              booking,
+                                              "cancel_and_refund",
+                                            )
+                                          }
+                                          disabled={
+                                            bookingActionId ===
+                                            booking.id
+                                          }
+                                          className="rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-700"
+                                        >
+                                          {
+                                            text.cancelSession
+                                          }
+                                        </button>
+
+                                        {sessionUrl ? (
+                                          <a
+                                            href={
+                                              sessionUrl
+                                            }
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="aan-button flex px-4 py-3 text-sm"
+                                          >
+                                            {
+                                              text.startSession
+                                            }
+                                          </a>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            disabled
+                                            className="rounded-xl bg-slate-300 px-4 py-3 text-sm font-bold text-white"
+                                          >
+                                            {
+                                              text.meetingNotReady
+                                            }
+                                          </button>
+                                        )}
+                                      </div>
                                     ) : (
-                                      <button
-                                        type="button"
-                                        disabled
-                                        className="mt-3 w-full rounded-2xl bg-slate-300 py-3 font-semibold text-white"
-                                      >
+                                      <div className="mt-4 rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-bold text-aan-secondary">
                                         {
-                                          text.meetingNotReady
+                                          text.sessionPast
                                         }
-                                      </button>
+                                      </div>
                                     )}
-                                  </>
-                                )}
-                              </article>
-                            );
-                          },
+                                  </article>
+                                );
+                              },
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
-                  </section>
-                </div>
+
+                        {bookings.length >
+                        3 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowAllBookings(
+                                (current) =>
+                                  !current,
+                              )
+                            }
+                            className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy"
+                          >
+                            {showAllBookings
+                              ? language === "ar"
+                                ? "عرض أقل"
+                                : language === "fr"
+                                  ? "Réduire les séances"
+                                  : "Show fewer sessions"
+                              : language === "ar"
+                                ? `عرض كل الجلسات (${bookings.length})`
+                                : language === "fr"
+                                  ? `Voir toutes les séances (${bookings.length})`
+                                  : `View all sessions (${bookings.length})`}
+                          </button>
+                        ) : null}
+                      </section>
+                    </>
+                  ) : null}
+
+                  {activeView ===
+                  "patients" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {language === "ar"
+                          ? "مرضاي"
+                          : language === "fr"
+                            ? "Mes patients"
+                            : "My patients"}
+                      </h1>
+
+                      <p className="mt-3 text-aan-secondary">
+                        {language === "ar"
+                          ? "يمكنك الوصول فقط إلى المرضى المرتبطين بجلساتك."
+                          : language === "fr"
+                            ? "Vous accédez uniquement aux patients liés à vos propres séances."
+                            : "You only have access to patients linked to your own sessions."}
+                      </p>
+
+                      <section className="aan-card mt-7 p-6 sm:p-7">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h2 className="text-xl font-bold text-aan-navy">
+                              {language === "ar"
+                                ? "مرضاي"
+                                : language === "fr"
+                                  ? "Mes patients"
+                                  : "My patients"}
+                            </h2>
+                          </div>
+
+                          <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-secondary">
+                            {
+                              adminPatients.length
+                            }
+                          </span>
+                        </div>
+
+                        {adminPatients.length >
+                        0 ? (
+                          <input
+                            type="search"
+                            value={
+                              patientSearch
+                            }
+                            onChange={(
+                              event,
+                            ) => {
+                              setPatientSearch(
+                                event.target.value,
+                              );
+                              setVisiblePatientCount(
+                                10,
+                              );
+                            }}
+                            placeholder={
+                              language === "ar"
+                                ? "البحث عن مريض بالاسم أو البريد الإلكتروني..."
+                                : language === "fr"
+                                  ? "Rechercher un patient par nom ou e-mail..."
+                                  : "Search a patient by name or email..."
+                            }
+                            className="aan-field mt-5 w-full p-3.5"
+                          />
+                        ) : null}
+
+                        <div className="mt-5 overflow-hidden rounded-2xl border border-aan-border bg-white">
+                          {adminPatients.length ===
+                          0 ? (
+                            <div className="p-6 text-aan-secondary">
+                              {language === "ar"
+                                ? "لا يوجد مرضى مرتبطون بجلساتك حتى الآن."
+                                : language === "fr"
+                                  ? "Aucun patient n’est encore lié à vos séances."
+                                  : "No patients are linked to your sessions yet."}
+                            </div>
+                          ) : filteredAdminPatients.length ===
+                            0 ? (
+                            <div className="p-6 text-aan-secondary">
+                              {language === "ar"
+                                ? "لم يتم العثور على مريض مطابق للبحث."
+                                : language === "fr"
+                                  ? "Aucun patient ne correspond à votre recherche."
+                                  : "No patient matches your search."}
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-aan-border">
+                              {displayedAdminPatients.map(
+                                (
+                                  patient,
+                                ) => (
+                                  <div
+                                    key={
+                                      patient.id
+                                    }
+                                    className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1.5fr)_minmax(150px,0.8fr)_minmax(120px,0.6fr)_auto] sm:items-center"
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-bold text-aan-navy">
+                                        {patient.patient_name ||
+                                          (language === "ar"
+                                            ? "مريض"
+                                            : "Patient")}
+                                      </p>
+                                      <p className="mt-1 truncate text-sm text-aan-secondary">
+                                        {patient.patient_email ||
+                                          text.unknown}
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-xs font-bold uppercase tracking-[0.08em] text-aan-gold">
+                                        {language === "ar"
+                                          ? "آخر جلسة"
+                                          : language === "fr"
+                                            ? "Dernière séance"
+                                            : "Last session"}
+                                      </p>
+                                      <p className="mt-1 text-sm text-aan-secondary">
+                                        {formatPatientLastSession(
+                                          patient.lastSessionAt,
+                                        )}
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-xs font-bold uppercase tracking-[0.08em] text-aan-gold">
+                                        {language === "ar"
+                                          ? "عدد الجلسات"
+                                          : language === "fr"
+                                            ? "Nombre de séances"
+                                            : "Sessions"}
+                                      </p>
+                                      <p className="mt-1 font-bold text-aan-navy">
+                                        {
+                                          patient.sessionCount
+                                        }
+                                      </p>
+                                    </div>
+
+                                    <a
+                                      href={`/therapist-dashboard/patients/${patient.id}`}
+                                      className="rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-2.5 text-center text-sm font-bold text-aan-navy"
+                                    >
+                                      {language === "ar"
+                                        ? "فتح الملف"
+                                        : language === "fr"
+                                          ? "Ouvrir le dossier"
+                                          : "Open record"}
+                                    </a>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {remainingAdminPatients >
+                        0 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVisiblePatientCount(
+                                (current) =>
+                                  current +
+                                  10,
+                              )
+                            }
+                            className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm font-bold text-aan-navy"
+                          >
+                            {language === "ar"
+                              ? `عرض المزيد (${Math.min(
+                                  10,
+                                  remainingAdminPatients,
+                                )})`
+                              : language === "fr"
+                                ? `Voir ${Math.min(
+                                    10,
+                                    remainingAdminPatients,
+                                  )} patient(s) de plus`
+                                : `Show ${Math.min(
+                                    10,
+                                    remainingAdminPatients,
+                                  )} more patient(s)`}
+                          </button>
+                        ) : null}
+                      </section>
+                    </>
+                  ) : null}
+
+                  {activeView ===
+                  "services" ? (
+                    <>
+                      <p className="text-sm font-bold uppercase tracking-[0.28em] text-aan-gold">
+                        AAN Psychotherapy
+                      </p>
+                      <h1 className="aan-heading mt-3 text-4xl sm:text-5xl">
+                        {language === "ar"
+                          ? "الخدمات والأسعار"
+                          : language === "fr"
+                            ? "Services & tarifs"
+                            : "Services & prices"}
+                      </h1>
+
+                      <section className="aan-card mt-7 p-6 sm:p-7">
+                        <div className="grid gap-6 lg:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.16em] text-aan-gold">
+                              {text.services}
+                            </p>
+                            <div className="mt-3 whitespace-pre-wrap rounded-2xl border border-aan-border bg-[#fbf8f3] p-5 leading-7 text-aan-secondary">
+                              {services ||
+                                "—"}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.16em] text-aan-gold">
+                              {text.sessionPrice}
+                            </p>
+                            <div className="mt-3 rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                              <span className="text-3xl font-bold text-aan-navy">
+                                {price ||
+                                  "0"}{" "}
+                                $US
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveView(
+                              "profile",
+                            )
+                          }
+                          className="mt-5 rounded-xl border border-aan-border bg-white px-5 py-3 text-sm font-bold text-aan-navy"
+                        >
+                          {language === "ar"
+                            ? "تعديل الخدمات والسعر"
+                            : language === "fr"
+                              ? "Modifier les services et le tarif"
+                              : "Edit services and price"}
+                        </button>
+                      </section>
+                    </>
+                  ) : null}
+                </>
               )}
-            </div>
-          </section>
+            </section>
+          </div>
         </main>
       </>
     </ProtectedRoute>

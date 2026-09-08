@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
@@ -7,8 +7,17 @@ import Navbar from "../components/Navbar";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
 
-type LoginMode = "client" | "therapist";
+type LoginMode = "client" | "specialist";
 type ApplicationLanguage = "en" | "fr" | "ar";
+
+type Specialist = {
+  id: string;
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive"
+    | null;
+};
 
 export default function ClinicianPage() {
   const router = useRouter();
@@ -56,6 +65,7 @@ export default function ClinicianPage() {
       setLoginError(
         t("clinician.errors.loginRequired")
       );
+
       return;
     }
 
@@ -69,7 +79,10 @@ export default function ClinicianPage() {
         });
 
       if (error) {
-        setLoginError(t("clinician.errors.invalidCredentials"));
+        setLoginError(
+          t("clinician.errors.invalidCredentials")
+        );
+
         return;
       }
 
@@ -77,15 +90,28 @@ export default function ClinicianPage() {
         setLoginError(
           t("clinician.errors.accountUnavailable")
         );
+
         return;
       }
 
-      const { data: profile, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", data.user.id)
-          .single();
+      /*
+       * Charger le rôle général du compte.
+       *
+       * profiles.role reste utile pour distinguer
+       * les rôles généraux du compte (admin, patient, etc.).
+       *
+       * La valeur historique "therapist" peut encore exister
+       * pour certains comptes, mais elle n'est plus la source
+       * de vérité pour déterminer l'accès spécialiste.
+       */
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
 
       if (profileError || !profile) {
         await supabase.auth.signOut();
@@ -93,49 +119,137 @@ export default function ClinicianPage() {
         setLoginError(
           t("clinician.errors.profileMissing")
         );
+
         return;
       }
 
-      if (profile.role === "admin") {
-        router.push("/admin");
-        router.refresh();
+      /*
+       * Vérification générique du spécialiste.
+       *
+       * Une personne est considérée
+       * comme spécialiste si elle possède
+       * une ligne dans public.therapists.
+       *
+       * Cette vérification est indépendante
+       * de profiles.role.
+       *
+       * Cela permet notamment à un compte
+       * ayant un rôle général "admin"
+       * d'accéder également à l'espace spécialiste
+       * s'il possède une ligne dans public.therapists.
+       *
+       * Les spécialistes classiques utilisent
+       * exactement le même système.
+       */
+      const {
+        data: specialist,
+        error: specialistError,
+      } = await supabase
+        .from("therapists")
+        .select("id, work_status")
+        .eq("id", data.user.id)
+        .maybeSingle<Specialist>();
+
+      if (specialistError) {
+        console.error(
+          "Specialist login check error:",
+          specialistError
+        );
+
+        await supabase.auth.signOut();
+
+        setLoginError(
+          t("clinician.errors.unexpected")
+        );
+
         return;
       }
 
-      if (profile.role === "therapist") {
-        if (loginMode !== "therapist") {
+      const isSpecialist =
+        Boolean(specialist);
+
+      /*
+       * CONNEXION DEPUIS L'ONGLET SPÉCIALISTE
+       *
+       * L'accès dépend maintenant
+       * de la présence dans public.therapists.
+       *
+       * Le rôle général du compte n'est pas utilisé
+       * comme preuve d'accès spécialiste.
+       */
+      if (loginMode === "specialist") {
+        if (!isSpecialist) {
           await supabase.auth.signOut();
 
           setLoginError(
-            t("clinician.errors.selectTherapist")
+            t("clinician.errors.noAccess")
           );
+
+          return;
+        }
+
+        /*
+         * active
+         * → accès normal
+         *
+         * leaving
+         * → accès encore autorisé
+         *
+         * inactive
+         * → accès clinique refusé
+         */
+        if (
+          specialist?.work_status === "inactive"
+        ) {
+          await supabase.auth.signOut();
+
+          router.push(
+            "/login?reason=inactive-specialist"
+          );
+
+          router.refresh();
+
           return;
         }
 
         router.push("/therapist-dashboard");
         router.refresh();
+
         return;
       }
 
+      /*
+       * CONNEXION DEPUIS L'ONGLET CLIENT
+       */
       if (
         profile.role === "client" ||
-        profile.role === "patient" ||
-        !profile.role
+        profile.role === "patient"
       ) {
-        if (loginMode !== "client") {
-          await supabase.auth.signOut();
-
-          setLoginError(
-            t("clinician.errors.selectClient")
-          );
-          return;
-        }
-
         router.push("/dashboard");
         router.refresh();
+
         return;
       }
 
+      /*
+       * Les admins qui sont aussi spécialistes
+       * peuvent utiliser l'onglet spécialiste
+       * pour accéder au dashboard clinique.
+       *
+       * S'ils utilisent l'entrée client,
+       * ils restent envoyés vers leur
+       * dashboard administratif.
+       */
+      if (profile.role === "admin") {
+        router.push("/admin");
+        router.refresh();
+
+        return;
+      }
+
+      /*
+       * Aucun accès reconnu.
+       */
       await supabase.auth.signOut();
 
       setLoginError(
@@ -169,6 +283,7 @@ export default function ClinicianPage() {
       setApplicationError(
         t("clinician.errors.applicationRequired")
       );
+
       return;
     }
 
@@ -182,17 +297,20 @@ export default function ClinicianPage() {
     const translateContent = async (
       targetLanguage: ApplicationLanguage
     ) => {
-      const response = await fetch("/api/translate-content", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sourceLanguage,
-          targetLanguage,
-          fields: sourceFields,
-        }),
-      });
+      const response = await fetch(
+        "/api/translate-content",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourceLanguage,
+            targetLanguage,
+            fields: sourceFields,
+          }),
+        }
+      );
 
       const result = await response.json();
 
@@ -203,7 +321,10 @@ export default function ClinicianPage() {
         );
       }
 
-      return result.translations as Record<string, string>;
+      return result.translations as Record<
+        string,
+        string
+      >;
     };
 
     try {
@@ -216,11 +337,13 @@ export default function ClinicianPage() {
           targetLanguage !== sourceLanguage
       );
 
-      const [firstTranslation, secondTranslation] =
-        await Promise.all([
-          translateContent(targetLanguages[0]),
-          translateContent(targetLanguages[1]),
-        ]);
+      const [
+        firstTranslation,
+        secondTranslation,
+      ] = await Promise.all([
+        translateContent(targetLanguages[0]),
+        translateContent(targetLanguages[1]),
+      ]);
 
       const translationsByLanguage: Record<
         ApplicationLanguage,
@@ -279,7 +402,10 @@ export default function ClinicianPage() {
             "specialty"
           ),
 
-          message: translatedValue("en", "message"),
+          message: translatedValue(
+            "en",
+            "message"
+          ),
           message_fr: translatedValue(
             "fr",
             "message"
@@ -298,6 +424,7 @@ export default function ClinicianPage() {
         setApplicationError(
           t("clinician.errors.applicationSubmit")
         );
+
         return;
       }
 
@@ -311,7 +438,7 @@ export default function ClinicianPage() {
       setMessage("");
     } catch (error) {
       console.error(
-        "Therapist application translation/submission error:",
+        "Specialist application translation/submission error:",
         error
       );
 
@@ -327,7 +454,7 @@ export default function ClinicianPage() {
 
   const scrollToApplication = () => {
     document
-      .getElementById("therapist-application")
+      .getElementById("specialist-application")
       ?.scrollIntoView({
         behavior: "smooth",
         block: "start",
@@ -352,7 +479,8 @@ export default function ClinicianPage() {
             arabic: "Arabe",
           }
         : {
-            label: "Language of the content you are entering",
+            label:
+              "Language of the content you are entering",
             help: "Choose the language you will use for the specialty and message. The other two versions will be generated automatically.",
             english: "English",
             french: "French",
@@ -364,9 +492,9 @@ export default function ClinicianPage() {
       <Navbar />
 
       <main
-          dir={isArabic ? "rtl" : "ltr"}
-          className="min-h-screen bg-[#f8f4ee] text-[#223748]"
-        >
+        dir={isArabic ? "rtl" : "ltr"}
+        className="min-h-screen bg-[#f8f4ee] text-[#223748]"
+      >
         {/* Login area */}
         <section className="relative overflow-hidden px-5 py-12 sm:px-8 lg:px-12 lg:py-20">
           <div className="pointer-events-none absolute -right-28 -top-32 h-80 w-80 rounded-full bg-[#223748]" />
@@ -423,11 +551,11 @@ export default function ClinicianPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setLoginMode("therapist");
+                      setLoginMode("specialist");
                       setLoginError("");
                     }}
                     className={`flex min-h-14 items-center justify-center gap-3 rounded-xl border px-4 font-semibold transition ${
-                      loginMode === "therapist"
+                      loginMode === "specialist"
                         ? "border-[#223748] bg-[#223748] text-white shadow-md"
                         : "border-[#d9dee2] bg-white text-[#223748] hover:border-[#b39668]"
                     }`}
@@ -439,7 +567,9 @@ export default function ClinicianPage() {
                       ♧
                     </span>
 
-                    {t("clinician.login.therapistLabel")}
+                    {t(
+                      "clinician.login.therapistLabel"
+                    )}
                   </button>
                 </div>
 
@@ -447,7 +577,8 @@ export default function ClinicianPage() {
                   <label
                     htmlFor="login-email"
                     className="mb-2 block text-sm font-semibold"
-                  >{t("clinician.form.email")}
+                  >
+                    {t("clinician.form.email")}
                   </label>
 
                   <input
@@ -456,9 +587,13 @@ export default function ClinicianPage() {
                     autoComplete="email"
                     value={loginEmail}
                     onChange={(event) =>
-                      setLoginEmail(event.target.value)
+                      setLoginEmail(
+                        event.target.value
+                      )
                     }
-                    placeholder={t("clinician.form.emailPlaceholder")}
+                    placeholder={t(
+                      "clinician.form.emailPlaceholder"
+                    )}
                     className="w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 text-[#223748] outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                   />
                 </div>
@@ -467,7 +602,8 @@ export default function ClinicianPage() {
                   <label
                     htmlFor="login-password"
                     className="mb-2 block text-sm font-semibold"
-                  >{t("clinician.form.password")}
+                  >
+                    {t("clinician.form.password")}
                   </label>
 
                   <div className="relative">
@@ -485,8 +621,14 @@ export default function ClinicianPage() {
                           event.target.value
                         )
                       }
-                      placeholder={t("clinician.form.passwordPlaceholder")}
-                      className={`w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 ${isArabic ? "pl-14" : "pr-14"} text-[#223748] outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10`}
+                      placeholder={t(
+                        "clinician.form.passwordPlaceholder"
+                      )}
+                      className={`w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 ${
+                        isArabic
+                          ? "pl-14"
+                          : "pr-14"
+                      } text-[#223748] outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10`}
                     />
 
                     <button
@@ -498,22 +640,38 @@ export default function ClinicianPage() {
                       }
                       aria-label={
                         showPassword
-                          ? t("clinician.form.hidePassword")
-                          : t("clinician.form.showPassword")
+                          ? t(
+                              "clinician.form.hidePassword"
+                            )
+                          : t(
+                              "clinician.form.showPassword"
+                            )
                       }
-                      className={`absolute inset-y-0 flex w-14 ${isArabic ? "left-0" : "right-0"} items-center justify-center text-xl text-[#66737c] hover:text-[#223748]`}
+                      className={`absolute inset-y-0 flex w-14 ${
+                        isArabic
+                          ? "left-0"
+                          : "right-0"
+                      } items-center justify-center text-xl text-[#66737c] hover:text-[#223748]`}
                     >
                       {showPassword ? "◉" : "◎"}
                     </button>
                   </div>
                 </div>
 
-                <div className={isArabic ? "mt-3 text-left" : "mt-3 text-right"}>
+                <div
+                  className={
+                    isArabic
+                      ? "mt-3 text-left"
+                      : "mt-3 text-right"
+                  }
+                >
                   <Link
                     href="/forgot-password"
                     className="text-sm font-semibold text-[#415a72] hover:text-[#b39668]"
                   >
-                    {t("clinician.login.forgotPassword")}
+                    {t(
+                      "clinician.login.forgotPassword"
+                    )}
                   </Link>
                 </div>
 
@@ -532,28 +690,38 @@ export default function ClinicianPage() {
                   className="mt-6 w-full rounded-xl bg-[#223748] px-6 py-4 text-lg font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#415a72] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loginLoading
-                    ? t("clinician.login.signingIn")
-                    : t("clinician.login.continue")}
+                    ? t(
+                        "clinician.login.signingIn"
+                      )
+                    : t(
+                        "clinician.login.continue"
+                      )}
                 </button>
               </form>
 
               <div className="mt-7 rounded-2xl border border-[#ebe2d5] bg-[#fcfaf7] text-center">
                 <div className="p-5">
                   <p className="text-sm text-[#67737b]">
-                    {t("clinician.login.noClientAccount")}
+                    {t(
+                      "clinician.login.noClientAccount"
+                    )}
                   </p>
 
                   <Link
                     href="/signup"
                     className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-[#b39668] bg-white px-5 py-3 font-semibold text-[#8f6f40] transition hover:bg-[#b39668] hover:text-white"
                   >
-                    {t("clinician.login.createClientAccount")}
+                    {t(
+                      "clinician.login.createClientAccount"
+                    )}
                   </Link>
                 </div>
 
                 <div className="border-t border-[#ebe2d5] p-5">
                   <p className="text-sm font-medium text-[#223748]">
-                    {t("clinician.login.qualifiedTherapist")}
+                    {t(
+                      "clinician.login.qualifiedTherapist"
+                    )}
                   </p>
 
                   <button
@@ -561,16 +729,22 @@ export default function ClinicianPage() {
                     onClick={scrollToApplication}
                     className="mt-2 inline-flex items-center gap-2 font-semibold text-[#b08343] transition hover:text-[#223748]"
                   >
-                    {t("clinician.login.applyToJoin")} →
+                    {t(
+                      "clinician.login.applyToJoin"
+                    )}{" "}
+                    →
                   </button>
                 </div>
               </div>
 
               <p className="mt-6 text-center text-xs leading-6 text-[#728089]">
-                {t("clinician.login.privacyNotice")}
+                {t(
+                  "clinician.login.privacyNotice"
+                )}
               </p>
             </div>
-                        {/* Editorial panel */}
+
+            {/* Editorial panel */}
             <div className="relative hidden min-h-[760px] overflow-hidden rounded-[2.5rem] border border-[#e9dfd0] bg-[#fbf8f3] p-12 lg:block">
               <div className="relative z-10 max-w-lg">
                 <p className="text-sm font-semibold uppercase tracking-[0.32em] text-[#b39668]">
@@ -578,19 +752,29 @@ export default function ClinicianPage() {
                 </p>
 
                 <h2 className="mt-10 font-serif text-6xl font-semibold leading-[1.08] text-[#223748]">
-                  {t("clinician.editorial.title.line1")}
+                  {t(
+                    "clinician.editorial.title.line1"
+                  )}
                   <br />
-                  {t("clinician.editorial.title.line2")}
+                  {t(
+                    "clinician.editorial.title.line2"
+                  )}
                   <br />
-                  {t("clinician.editorial.title.line3")}
+                  {t(
+                    "clinician.editorial.title.line3"
+                  )}
                   <br />
-                  {t("clinician.editorial.title.line4")}
+                  {t(
+                    "clinician.editorial.title.line4"
+                  )}
                 </h2>
 
                 <div className="mt-8 h-px w-20 bg-[#b39668]" />
 
                 <p className="mt-8 max-w-sm text-lg leading-8 text-[#5f6c74]">
-                  {t("clinician.editorial.description")}
+                  {t(
+                    "clinician.editorial.description"
+                  )}
                 </p>
               </div>
 
@@ -614,23 +798,29 @@ export default function ClinicianPage() {
           </div>
         </section>
 
-        {/* {t("clinician.login.therapist")} application */}
+        {/* Specialist application */}
         <section
-          id="therapist-application"
+          id="specialist-application"
           className="scroll-mt-24 px-5 pb-16 sm:px-8 lg:px-12 lg:pb-24"
         >
           <div className="mx-auto grid max-w-7xl overflow-hidden rounded-[2.5rem] border border-[#e8dfd2] bg-white shadow-[0_20px_60px_rgba(34,55,72,0.08)] lg:grid-cols-[0.85fr_1.15fr]">
             <div className="bg-[#fcfaf7] p-8 sm:p-12 lg:p-14">
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[#b39668]">
-                {t("clinician.application.eyebrow")}
+                {t(
+                  "clinician.application.eyebrow"
+                )}
               </p>
 
               <h2 className="mt-4 font-serif text-4xl font-semibold leading-tight text-[#223748] sm:text-5xl">
-                {t("clinician.application.title")}
+                {t(
+                  "clinician.application.title"
+                )}
               </h2>
 
               <p className="mt-6 max-w-md text-lg leading-8 text-[#637078]">
-                {t("clinician.application.description")}
+                {t(
+                  "clinician.application.description"
+                )}
               </p>
 
               <div className="mt-10 space-y-8">
@@ -641,11 +831,15 @@ export default function ClinicianPage() {
 
                   <div>
                     <h3 className="font-semibold text-[#223748]">
-                      {t("clinician.application.benefits.impact.title")}
+                      {t(
+                        "clinician.application.benefits.impact.title"
+                      )}
                     </h3>
 
                     <p className="mt-1 leading-7 text-[#68757d]">
-                      {t("clinician.application.benefits.impact.description")}
+                      {t(
+                        "clinician.application.benefits.impact.description"
+                      )}
                     </p>
                   </div>
                 </div>
@@ -657,11 +851,15 @@ export default function ClinicianPage() {
 
                   <div>
                     <h3 className="font-semibold text-[#223748]">
-                      {t("clinician.application.benefits.professional.title")}
+                      {t(
+                        "clinician.application.benefits.professional.title"
+                      )}
                     </h3>
 
                     <p className="mt-1 leading-7 text-[#68757d]">
-                      {t("clinician.application.benefits.professional.description")}
+                      {t(
+                        "clinician.application.benefits.professional.description"
+                      )}
                     </p>
                   </div>
                 </div>
@@ -673,11 +871,15 @@ export default function ClinicianPage() {
 
                   <div>
                     <h3 className="font-semibold text-[#223748]">
-                      {t("clinician.application.benefits.community.title")}
+                      {t(
+                        "clinician.application.benefits.community.title"
+                      )}
                     </h3>
 
                     <p className="mt-1 leading-7 text-[#68757d]">
-                      {t("clinician.application.benefits.community.description")}
+                      {t(
+                        "clinician.application.benefits.community.description"
+                      )}
                     </p>
                   </div>
                 </div>
@@ -701,20 +903,29 @@ export default function ClinicianPage() {
                   value={applicationLanguage}
                   onChange={(event) =>
                     setApplicationLanguage(
-                      event.target.value as ApplicationLanguage
+                      event.target
+                        .value as ApplicationLanguage
                     )
                   }
                   disabled={applicationLoading}
                   className="w-full rounded-xl border border-[#d6dce0] bg-white px-4 py-4 text-[#223748] outline-none transition focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 >
                   <option value="en">
-                    {applicationLanguageCopy.english}
+                    {
+                      applicationLanguageCopy.english
+                    }
                   </option>
+
                   <option value="fr">
-                    {applicationLanguageCopy.french}
+                    {
+                      applicationLanguageCopy.french
+                    }
                   </option>
+
                   <option value="ar">
-                    {applicationLanguageCopy.arabic}
+                    {
+                      applicationLanguageCopy.arabic
+                    }
                   </option>
                 </select>
 
@@ -727,7 +938,10 @@ export default function ClinicianPage() {
                 <label
                   htmlFor="application-full-name"
                   className="mb-2 block text-sm font-semibold"
-                >{t("clinician.application.form.fullName")}
+                >
+                  {t(
+                    "clinician.application.form.fullName"
+                  )}
                 </label>
 
                 <input
@@ -735,9 +949,13 @@ export default function ClinicianPage() {
                   type="text"
                   value={fullName}
                   onChange={(event) =>
-                    setFullName(event.target.value)
+                    setFullName(
+                      event.target.value
+                    )
                   }
-                  placeholder={t("clinician.application.form.fullNamePlaceholder")}
+                  placeholder={t(
+                    "clinician.application.form.fullNamePlaceholder"
+                  )}
                   className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
@@ -746,7 +964,10 @@ export default function ClinicianPage() {
                 <label
                   htmlFor="application-email"
                   className="mb-2 block text-sm font-semibold"
-                >{t("clinician.application.form.professionalEmail")}
+                >
+                  {t(
+                    "clinician.application.form.professionalEmail"
+                  )}
                 </label>
 
                 <input
@@ -758,7 +979,9 @@ export default function ClinicianPage() {
                       event.target.value
                     )
                   }
-                  placeholder={t("clinician.application.form.professionalEmailPlaceholder")}
+                  placeholder={t(
+                    "clinician.application.form.professionalEmailPlaceholder"
+                  )}
                   className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
@@ -767,7 +990,10 @@ export default function ClinicianPage() {
                 <label
                   htmlFor="application-specialty"
                   className="mb-2 block text-sm font-semibold"
-                >{t("clinician.application.form.specialty")}
+                >
+                  {t(
+                    "clinician.application.form.specialty"
+                  )}
                 </label>
 
                 <input
@@ -775,10 +1001,18 @@ export default function ClinicianPage() {
                   type="text"
                   value={specialty}
                   onChange={(event) =>
-                    setSpecialty(event.target.value)
+                    setSpecialty(
+                      event.target.value
+                    )
                   }
-                  placeholder={t("clinician.application.form.specialtyPlaceholder")}
-                  dir={applicationLanguage === "ar" ? "rtl" : "ltr"}
+                  placeholder={t(
+                    "clinician.application.form.specialtyPlaceholder"
+                  )}
+                  dir={
+                    applicationLanguage === "ar"
+                      ? "rtl"
+                      : "ltr"
+                  }
                   className="w-full rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
@@ -787,17 +1021,28 @@ export default function ClinicianPage() {
                 <label
                   htmlFor="application-message"
                   className="mb-2 block text-sm font-semibold"
-                >{t("clinician.application.form.about")}
+                >
+                  {t(
+                    "clinician.application.form.about"
+                  )}
                 </label>
 
                 <textarea
                   id="application-message"
                   value={message}
                   onChange={(event) =>
-                    setMessage(event.target.value)
+                    setMessage(
+                      event.target.value
+                    )
                   }
-                  placeholder={t("clinician.application.form.aboutPlaceholder")}
-                  dir={applicationLanguage === "ar" ? "rtl" : "ltr"}
+                  placeholder={t(
+                    "clinician.application.form.aboutPlaceholder"
+                  )}
+                  dir={
+                    applicationLanguage === "ar"
+                      ? "rtl"
+                      : "ltr"
+                  }
                   className="min-h-36 w-full resize-y rounded-xl border border-[#d6dce0] px-4 py-4 outline-none transition placeholder:text-[#8a949b] focus:border-[#415a72] focus:ring-4 focus:ring-[#415a72]/10"
                 />
               </div>
@@ -826,12 +1071,18 @@ export default function ClinicianPage() {
                 className="mt-6 w-full rounded-xl bg-[#223748] px-6 py-4 text-lg font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#415a72] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {applicationLoading
-                  ? t("clinician.application.submitting")
-                  : t("clinician.application.submit")}
+                  ? t(
+                      "clinician.application.submitting"
+                    )
+                  : t(
+                      "clinician.application.submit"
+                    )}
               </button>
 
               <p className="mt-5 text-center text-sm leading-6 text-[#6d7981]">
-                {t("clinician.application.confidentiality")}
+                {t(
+                  "clinician.application.confidentiality"
+                )}
               </p>
             </form>
           </div>
@@ -847,11 +1098,15 @@ export default function ClinicianPage() {
 
               <div>
                 <h3 className="font-semibold">
-                  {t("clinician.trust.private.title")}
+                  {t(
+                    "clinician.trust.private.title"
+                  )}
                 </h3>
 
                 <p className="mt-2 text-sm leading-6 text-[#69757d]">
-                  {t("clinician.trust.private.description")}
+                  {t(
+                    "clinician.trust.private.description"
+                  )}
                 </p>
               </div>
             </div>
@@ -863,12 +1118,15 @@ export default function ClinicianPage() {
 
               <div>
                 <h3 className="font-semibold">
-                  {t("clinician.trust.reviewed.title")}
+                  {t(
+                    "clinician.trust.reviewed.title"
+                  )}
                 </h3>
 
                 <p className="mt-2 text-sm leading-6 text-[#69757d]">
-                  {t("clinician.trust.reviewed.description")}
-                  
+                  {t(
+                    "clinician.trust.reviewed.description"
+                  )}
                 </p>
               </div>
             </div>
@@ -880,11 +1138,15 @@ export default function ClinicianPage() {
 
               <div>
                 <h3 className="font-semibold">
-                  {t("clinician.trust.trusted.title")}
+                  {t(
+                    "clinician.trust.trusted.title"
+                  )}
                 </h3>
 
                 <p className="mt-2 text-sm leading-6 text-[#69757d]">
-                  {t("clinician.trust.trusted.description")}
+                  {t(
+                    "clinician.trust.trusted.description"
+                  )}
                 </p>
               </div>
             </div>

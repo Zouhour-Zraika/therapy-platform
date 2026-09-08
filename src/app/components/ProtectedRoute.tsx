@@ -13,7 +13,17 @@ import {
   supabase,
 } from "@/lib/supabase";
 
-type Role =
+/*
+ * Rôle général enregistré dans public.profiles.
+ *
+ * "therapist" est une valeur historique conservée
+ * pour compatibilité avec les comptes existants.
+ *
+ * IMPORTANT :
+ * ce rôle ne détermine plus l'accès spécialiste.
+ * L'accès clinique dépend de public.therapists.
+ */
+type ProfileRole =
   | "admin"
   | "therapist"
   | "patient";
@@ -27,13 +37,46 @@ type Props = {
   children:
     React.ReactNode;
 
-  allowedRoles:
-    Role[];
+  /*
+   * Protection par rôle général.
+   *
+   * À utiliser uniquement pour les espaces
+   * réellement liés à un rôle de compte.
+   *
+   * Exemples :
+   *
+   * <ProtectedRoute allowedRoles={["admin"]}>
+   *
+   * <ProtectedRoute allowedRoles={["patient"]}>
+   *
+   * Pour l'espace clinique spécialiste,
+   * utiliser requireSpecialist à la place.
+   */
+  allowedRoles?:
+    ProfileRole[];
+
+  /*
+   * Protection générique de l'espace spécialiste.
+   *
+   * Si requireSpecialist = true,
+   * l'utilisateur doit posséder une ligne
+   * dans public.therapists.
+   *
+   * Son rôle général peut être différent :
+   * par exemple "admin" pour un utilisateur
+   * qui cumule administration et activité clinique.
+   *
+   * La source de vérité de l'accès spécialiste
+   * est donc public.therapists, pas profiles.role.
+   */
+  requireSpecialist?:
+    boolean;
 };
 
 export default function ProtectedRoute({
   children,
   allowedRoles,
+  requireSpecialist = false,
 }: Props) {
   const router =
     useRouter();
@@ -49,6 +92,10 @@ export default function ProtectedRoute({
 
   async function checkAccess() {
     try {
+      /*
+       * 1. Vérifier qu'un utilisateur
+       * est bien connecté.
+       */
       const {
         data: {
           user,
@@ -69,6 +116,10 @@ export default function ProtectedRoute({
         return;
       }
 
+      /*
+       * 2. Charger le rôle général
+       * enregistré dans public.profiles.
+       */
       const {
         data: profile,
         error:
@@ -82,7 +133,7 @@ export default function ProtectedRoute({
         )
         .maybeSingle<{
           role:
-            Role | null;
+            ProfileRole | null;
         }>();
 
       if (
@@ -99,7 +150,19 @@ export default function ProtectedRoute({
         return;
       }
 
+      /*
+       * 3. Protection par rôle général.
+       *
+       * Cette vérification concerne uniquement
+       * les pages qui utilisent explicitement
+       * allowedRoles.
+       *
+       * Elle ne sert pas à déterminer
+       * si l'utilisateur est spécialiste.
+       */
       if (
+        allowedRoles &&
+        allowedRoles.length > 0 &&
         !allowedRoles.includes(
           profile.role,
         )
@@ -112,66 +175,101 @@ export default function ProtectedRoute({
       }
 
       /*
-       * Vérification supplémentaire
-       * pour les spécialistes.
+       * 4. Protection de l'espace spécialiste.
        *
-       * Le rôle reste "therapist",
-       * mais work_status décide
-       * s'ils peuvent encore accéder
-       * à leur espace.
+       * Toutes les pages cliniques doivent utiliser :
+       *
+       * <ProtectedRoute requireSpecialist>
+       *
+       * On ne déduit plus automatiquement
+       * l'accès spécialiste depuis
+       * profiles.role = "therapist".
+       *
+       * Cela rend la règle explicite
+       * et évite de mélanger rôle général
+       * et fonction professionnelle.
        */
-      if (
-        profile.role ===
-        "therapist"
-      ) {
+      if (requireSpecialist) {
         const {
           data:
-            therapist,
+            specialist,
           error:
-            therapistError,
+            specialistError,
         } = await supabase
           .from(
             "therapists",
           )
           .select(
-            "work_status",
+            "id, work_status",
           )
           .eq(
             "id",
             user.id,
           )
           .maybeSingle<{
+            id: string;
             work_status:
               WorkStatus | null;
           }>();
 
         if (
-          therapistError ||
-          !therapist
+          specialistError ||
+          !specialist
         ) {
-          await supabase.auth.signOut();
-
+          /*
+           * L'utilisateur est connecté,
+           * mais ne possède pas de profil
+           * spécialiste dans public.therapists.
+           *
+           * On refuse uniquement l'espace clinique
+           * sans déconnecter inutilement
+           * un éventuel compte administratif.
+           */
           router.replace(
-            "/login",
+            "/",
           );
 
           return;
         }
 
         /*
+         * 5. Vérifier le statut professionnel.
+         *
          * active
          * → accès normal
          *
          * leaving
-         * → accès temporaire autorisé
+         * → accès encore autorisé
+         *   pendant la période de transition
          *
          * inactive
-         * → accès totalement refusé
+         * → accès clinique refusé
          */
         if (
-          therapist.work_status ===
+          specialist.work_status ===
           "inactive"
         ) {
+          /*
+           * Un administrateur qui est aussi spécialiste
+           * conserve sa session administrative :
+           * seule la partie clinique est refusée.
+           */
+          if (
+            profile.role ===
+            "admin"
+          ) {
+            router.replace(
+              "/",
+            );
+
+            return;
+          }
+
+          /*
+           * Pour un spécialiste non administrateur
+           * devenu inactif, on coupe la session
+           * et on affiche le motif sur la page login.
+           */
           await supabase.auth.signOut();
 
           router.replace(
@@ -182,6 +280,10 @@ export default function ProtectedRoute({
         }
       }
 
+      /*
+       * Toutes les vérifications
+       * nécessaires sont passées.
+       */
       setLoading(
         false,
       );
@@ -215,9 +317,7 @@ export default function ProtectedRoute({
 
   return (
     <>
-      {
-        children
-      }
+      {children}
     </>
   );
 }

@@ -8,6 +8,10 @@ import {
 
 import Stripe from "stripe";
 
+import {
+  createGoogleMeetForBooking,
+} from "@/lib/googleCalendar";
+
 export const runtime =
   "nodejs";
 
@@ -67,6 +71,18 @@ type BookingRecord = {
     | null;
 
   payment_transaction_id:
+    | string
+    | null;
+
+  meeting_url:
+    | string
+    | null;
+
+  meeting_provider:
+    | string
+    | null;
+
+  calendar_event_id:
     | string
     | null;
 };
@@ -358,7 +374,10 @@ export async function POST(
             scheduled_end,
             payment_provider,
             payment_method,
-            payment_transaction_id
+            payment_transaction_id,
+            meeting_url,
+            meeting_provider,
+            calendar_event_id
           `,
         )
         .eq(
@@ -590,7 +609,10 @@ export async function POST(
             scheduled_end,
             payment_provider,
             payment_method,
-            payment_transaction_id
+            payment_transaction_id,
+            meeting_url,
+            meeting_provider,
+            calendar_event_id
           `,
         )
         .maybeSingle<BookingRecord>();
@@ -614,6 +636,124 @@ export async function POST(
       throw new Error(
         "Booking was not marked as paid.",
       );
+    }
+
+    /*
+     * =======================================================
+     * Créer Google Meet pour cette réservation payée.
+     *
+     * Important :
+     * - le compte Google appartient au spécialiste ;
+     * - on ne crée rien si un lien existe déjà ;
+     * - un échec Google ne remet jamais en cause le paiement ;
+     * - le webhook Stripe pouvant être rejoué, meeting_url sert
+     *   aussi de protection contre une création répétée.
+     * =======================================================
+     */
+
+    if (
+      !updatedBooking.meeting_url &&
+      updatedBooking.therapist_id &&
+      updatedBooking.scheduled_start &&
+      updatedBooking.scheduled_end
+    ) {
+      try {
+        const googleMeeting =
+          await createGoogleMeetForBooking({
+            therapistId:
+              updatedBooking.therapist_id,
+
+            summary:
+              `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
+
+            description:
+              `AAN booking ${bookingId}`,
+
+            start:
+              updatedBooking.scheduled_start,
+
+            end:
+              updatedBooking.scheduled_end,
+
+            timeZone:
+              "Asia/Beirut",
+
+            attendeeEmail:
+              updatedBooking.patient_email,
+          });
+
+        const {
+          data: bookingWithMeeting,
+          error: meetingUpdateError,
+        } =
+          await supabaseAdmin
+            .from("bookings")
+            .update({
+              meeting_url:
+                googleMeeting.meetingUrl,
+
+              meeting_provider:
+                googleMeeting.provider,
+
+              calendar_event_id:
+                googleMeeting.calendarEventId,
+            })
+            .eq(
+              "id",
+              bookingId,
+            )
+            .is(
+              "meeting_url",
+              null,
+            )
+            .select(
+              `
+                meeting_url,
+                meeting_provider,
+                calendar_event_id
+              `,
+            )
+            .maybeSingle();
+
+        if (meetingUpdateError) {
+          throw meetingUpdateError;
+        }
+
+        if (bookingWithMeeting) {
+          updatedBooking.meeting_url =
+            bookingWithMeeting.meeting_url;
+
+          updatedBooking.meeting_provider =
+            bookingWithMeeting.meeting_provider;
+
+          updatedBooking.calendar_event_id =
+            bookingWithMeeting.calendar_event_id;
+        }
+
+        console.log(
+          "GOOGLE MEET CREATED:",
+          {
+            bookingId,
+            therapistId:
+              updatedBooking.therapist_id,
+            meetingProvider:
+              googleMeeting.provider,
+            calendarEventId:
+              googleMeeting.calendarEventId,
+          },
+        );
+      } catch (googleMeetingError) {
+        console.error(
+          "Google Meet creation failed after successful payment:",
+          {
+            bookingId,
+            therapistId:
+              updatedBooking.therapist_id,
+            error:
+              googleMeetingError,
+          },
+        );
+      }
     }
 
     /*

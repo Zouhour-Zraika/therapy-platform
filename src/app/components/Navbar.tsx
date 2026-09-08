@@ -6,7 +6,31 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/i18n/LanguageProvider";
 
-type UserRole = "patient" | "therapist" | "admin" | null;
+/*
+ * Rôle général enregistré dans public.profiles.
+ *
+ * "therapist" est une valeur historique encore conservée
+ * pour compatibilité avec les comptes existants.
+ *
+ * IMPORTANT :
+ * ce rôle ne détermine plus à lui seul si un utilisateur
+ * possède un accès spécialiste. Cet accès dépend de sa
+ * présence dans public.therapists.
+ */
+type ProfileRole =
+  | "patient"
+  | "therapist"
+  | "admin"
+  | null;
+
+type SpecialistRow = {
+  id: string;
+  work_status:
+    | "active"
+    | "leaving"
+    | "inactive"
+    | null;
+};
 
 type NavigationItem = {
   href: string;
@@ -26,7 +50,20 @@ export default function Navbar() {
   } = useLanguage();
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [role, setRole] = useState<UserRole>(null);
+  const [profileRole, setProfileRole] = useState<ProfileRole>(null);
+
+  /*
+   * Accès spécialiste :
+   *
+   * un utilisateur est identifié comme spécialiste
+   * par sa présence dans public.therapists.
+   *
+   * profiles.role reste un rôle général du compte
+   * et peut notamment rester "admin" pour un
+   * admin qui exerce également comme spécialiste.
+   */
+  const [isSpecialist, setIsSpecialist] = useState(false);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
 
@@ -40,24 +77,84 @@ export default function Navbar() {
 
     if (userError || !user) {
       setIsLoggedIn(false);
-      setRole(null);
+      setProfileRole(null);
+      setIsSpecialist(false);
       setLoadingUser(false);
       return;
     }
 
     setIsLoggedIn(true);
 
-    const { data: profile, error: profileError } = await supabase
+    /*
+     * Rôle général du compte.
+     *
+     * Il sert notamment à distinguer les espaces
+     * administrateur et patient.
+     *
+     * La valeur historique "therapist" peut encore
+     * exister dans profiles pour compatibilité,
+     * mais elle n'est pas utilisée comme preuve
+     * d'accès spécialiste.
+     */
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
     if (profileError) {
-      console.error("Navbar profile error:", profileError);
-      setRole(null);
+      console.error(
+        "Navbar profile error:",
+        profileError,
+      );
+
+      setProfileRole(null);
+      setIsSpecialist(false);
+      setLoadingUser(false);
+      return;
+    }
+
+    setProfileRole(
+      (profile?.role as ProfileRole) || null,
+    );
+
+    /*
+     * Vérification indépendante du rôle :
+     *
+     * si l'utilisateur possède une ligne
+     * dans public.therapists, il est considéré
+     * comme spécialiste.
+     *
+     * Ainsi un compte admin peut également
+     * être spécialiste.
+     */
+    const {
+      data: specialist,
+      error: specialistError,
+    } = await supabase
+      .from("therapists")
+      .select("id, work_status")
+      .eq("id", user.id)
+      .maybeSingle<SpecialistRow>();
+
+    if (specialistError) {
+      console.error(
+        "Navbar specialist check error:",
+        specialistError,
+      );
+
+      setIsSpecialist(false);
     } else {
-      setRole((profile?.role as UserRole) || null);
+      setIsSpecialist(
+        Boolean(
+          specialist &&
+            specialist.work_status !==
+              "inactive",
+        ),
+      );
     }
 
     setLoadingUser(false);
@@ -82,7 +179,8 @@ export default function Navbar() {
   }, [pathname]);
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } =
+      await supabase.auth.signOut();
 
     if (error) {
       alert(t("navbar.logoutError"));
@@ -94,14 +192,28 @@ export default function Navbar() {
   };
 
   const getDashboardLink = () => {
-    if (role === "admin") {
+    /*
+     * Un admin garde son espace administratif
+     * comme dashboard principal, même s'il possède
+     * également un accès spécialiste.
+     */
+    if (profileRole === "admin") {
       return "/admin";
     }
 
-    if (role === "therapist") {
+    /*
+     * Pour les autres spécialistes,
+     * la présence dans public.therapists
+     * avec un accès professionnel non inactif
+     * détermine l'accès au dashboard clinique.
+     */
+    if (isSpecialist) {
       return "/therapist-dashboard";
     }
 
+    /*
+     * Cas patient.
+     */
     return "/dashboard";
   };
 
@@ -109,7 +221,9 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const handleLanguageChange = (newLanguage: Language) => {
+  const handleLanguageChange = (
+    newLanguage: Language,
+  ) => {
     changeLanguage(newLanguage);
     setMenuOpen(false);
   };
@@ -155,14 +269,18 @@ export default function Navbar() {
         : "border-transparent text-aan-navy hover:border-aan-border hover:bg-aan-background hover:text-aan-heading"
     }`;
 
-  const languageButtonClass = (currentLanguage: Language) =>
+  const languageButtonClass = (
+    currentLanguage: Language,
+  ) =>
     `rounded-lg px-3.5 py-2.5 text-sm font-bold transition duration-200 ${
       language === currentLanguage
         ? "bg-aan-button text-white shadow-sm"
         : "text-aan-navy hover:bg-white hover:text-aan-heading"
     }`;
 
-  const mobileLanguageButtonClass = (currentLanguage: Language) =>
+  const mobileLanguageButtonClass = (
+    currentLanguage: Language,
+  ) =>
     `rounded-xl px-3 py-3 font-bold transition duration-200 ${
       language === currentLanguage
         ? "bg-aan-button text-white shadow-sm"
@@ -181,7 +299,13 @@ export default function Navbar() {
           aria-label="AAN Psychotherapy home"
           className="group flex shrink-0 items-center"
         >
-          <div className={isArabic ? "text-right" : "text-left"}>
+          <div
+            className={
+              isArabic
+                ? "text-right"
+                : "text-left"
+            }
+          >
             <p className="text-[1.65rem] font-extrabold tracking-[0.32em] text-aan-heading transition duration-200 group-hover:text-aan-button">
               AAN
             </p>
@@ -198,7 +322,9 @@ export default function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={desktopLinkClass(item.href)}
+                className={desktopLinkClass(
+                  item.href,
+                )}
               >
                 {item.label}
 
@@ -214,27 +340,39 @@ export default function Navbar() {
           <div className="flex items-center rounded-xl border border-aan-border bg-aan-background p-1">
             <button
               type="button"
-              onClick={() => handleLanguageChange("en")}
+              onClick={() =>
+                handleLanguageChange("en")
+              }
               aria-pressed={language === "en"}
-              className={languageButtonClass("en")}
+              className={languageButtonClass(
+                "en",
+              )}
             >
               EN
             </button>
 
             <button
               type="button"
-              onClick={() => handleLanguageChange("fr")}
+              onClick={() =>
+                handleLanguageChange("fr")
+              }
               aria-pressed={language === "fr"}
-              className={languageButtonClass("fr")}
+              className={languageButtonClass(
+                "fr",
+              )}
             >
               FR
             </button>
 
             <button
               type="button"
-              onClick={() => handleLanguageChange("ar")}
+              onClick={() =>
+                handleLanguageChange("ar")
+              }
               aria-pressed={language === "ar"}
-              className={languageButtonClass("ar")}
+              className={languageButtonClass(
+                "ar",
+              )}
             >
               العربية
             </button>
@@ -270,13 +408,19 @@ export default function Navbar() {
 
         <button
           type="button"
-          onClick={() => setMenuOpen((previous) => !previous)}
+          onClick={() =>
+            setMenuOpen(
+              (previous) => !previous,
+            )
+          }
           aria-label={t("navbar.openMenu")}
           aria-expanded={menuOpen}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-aan-border bg-white text-aan-heading shadow-sm transition duration-200 hover:border-aan-gold hover:bg-aan-background lg:hidden"
         >
           {menuOpen ? (
-            <span className="text-3xl leading-none">×</span>
+            <span className="text-3xl leading-none">
+              ×
+            </span>
           ) : (
             <div className="space-y-1.5">
               <span className="block h-0.5 w-6 rounded-full bg-aan-heading" />
@@ -298,7 +442,9 @@ export default function Navbar() {
                 key={item.href}
                 href={item.href}
                 onClick={closeMenu}
-                className={mobileLinkClass(item.href)}
+                className={mobileLinkClass(
+                  item.href,
+                )}
               >
                 {item.label}
               </Link>
@@ -309,27 +455,45 @@ export default function Navbar() {
             <div className="grid grid-cols-3 gap-3 rounded-2xl border border-aan-border bg-aan-background p-2">
               <button
                 type="button"
-                onClick={() => handleLanguageChange("en")}
-                aria-pressed={language === "en"}
-                className={mobileLanguageButtonClass("en")}
+                onClick={() =>
+                  handleLanguageChange("en")
+                }
+                aria-pressed={
+                  language === "en"
+                }
+                className={mobileLanguageButtonClass(
+                  "en",
+                )}
               >
                 EN
               </button>
 
               <button
                 type="button"
-                onClick={() => handleLanguageChange("fr")}
-                aria-pressed={language === "fr"}
-                className={mobileLanguageButtonClass("fr")}
+                onClick={() =>
+                  handleLanguageChange("fr")
+                }
+                aria-pressed={
+                  language === "fr"
+                }
+                className={mobileLanguageButtonClass(
+                  "fr",
+                )}
               >
                 FR
               </button>
 
               <button
                 type="button"
-                onClick={() => handleLanguageChange("ar")}
-                aria-pressed={language === "ar"}
-                className={mobileLanguageButtonClass("ar")}
+                onClick={() =>
+                  handleLanguageChange("ar")
+                }
+                aria-pressed={
+                  language === "ar"
+                }
+                className={mobileLanguageButtonClass(
+                  "ar",
+                )}
               >
                 العربية
               </button>
@@ -361,7 +525,9 @@ export default function Navbar() {
                     onClick={closeMenu}
                     className="block rounded-xl bg-aan-button px-4 py-3 text-center text-lg font-bold text-white shadow-sm transition duration-200 hover:bg-aan-hover"
                   >
-                    {t("navbar.signInRegister")}
+                    {t(
+                      "navbar.signInRegister",
+                    )}
                   </Link>
                 </div>
               ))}

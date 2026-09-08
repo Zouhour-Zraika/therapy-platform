@@ -1452,10 +1452,17 @@ export async function POST(
 
       /*
        * IMPORTANT :
-       * on garde profiles.role = "therapist".
+       * on ne modifie pas profiles.role lors du départ.
        *
-       * L'état de travail est géré uniquement
+       * Un spécialiste peut avoir un rôle général
+       * "therapist" ou "admin".
+       *
+       * Son état professionnel est géré uniquement
        * par therapists.work_status.
+       *
+       * Ainsi, un admin + spécialiste qui devient
+       * inactif comme spécialiste conserve son accès
+       * administratif.
        */
 
       const {

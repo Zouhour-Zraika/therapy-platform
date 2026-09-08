@@ -633,7 +633,7 @@ export default function TherapistPatientRecordPage() {
       .charAt(0)
       .toUpperCase() || "P";
         return (
-    <ProtectedRoute allowedRoles={["therapist"]}>
+    <ProtectedRoute requireSpecialist>
       <>
         <Navbar />
 

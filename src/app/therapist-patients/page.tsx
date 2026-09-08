@@ -237,7 +237,7 @@ export default function TherapistPatientsPage() {
     ).format(new Date(date));
   };
     return (
-    <ProtectedRoute allowedRoles={["therapist"]}>
+    <ProtectedRoute requireSpecialist>
       <>
         <Navbar />
 

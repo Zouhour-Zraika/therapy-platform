@@ -83,10 +83,12 @@ interface TherapistService {
 }
 
 interface Availability {
-  id: number;
+  id: number | string;
   therapist_id: string;
   day: string;
   time: string;
+  slot_date: string | null;
+  starts_at: string | null;
 }
 
 const DAY_TRANSLATIONS = {
@@ -174,6 +176,22 @@ export default function TherapistsPage() {
     setSelectedTherapist,
   ] =
     useState<Therapist | null>(
+      null,
+    );
+
+  const [
+    availabilityModalTherapist,
+    setAvailabilityModalTherapist,
+  ] =
+    useState<Therapist | null>(
+      null,
+    );
+
+  const [
+    selectedAvailabilityDate,
+    setSelectedAvailabilityDate,
+  ] =
+    useState<string | null>(
       null,
     );
 
@@ -329,7 +347,9 @@ export default function TherapistsPage() {
                 id,
                 therapist_id,
                 day,
-                time
+                time,
+                slot_date,
+                starts_at
               `,
             )
             .in(
@@ -409,15 +429,105 @@ export default function TherapistsPage() {
           Availability[]
         >();
 
+      const now =
+        Date.now();
+
       for (
         const slot of availabilities
       ) {
+        const timestamp =
+          slot.starts_at
+            ? new Date(
+                slot.starts_at,
+              ).getTime()
+            : slot.slot_date
+              ? new Date(
+                  `${slot.slot_date}T${slot.time || "00:00"}:00`,
+                ).getTime()
+              : Number.NaN;
+
+        /*
+         * On masque les créneaux passés lorsque leur
+         * date complète est disponible.
+         */
+        if (
+          Number.isFinite(
+            timestamp,
+          ) &&
+          timestamp <= now
+        ) {
+          continue;
+        }
+
         const current =
           map.get(
             slot.therapist_id,
           ) || [];
 
+        /*
+         * Déduplication :
+         * une même date/heure ne doit apparaître
+         * qu'une seule fois sur la carte publique.
+         */
+        const slotKey =
+          slot.starts_at ||
+          `${slot.slot_date || slot.day}|${slot.time}`;
+
+        const alreadyExists =
+          current.some(
+            (existingSlot) => {
+              const existingKey =
+                existingSlot.starts_at ||
+                `${existingSlot.slot_date || existingSlot.day}|${existingSlot.time}`;
+
+              return (
+                existingKey ===
+                slotKey
+              );
+            },
+          );
+
+        if (
+          alreadyExists
+        ) {
+          continue;
+        }
+
         current.push(slot);
+
+        current.sort(
+          (
+            first,
+            second,
+          ) => {
+            const firstTime =
+              first.starts_at
+                ? new Date(
+                    first.starts_at,
+                  ).getTime()
+                : first.slot_date
+                  ? new Date(
+                      `${first.slot_date}T${first.time || "00:00"}:00`,
+                    ).getTime()
+                  : Number.POSITIVE_INFINITY;
+
+            const secondTime =
+              second.starts_at
+                ? new Date(
+                    second.starts_at,
+                  ).getTime()
+                : second.slot_date
+                  ? new Date(
+                      `${second.slot_date}T${second.time || "00:00"}:00`,
+                    ).getTime()
+                  : Number.POSITIVE_INFINITY;
+
+            return (
+              firstTime -
+              secondTime
+            );
+          },
+        );
 
         map.set(
           slot.therapist_id,
@@ -860,6 +970,270 @@ export default function TherapistsPage() {
     );
   };
 
+  const formatAvailabilityLabel = (
+    slot: Availability,
+  ) => {
+    const locale =
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB";
+
+    if (
+      slot.starts_at
+    ) {
+      const date =
+        new Date(
+          slot.starts_at,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return new Intl.DateTimeFormat(
+          locale,
+          {
+            weekday:
+              "short",
+            day:
+              "numeric",
+            month:
+              "short",
+            hour:
+              "2-digit",
+            minute:
+              "2-digit",
+          },
+        ).format(
+          date,
+        );
+      }
+    }
+
+    if (
+      slot.slot_date
+    ) {
+      const date =
+        new Date(
+          `${slot.slot_date}T12:00:00`,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        const dateLabel =
+          new Intl.DateTimeFormat(
+            locale,
+            {
+              weekday:
+                "short",
+              day:
+                "numeric",
+              month:
+                "short",
+            },
+          ).format(
+            date,
+          );
+
+        return `${dateLabel} · ${formatTime(
+          slot.time,
+        )}`;
+      }
+    }
+
+    return `${translateDay(
+      slot.day,
+    )} · ${formatTime(
+      slot.time,
+    )}`;
+  };
+  const getAvailabilityDateKey = (
+    slot: Availability,
+  ) => {
+    if (slot.slot_date) {
+      return slot.slot_date;
+    }
+
+    if (slot.starts_at) {
+      const date =
+        new Date(
+          slot.starts_at,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date
+          .toISOString()
+          .slice(
+            0,
+            10,
+          );
+      }
+    }
+
+    return slot.day;
+  };
+
+  const formatAvailabilityDate = (
+    slot: Availability,
+  ) => {
+    const locale =
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB";
+
+    const rawDate =
+      slot.slot_date ||
+      (slot.starts_at
+        ? new Date(
+            slot.starts_at,
+          )
+            .toISOString()
+            .slice(
+              0,
+              10,
+            )
+        : null);
+
+    if (rawDate) {
+      const date =
+        new Date(
+          `${rawDate}T12:00:00`,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return new Intl.DateTimeFormat(
+          locale,
+          {
+            weekday:
+              "short",
+            day:
+              "numeric",
+            month:
+              "long",
+          },
+        ).format(
+          date,
+        );
+      }
+    }
+
+    return translateDay(
+      slot.day,
+    );
+  };
+
+  const formatAvailabilityTimeOnly = (
+    slot: Availability,
+  ) => {
+    const locale =
+      language === "ar"
+        ? "ar-LB"
+        : language === "fr"
+          ? "fr-FR"
+          : "en-GB";
+
+    if (slot.starts_at) {
+      const date =
+        new Date(
+          slot.starts_at,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return new Intl.DateTimeFormat(
+          locale,
+          {
+            hour:
+              "2-digit",
+            minute:
+              "2-digit",
+          },
+        ).format(
+          date,
+        );
+      }
+    }
+
+    return formatTime(
+      slot.time,
+    );
+  };
+
+
+  const availabilityModalSlots =
+    availabilityModalTherapist
+      ? availabilityByTherapist.get(
+          availabilityModalTherapist.id,
+        ) || []
+      : [];
+
+  const availabilityModalGroups =
+    Array.from(
+      availabilityModalSlots.reduce(
+        (
+          groups,
+          slot,
+        ) => {
+          const key =
+            getAvailabilityDateKey(
+              slot,
+            );
+
+          const current =
+            groups.get(
+              key,
+            ) || [];
+
+          current.push(
+            slot,
+          );
+
+          groups.set(
+            key,
+            current,
+          );
+
+          return groups;
+        },
+        new Map<
+          string,
+          Availability[]
+        >(),
+      ),
+    );
+
+  const activeAvailabilityGroup =
+    availabilityModalGroups.find(
+      (
+        [
+          dateKey,
+        ],
+      ) =>
+        dateKey ===
+        selectedAvailabilityDate,
+    ) ||
+    availabilityModalGroups[0] ||
+    null;
+
   return (
     <>
       <Navbar />
@@ -951,6 +1325,12 @@ export default function TherapistsPage() {
                     servicesByTherapist.get(
                       therapist.id,
                     ) || [];
+
+                  const visibleSlots =
+                    slots.slice(
+                      0,
+                      3,
+                    );
 
                   const languages =
                     splitEntries(
@@ -1132,26 +1512,49 @@ export default function TherapistsPage() {
                         <div className="mt-4 flex flex-wrap gap-3">
                           {slots.length >
                           0 ? (
-                            slots.map(
-                              (
-                                slot,
-                              ) => (
-                                <span
-                                  key={
-                                    slot.id
-                                  }
-                                  className="rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-navy"
+                            <>
+                              {visibleSlots.map(
+                                (
+                                  slot,
+                                ) => (
+                                  <span
+                                    key={
+                                      slot.id
+                                    }
+                                    className="rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-navy"
+                                  >
+                                    {formatAvailabilityLabel(
+                                      slot,
+                                    )}
+                                  </span>
+                                ),
+                              )}
+
+                              {slots.length >
+                                3 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAvailabilityModalTherapist(
+                                      therapist,
+                                    );
+
+                                    setSelectedAvailabilityDate(
+                                      getAvailabilityDateKey(
+                                        slots[0],
+                                      ),
+                                    );
+                                  }}
+                                  className="rounded-full border border-aan-gold/40 bg-aan-gold/10 px-4 py-2 text-sm font-bold text-aan-navy transition hover:border-aan-gold hover:bg-aan-gold/20 focus:outline-none focus:ring-2 focus:ring-aan-gold/40"
                                 >
-                                  {translateDay(
-                                    slot.day,
-                                  )}{" "}
-                                  •{" "}
-                                  {formatTime(
-                                    slot.time,
-                                  )}
-                                </span>
-                              ),
-                            )
+                                  {language === "ar"
+                                    ? `عرض كل المواعيد (${slots.length})`
+                                    : language === "fr"
+                                      ? `Voir toutes les disponibilités (${slots.length})`
+                                      : `View all availability (${slots.length})`}
+                                </button>
+                              )}
+                            </>
                           ) : (
                             <span className="text-sm text-aan-secondary">
                               {t(
@@ -1202,6 +1605,253 @@ export default function TherapistsPage() {
           )}
         </section>
       </main>
+
+      {availabilityModalTherapist && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-[#17263a]/60 p-4 backdrop-blur-sm sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={
+            language === "ar"
+              ? "كل المواعيد المتاحة"
+              : language === "fr"
+                ? "Toutes les disponibilités"
+                : "All availability"
+          }
+          onMouseDown={(
+            event,
+          ) => {
+            if (
+              event.currentTarget ===
+              event.target
+            ) {
+              setAvailabilityModalTherapist(
+                null,
+              );
+            }
+          }}
+        >
+          <div
+            dir={
+              isArabic
+                ? "rtl"
+                : "ltr"
+            }
+            className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-aan-border bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-aan-border bg-[linear-gradient(135deg,#fbf8f3_0%,#f3f6f9_100%)] px-6 py-5 sm:px-8">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-aan-gold">
+                  {language === "ar"
+                    ? "المواعيد المتاحة"
+                    : language === "fr"
+                      ? "Disponibilités"
+                      : "Availability"}
+                </p>
+
+                <h2 className="aan-heading mt-2 text-2xl sm:text-3xl">
+                  {nameOf(
+                    availabilityModalTherapist,
+                  )}
+                </h2>
+
+                <p className="mt-1 text-sm font-semibold text-aan-secondary">
+                  {language === "ar"
+                    ? `${availabilityModalSlots.length} مواعيد متاحة`
+                    : language === "fr"
+                      ? `${availabilityModalSlots.length} créneaux disponibles`
+                      : `${availabilityModalSlots.length} available slots`}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setAvailabilityModalTherapist(
+                    null,
+                  )
+                }
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-aan-border bg-white text-xl font-bold text-aan-navy shadow-sm transition hover:border-aan-gold hover:bg-aan-background"
+                aria-label={
+                  language === "ar"
+                    ? "إغلاق"
+                    : language === "fr"
+                      ? "Fermer"
+                      : "Close"
+                }
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid max-h-[75vh] md:grid-cols-[240px_1fr]">
+              <aside className="border-b border-aan-border bg-[#fbf8f3] p-4 md:border-b-0 md:border-r">
+                <p className="mb-3 px-2 text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                  {language === "ar"
+                    ? "اختر التاريخ"
+                    : language === "fr"
+                      ? "Choisir une date"
+                      : "Choose a date"}
+                </p>
+
+                <div className="flex max-h-52 gap-2 overflow-x-auto pb-2 md:max-h-[58vh] md:flex-col md:overflow-x-visible md:overflow-y-auto md:pb-0">
+                  {availabilityModalGroups.map(
+                    (
+                      [
+                        dateKey,
+                        dateSlots,
+                      ],
+                    ) => {
+                      const active =
+                        dateKey ===
+                        (
+                          activeAvailabilityGroup?.[0] ||
+                          selectedAvailabilityDate
+                        );
+
+                      return (
+                        <button
+                          key={
+                            dateKey
+                          }
+                          type="button"
+                          onClick={() =>
+                            setSelectedAvailabilityDate(
+                              dateKey,
+                            )
+                          }
+                          className={`min-w-[150px] rounded-2xl border px-4 py-3 text-left transition md:min-w-0 ${
+                            active
+                              ? "border-aan-button bg-aan-button text-white shadow-sm"
+                              : "border-aan-border bg-white text-aan-navy hover:border-aan-gold"
+                          }`}
+                        >
+                          <p className="text-sm font-bold capitalize">
+                            {formatAvailabilityDate(
+                              dateSlots[0],
+                            )}
+                          </p>
+
+                          <p className={`mt-1 text-xs font-semibold ${
+                            active
+                              ? "text-white/80"
+                              : "text-aan-secondary"
+                          }`}>
+                            {language === "ar"
+                              ? `${dateSlots.length} مواعيد`
+                              : language === "fr"
+                                ? `${dateSlots.length} créneaux`
+                                : `${dateSlots.length} slots`}
+                          </p>
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </aside>
+
+              <section className="overflow-y-auto p-5 sm:p-7">
+                {activeAvailabilityGroup ? (
+                  <>
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
+                          {language === "ar"
+                            ? "اليوم المختار"
+                            : language === "fr"
+                              ? "Date sélectionnée"
+                              : "Selected date"}
+                        </p>
+
+                        <h3 className="aan-heading mt-2 text-2xl capitalize">
+                          {formatAvailabilityDate(
+                            activeAvailabilityGroup[1][0],
+                          )}
+                        </h3>
+                      </div>
+
+                      <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-secondary">
+                        {language === "ar"
+                          ? `${activeAvailabilityGroup[1].length} مواعيد`
+                          : language === "fr"
+                            ? `${activeAvailabilityGroup[1].length} créneaux`
+                            : `${activeAvailabilityGroup[1].length} slots`}
+                      </span>
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {activeAvailabilityGroup[1].map(
+                        (
+                          slot,
+                        ) => (
+                          <Link
+                            key={
+                              slot.id
+                            }
+                            href={`/booking?therapistId=${availabilityModalTherapist.id}&slotId=${slot.id}`}
+                            className="group flex min-h-14 items-center justify-center rounded-2xl border border-aan-border bg-white px-4 py-3 text-center text-base font-bold text-aan-navy shadow-sm transition hover:-translate-y-0.5 hover:border-aan-gold hover:bg-[#fbf8f3] hover:shadow-md"
+                          >
+                            <span>
+                              {formatAvailabilityTimeOnly(
+                                slot,
+                              )}
+                            </span>
+                          </Link>
+                        ),
+                      )}
+                    </div>
+
+                    <div className="mt-7 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4 text-sm leading-6 text-aan-secondary">
+                      {language === "ar"
+                        ? "اختر الساعة المناسبة للانتقال مباشرة إلى الحجز."
+                        : language === "fr"
+                          ? "Choisissez l’heure qui vous convient pour passer directement à la réservation."
+                          : "Choose the time that suits you to continue directly to booking."}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-aan-secondary">
+                    {language === "ar"
+                      ? "لا توجد مواعيد متاحة."
+                      : language === "fr"
+                        ? "Aucun créneau disponible."
+                        : "No slots available."}
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-aan-border bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+              <button
+                type="button"
+                onClick={() =>
+                  setAvailabilityModalTherapist(
+                    null,
+                  )
+                }
+                className="rounded-2xl border border-aan-border bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-aan-background"
+              >
+                {language === "ar"
+                  ? "إغلاق"
+                  : language === "fr"
+                    ? "Fermer"
+                    : "Close"}
+              </button>
+
+              <Link
+                href={`/booking?therapistId=${availabilityModalTherapist.id}`}
+                className="aan-cta rounded-2xl px-6 py-3 text-center font-bold text-white"
+              >
+                {language === "ar"
+                  ? "حجز جلسة"
+                  : language === "fr"
+                    ? "Réserver une séance"
+                    : "Book a session"}
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedTherapist && (
         <div

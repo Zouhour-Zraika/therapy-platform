@@ -81,6 +81,29 @@ function createSupabaseAdmin() {
   );
 }
 
+/*
+ * Vérifie qu'un utilisateur connecté
+ * est réellement un spécialiste.
+ *
+ * IMPORTANT :
+ *
+ * On ne dépend plus ici de :
+ *
+ * profiles.role === "therapist"
+ *
+ * Pour les fonctions cliniques,
+ * la source de vérité est maintenant
+ * public.therapists.
+ *
+ * Cela permet notamment à un utilisateur
+ * ayant profiles.role = "admin"
+ * d'être également spécialiste s'il possède
+ * une ligne dans public.therapists.
+ *
+ * C'est notamment le fonctionnement prévu
+ * pour les admins qui exercent aussi
+ * comme spécialistes.
+ */
 async function getAuthenticatedTherapist(
   request: Request,
   supabaseAdmin:
@@ -130,71 +153,74 @@ async function getAuthenticatedTherapist(
     return null;
   }
 
+  /*
+   * Vérification générique spécialiste.
+   *
+   * L'utilisateur doit avoir une ligne
+   * dans public.therapists.
+   *
+   * Son rôle général peut donc être
+   * "therapist" ou "admin" :
+   * ce n'est plus ce rôle qui décide
+   * de son accès aux fonctions cliniques.
+   */
   const {
-    data: profile,
+    data:
+      specialist,
     error:
-      profileError,
+      specialistError,
   } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
+    .from(
+      "therapists",
+    )
+    .select(
+      "id, work_status",
+    )
     .eq(
       "id",
       user.id,
     )
     .maybeSingle<{
-      role:
-        | string
+      id: string;
+      work_status:
+        | "active"
+        | "leaving"
+        | "inactive"
         | null;
     }>();
 
   if (
-    profileError ||
-    !profile
+    specialistError ||
+    !specialist
   ) {
     return null;
   }
 
+  /*
+   * Statuts professionnels :
+   *
+   * active
+   * → accès clinique normal
+   *
+   * leaving
+   * → accès clinique encore autorisé
+   *   pendant la période de départ
+   *
+   * inactive
+   * → aucune action clinique autorisée
+   *
+   * Cette règle est la même pour tous
+   * les spécialistes, y compris ceux
+   * ayant également le rôle admin.
+   */
   if (
-    profile.role ===
-    "therapist"
+    specialist.work_status ===
+    "inactive"
   ) {
-    return user;
+    return null;
   }
 
-  if (
-    profile.role ===
-    "admin"
-  ) {
-    const {
-      data:
-        therapistRecord,
-      error:
-        therapistError,
-    } =
-      await supabaseAdmin
-        .from(
-          "therapists",
-        )
-        .select("id")
-        .eq(
-          "id",
-          user.id,
-        )
-        .maybeSingle<{
-          id: string;
-        }>();
-
-    if (
-      therapistError ||
-      !therapistRecord
-    ) {
-      return null;
-    }
-
-    return user;
-  }
-
-  return null;
+  return user;
 }
 
 function getSiteUrl(
@@ -555,7 +581,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Therapist authentication required.",
+            "Specialist authentication required.",
         },
         {
           status: 401,
@@ -675,6 +701,11 @@ export async function POST(
     /*
      * Un spécialiste ne peut agir que
      * sur ses propres réservations.
+     *
+     * therapist_id est conservé ici :
+     * c'est le nom actuel de la colonne
+     * dans la base de données et non
+     * une vérification de rôle.
      */
     if (
       booking.therapist_id !==
@@ -733,12 +764,13 @@ export async function POST(
       "AAN specialist";
 
     /*
-     * ACTION 1:
-     * Le thérapeute demande au patient
+     * ACTION 1 :
+     *
+     * Le spécialiste demande au patient
      * de choisir un nouveau créneau.
      *
      * Le statut reste "paid" :
-     * le paiement reste parfaitement valide.
+     * le paiement reste valide.
      */
     if (
       action ===
@@ -753,6 +785,10 @@ export async function POST(
       } = await supabaseAdmin
         .from("bookings")
         .update({
+          /*
+           * Valeur métier existante conservée
+           * pour compatibilité avec la base.
+           */
           reschedule_requested_by:
             "therapist",
 
@@ -845,8 +881,9 @@ export async function POST(
     }
 
     /*
-     * ACTION 2:
-     * Annulation par le thérapeute.
+     * ACTION 2 :
+     *
+     * Annulation par le spécialiste.
      *
      * Si Stripe a encaissé le paiement,
      * remboursement complet automatique.
@@ -902,7 +939,7 @@ export async function POST(
 
       /*
        * payment_transaction_id est actuellement
-       * un PaymentIntent (pi_...).
+       * un PaymentIntent Stripe (pi_...).
        */
       const refund =
         await stripe.refunds.create(
@@ -917,6 +954,10 @@ export async function POST(
               bookingId:
                 booking.id,
 
+              /*
+               * Valeur interne existante
+               * conservée pour compatibilité.
+               */
               initiatedBy:
                 "therapist",
             },
@@ -932,6 +973,7 @@ export async function POST(
 
       /*
        * Après confirmation Stripe :
+       *
        * - réservation annulée,
        * - trace de l'origine,
        * - trace du remboursement.
@@ -945,6 +987,10 @@ export async function POST(
           status:
             "cancelled",
 
+          /*
+           * Valeur métier existante conservée.
+           * Elle ne représente pas profiles.role.
+           */
           cancellation_initiated_by:
             "therapist",
 
@@ -1111,7 +1157,7 @@ export async function POST(
     error
   ) {
     console.error(
-      "Therapist booking action error:",
+      "Specialist booking action error:",
       error,
     );
 

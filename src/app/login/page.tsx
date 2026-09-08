@@ -22,7 +22,7 @@ import Navbar from "../components/Navbar";
 
 type LoginMode =
   | "patient"
-  | "therapist";
+  | "specialist";
 
 export default function LoginPage() {
   const router =
@@ -100,7 +100,7 @@ export default function LoginPage() {
           patient:
             "مريض",
 
-          therapist:
+          specialist:
             "مختص",
 
           email:
@@ -145,7 +145,7 @@ export default function LoginPage() {
           wrongPatient:
             "هذا الحساب ليس حساب مريض. يرجى اختيار «مختص» إذا كنت مختصاً.",
 
-          wrongTherapist:
+          wrongSpecialist:
             "هذا الحساب ليس حساب مختص. يرجى اختيار «مريض» إذا كنت مريضاً.",
 
           genericError:
@@ -154,7 +154,7 @@ export default function LoginPage() {
           patientHelp:
             "للوصول إلى المواعيد والحجوزات والمتابعة.",
 
-          therapistHelp:
+          specialistHelp:
             "للوصول إلى الملف المهني والمواعيد والجلسات.",
 
           inactiveSpecialist:
@@ -177,7 +177,7 @@ export default function LoginPage() {
             patient:
               "Patient",
 
-            therapist:
+            specialist:
               "Spécialiste",
 
             email:
@@ -222,7 +222,7 @@ export default function LoginPage() {
             wrongPatient:
               "Ce compte n’est pas un compte patient. Sélectionnez « Spécialiste » si vous êtes spécialiste.",
 
-            wrongTherapist:
+            wrongSpecialist:
               "Ce compte n’est pas un compte spécialiste. Sélectionnez « Patient » si vous êtes patient.",
 
             genericError:
@@ -231,7 +231,7 @@ export default function LoginPage() {
             patientHelp:
               "Pour accéder à vos rendez-vous, réservations et suivi.",
 
-            therapistHelp:
+            specialistHelp:
               "Pour accéder à votre profil professionnel, vos disponibilités et vos séances.",
 
             inactiveSpecialist:
@@ -253,7 +253,7 @@ export default function LoginPage() {
             patient:
               "Patient",
 
-            therapist:
+            specialist:
               "Specialist",
 
             email:
@@ -297,7 +297,7 @@ export default function LoginPage() {
             wrongPatient:
               "This is not a patient account. Select “Specialist” if you are a specialist.",
 
-            wrongTherapist:
+            wrongSpecialist:
               "This is not a specialist account. Select “Patient” if you are a patient.",
 
             genericError:
@@ -306,7 +306,7 @@ export default function LoginPage() {
             patientHelp:
               "Access your appointments, bookings and follow-up.",
 
-            therapistHelp:
+            specialistHelp:
               "Access your professional profile, availability and sessions.",
 
             inactiveSpecialist:
@@ -425,12 +425,122 @@ export default function LoginPage() {
         }
 
         /*
-         * L'admin n'a pas besoin
-         * d'un troisième bouton.
+         * Vérification générique spécialiste.
          *
-         * Si le compte est admin,
-         * on l'envoie directement
-         * vers l'administration.
+         * Pour l'accès clinique, le rôle général
+         * du compte n'est pas la source de vérité.
+         *
+         * La source de vérité est la présence
+         * dans public.therapists.
+         *
+         * Cela permet notamment à un compte
+         * admin + spécialiste d'utiliser
+         * l'entrée "Spécialiste".
+         */
+        const {
+          data:
+            specialist,
+          error:
+            specialistError,
+        } = await supabase
+          .from(
+            "therapists",
+          )
+          .select(
+            "id, work_status",
+          )
+          .eq(
+            "id",
+            user.id,
+          )
+          .maybeSingle<{
+            id: string;
+            work_status:
+              | "active"
+              | "leaving"
+              | "inactive"
+              | null;
+          }>();
+
+        if (
+          specialistError
+        ) {
+          console.error(
+            "Specialist lookup error:",
+            specialistError,
+          );
+
+          await supabase.auth.signOut();
+
+          setErrorMessage(
+            text.genericError,
+          );
+
+          return;
+        }
+
+        const isSpecialist =
+          Boolean(
+            specialist,
+          );
+
+        /*
+         * Entrée SPÉCIALISTE
+         *
+         * Il faut exister dans public.therapists.
+         * Le rôle général du compte est indépendant
+         * de cette vérification.
+         */
+        if (
+          loginMode ===
+          "specialist"
+        ) {
+          if (!isSpecialist) {
+            await supabase.auth.signOut();
+
+            setErrorMessage(
+              text.wrongSpecialist,
+            );
+
+            return;
+          }
+
+          /*
+           * active
+           * → accès normal
+           *
+           * leaving
+           * → accès encore autorisé
+           *
+           * inactive
+           * → accès clinique refusé
+           */
+          if (
+            specialist?.work_status ===
+            "inactive"
+          ) {
+            await supabase.auth.signOut();
+
+            router.replace(
+              "/login?reason=inactive-specialist",
+            );
+
+            return;
+          }
+
+          router.replace(
+            "/therapist-dashboard",
+          );
+
+          return;
+        }
+
+        /*
+         * Entrée PATIENT
+         *
+         * Un admin garde son espace admin.
+         * Cela évite d'avoir besoin d'un
+         * troisième bouton de connexion.
          */
         if (
           profile.role ===
@@ -444,31 +554,11 @@ export default function LoginPage() {
         }
 
         /*
-         * Vérifier que le type
-         * sélectionné correspond
-         * réellement au rôle du compte.
+         * Un spécialiste ne doit pas entrer
+         * dans l'espace patient en choisissant
+         * le mauvais type de connexion.
          */
-        if (
-          loginMode ===
-            "therapist" &&
-          profile.role !==
-            "therapist"
-        ) {
-          await supabase.auth.signOut();
-
-          setErrorMessage(
-            text.wrongTherapist,
-          );
-
-          return;
-        }
-
-        if (
-          loginMode ===
-            "patient" &&
-          profile.role ===
-            "therapist"
-        ) {
+        if (isSpecialist) {
           await supabase.auth.signOut();
 
           setErrorMessage(
@@ -478,12 +568,22 @@ export default function LoginPage() {
           return;
         }
 
+        /*
+         * L'espace patient est réservé
+         * aux comptes ayant réellement
+         * profiles.role = "patient".
+         *
+         * Un rôle inconnu ne doit jamais être
+         * traité par défaut comme un patient.
+         */
         if (
-          profile.role ===
-          "therapist"
+          profile.role !==
+          "patient"
         ) {
-          router.replace(
-            "/therapist-dashboard",
+          await supabase.auth.signOut();
+
+          setErrorMessage(
+            text.wrongPatient,
           );
 
           return;
@@ -604,7 +704,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setLoginMode(
-                    "therapist",
+                    "specialist",
                   );
 
                   setErrorMessage(
@@ -616,7 +716,7 @@ export default function LoginPage() {
                 }
                 className={`rounded-2xl border px-4 py-4 text-base font-bold transition ${
                   loginMode ===
-                  "therapist"
+                  "specialist"
                     ? "border-aan-button bg-aan-button text-white shadow-md"
                     : "border-aan-border bg-white text-aan-navy hover:border-aan-gold hover:bg-[#fbf8f3]"
                 }`}
@@ -625,14 +725,14 @@ export default function LoginPage() {
                   ♧
                 </span>
 
-                {text.therapist}
+                {text.specialist}
               </button>
             </div>
 
             <p className="mt-3 text-center text-xs leading-5 text-aan-secondary">
               {loginMode ===
-              "therapist"
-                ? text.therapistHelp
+              "specialist"
+                ? text.specialistHelp
                 : text.patientHelp}
             </p>
 
