@@ -1,31 +1,8 @@
 import type { Metadata } from "next";
-import {
-  Inter,
-  Noto_Sans_Arabic,
-  Playfair_Display,
-} from "next/font/google";
 import { LanguageProvider } from "@/i18n/LanguageProvider";
 import FeedbackMode from "./components/FeedbackMode";
-import "./globals.css";
 import CookieBanner from "./components/CookieBanner";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-playfair",
-  display: "swap",
-});
-
-const notoArabic = Noto_Sans_Arabic({
-  subsets: ["arabic"],
-  variable: "--font-arabic",
-  display: "swap",
-});
+import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://aancliniclb.com"),
@@ -94,7 +71,15 @@ export default function RootLayout({
       lang="en"
       dir="ltr"
       suppressHydrationWarning
-      className={`${inter.variable} ${playfair.variable} ${notoArabic.variable} h-full`}
+      data-scroll-behavior="smooth"
+      className="h-full"
+      style={
+        {
+          "--font-inter": 'Arial, Helvetica, "Segoe UI", sans-serif',
+          "--font-playfair": 'Georgia, "Times New Roman", serif',
+          "--font-arabic": 'Tahoma, Arial, "Segoe UI", sans-serif',
+        } as React.CSSProperties
+      }
     >
       <body className="flex min-h-full flex-col bg-aan-background font-sans antialiased">
         <LanguageProvider>

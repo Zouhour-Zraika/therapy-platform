@@ -278,6 +278,32 @@ export default function TherapistDashboard() {
   ] = useState(false);
 
   const [
+    connectingZoom,
+    setConnectingZoom,
+  ] = useState(false);
+
+  const [
+    zoomConnection,
+    setZoomConnection,
+  ] = useState<{
+    connected: boolean;
+    email: string | null;
+  }>({
+    connected: false,
+    email: null,
+  });
+
+  const [
+    zoomStatusLoading,
+    setZoomStatusLoading,
+  ] = useState(true);
+
+  const [
+    disconnectingZoom,
+    setDisconnectingZoom,
+  ] = useState(false);
+
+  const [
     showProfileEditor,
     setShowProfileEditor,
   ] = useState(false);
@@ -903,6 +929,7 @@ export default function TherapistDashboard() {
     void getBookings();
     void getTherapistServices();
     void getGoogleConnection();
+    void getZoomConnection();
     void getPatientRecords();
   }, []);
 
@@ -944,6 +971,65 @@ export default function TherapistDashboard() {
     }
 
     params.delete("google");
+
+    const cleanQuery =
+      params.toString();
+
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${
+        cleanQuery
+          ? `?${cleanQuery}`
+          : ""
+      }${window.location.hash}`,
+    );
+  }, [language]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(
+      window.location.search,
+    );
+
+    const zoomStatus =
+      params.get("zoom");
+
+    if (!zoomStatus) {
+      return;
+    }
+
+    const message =
+      zoomStatus === "connected"
+        ? language === "ar"
+          ? "تم ربط حساب Zoom بنجاح."
+          : language === "fr"
+            ? "Votre compte Zoom a été connecté avec succès."
+            : "Your Zoom account was connected successfully."
+        : zoomStatus === "denied"
+          ? language === "ar"
+            ? "تم إلغاء ربط حساب Zoom."
+            : language === "fr"
+              ? "La connexion à Zoom a été annulée."
+              : "Zoom connection was cancelled."
+          : zoomStatus === "inactive"
+            ? language === "ar"
+              ? "تم تعطيل وصولك كاختصاصي."
+              : language === "fr"
+                ? "Votre accès spécialiste est désactivé."
+                : "Your specialist access is disabled."
+            : language === "ar"
+              ? "تعذر ربط حساب Zoom. يرجى المحاولة مرة أخرى."
+              : language === "fr"
+                ? "Impossible de connecter le compte Zoom. Veuillez réessayer."
+                : "Unable to connect the Zoom account. Please try again.";
+
+    window.alert(message);
+
+    if (zoomStatus === "connected") {
+      void getZoomConnection();
+    }
+
+    params.delete("zoom");
 
     const cleanQuery =
       params.toString();
@@ -2756,6 +2842,239 @@ export default function TherapistDashboard() {
     };
 
 
+  const getZoomConnection =
+    async () => {
+      setZoomStatusLoading(true);
+
+      try {
+        const {
+          data: {
+            session,
+          },
+        } =
+          await supabase.auth.getSession();
+
+        if (!session) {
+          setZoomConnection({
+            connected: false,
+            email: null,
+          });
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/zoom/status",
+            {
+              method: "GET",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result?.error ||
+              "Unable to load Zoom connection.",
+          );
+        }
+
+        setZoomConnection({
+          connected:
+            Boolean(result.connected),
+          email:
+            result.zoomEmail ||
+            null,
+        });
+      } catch (error) {
+        console.error(
+          "Zoom status error:",
+          error,
+        );
+
+        setZoomConnection({
+          connected: false,
+          email: null,
+        });
+      } finally {
+        setZoomStatusLoading(
+          false,
+        );
+      }
+    };
+
+
+  const disconnectZoom =
+    async () => {
+      const confirmed =
+        window.confirm(
+          language === "ar"
+            ? "هل تريد فصل حساب Zoom عن AAN؟"
+            : language === "fr"
+              ? "Déconnecter ce compte Zoom de AAN ?"
+              : "Disconnect this Zoom account from AAN?",
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setDisconnectingZoom(true);
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/zoom/disconnect",
+            {
+              method: "POST",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result?.error ||
+              "Unable to disconnect Zoom.",
+          );
+        }
+
+        setZoomConnection({
+          connected: false,
+          email: null,
+        });
+
+        alert(
+          language === "ar"
+            ? "تم فصل حساب Zoom."
+            : language === "fr"
+              ? "Le compte Zoom a été déconnecté."
+              : "Zoom account disconnected.",
+        );
+      } catch (error) {
+        console.error(
+          "Zoom disconnect error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "تعذر فصل حساب Zoom."
+            : language === "fr"
+              ? "Impossible de déconnecter le compte Zoom."
+              : "Unable to disconnect the Zoom account.",
+        );
+      } finally {
+        setDisconnectingZoom(false);
+      }
+    };
+
+
+  const connectZoom =
+    async () => {
+      setConnectingZoom(true);
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+
+          window.location.href =
+            "/login";
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/zoom/connect",
+            {
+              method: "GET",
+              headers: {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (
+          !response.ok ||
+          !result.authorizationUrl
+        ) {
+          throw new Error(
+            result?.error ||
+              "Unable to start Zoom connection.",
+          );
+        }
+
+        window.location.href =
+          result.authorizationUrl;
+      } catch (error) {
+        console.error(
+          "Zoom connection error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "تعذر بدء الاتصال بـ Zoom. يرجى المحاولة مرة أخرى."
+            : language === "fr"
+              ? "Impossible de démarrer la connexion à Zoom. Veuillez réessayer."
+              : "Unable to start the Zoom connection. Please try again.",
+        );
+      } finally {
+        setConnectingZoom(false);
+      }
+    };
+
+
   const runBookingAction =
     async (
       booking: Booking,
@@ -3326,7 +3645,8 @@ export default function TherapistDashboard() {
                 </button>
               </div>
 
-              <div className="mt-auto rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+              <div className="mt-auto space-y-3">
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
                 {googleStatusLoading ? (
                   <p className="text-sm font-semibold text-aan-secondary">
                     {language === "ar"
@@ -3418,6 +3738,101 @@ export default function TherapistDashboard() {
                     </button>
                   </>
                 )}
+                </div>
+
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                  {zoomStatusLoading ? (
+                    <p className="text-sm font-semibold text-aan-secondary">
+                      {language === "ar"
+                        ? "جارٍ التحقق من Zoom..."
+                        : language === "fr"
+                          ? "Vérification Zoom..."
+                          : "Checking Zoom..."}
+                    </p>
+                  ) : zoomConnection.connected ? (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] font-black text-[#2d5bff]">
+                          Z
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="font-bold text-emerald-700">
+                            {language === "ar"
+                              ? "Zoom متصل ✓"
+                              : language === "fr"
+                                ? "Zoom connecté ✓"
+                                : "Zoom connected ✓"}
+                          </p>
+
+                          <p className="mt-1 break-all text-xs text-aan-secondary">
+                            {zoomConnection.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void disconnectZoom()
+                        }
+                        disabled={
+                          disconnectingZoom
+                        }
+                        className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                      >
+                        {disconnectingZoom
+                          ? language === "ar"
+                            ? "جارٍ الفصل..."
+                            : language === "fr"
+                              ? "Déconnexion..."
+                              : "Disconnecting..."
+                          : language === "ar"
+                            ? "فصل Zoom"
+                            : language === "fr"
+                              ? "Déconnecter Zoom"
+                              : "Disconnect Zoom"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-bold text-aan-navy">
+                        Zoom
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                        {language === "ar"
+                          ? "اربط حساب Zoom الخاص بك لإنشاء اجتماعات جلساتك من حسابك."
+                          : language === "fr"
+                            ? "Connectez votre propre compte Zoom pour créer les réunions de vos séances depuis votre compte."
+                            : "Connect your own Zoom account so your session meetings are created from your account."}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void connectZoom()
+                        }
+                        disabled={
+                          connectingZoom
+                        }
+                        className="aan-button mt-4 w-full py-2.5 text-sm disabled:opacity-60"
+                      >
+                        {connectingZoom
+                          ? language === "ar"
+                            ? "جارٍ الاتصال..."
+                            : language === "fr"
+                              ? "Connexion..."
+                              : "Connecting..."
+                          : language === "ar"
+                            ? "ربط Zoom"
+                            : language === "fr"
+                              ? "Connecter Zoom"
+                              : "Connect Zoom"}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </aside>
 
@@ -3524,6 +3939,22 @@ export default function TherapistDashboard() {
                       className="aan-button px-5 py-3"
                     >
                       Connecter Google
+                    </button>
+                  )}
+
+                  {zoomConnection.connected ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+                      Zoom connecté ✓
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void connectZoom()
+                      }
+                      className="aan-button px-5 py-3"
+                    >
+                      Connecter Zoom
                     </button>
                   )}
 
