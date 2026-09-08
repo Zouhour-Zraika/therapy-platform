@@ -34,6 +34,7 @@ type Booking = {
   created_at: string;
   patient_email: string | null;
 
+  zoom_join_url?: string | null;
   zoom_start_url: string | null;
 
   meeting_url?: string | null;
@@ -302,6 +303,18 @@ export default function TherapistDashboard() {
     disconnectingZoom,
     setDisconnectingZoom,
   ] = useState(false);
+
+  const [
+    sessionProviderBooking,
+    setSessionProviderBooking,
+  ] = useState<Booking | null>(null);
+
+  const [
+    sessionProviderLoading,
+    setSessionProviderLoading,
+  ] = useState<
+    "google" | "zoom" | null
+  >(null);
 
   const [
     showProfileEditor,
@@ -3075,6 +3088,172 @@ export default function TherapistDashboard() {
     };
 
 
+  const chooseSessionProvider =
+    async (
+      booking: Booking,
+      provider: "google" | "zoom",
+    ) => {
+      setSessionProviderLoading(
+        provider,
+      );
+
+      try {
+        const {
+          data: {
+            session,
+          },
+          error:
+            sessionError,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          sessionError ||
+          !session
+        ) {
+          alert(
+            text.loginRequired,
+          );
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/booking/session-provider",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+              body:
+                JSON.stringify({
+                  bookingId:
+                    booking.id,
+                  provider,
+                }),
+            },
+          );
+
+        const result =
+          await response.json();
+
+        if (
+          !response.ok ||
+          !result.startUrl
+        ) {
+          throw new Error(
+            result?.error ||
+              "Unable to prepare the session.",
+          );
+        }
+
+        setBookings(
+          (current) =>
+            current.map(
+              (item) =>
+                item.id ===
+                booking.id
+                  ? {
+                      ...item,
+                      meeting_provider:
+                        result.meetingProvider ||
+                        provider,
+                      zoom_join_url:
+                        result.zoomJoinUrl ??
+                        item.zoom_join_url,
+                      zoom_start_url:
+                        result.zoomStartUrl ??
+                        item.zoom_start_url,
+                    }
+                  : item,
+            ),
+        );
+
+        setSessionProviderBooking(
+          null,
+        );
+
+        window.open(
+          result.startUrl,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      } catch (error) {
+        console.error(
+          "Session provider error:",
+          error,
+        );
+
+        alert(
+          error instanceof Error &&
+            error.message
+            ? error.message
+            : language === "ar"
+              ? "تعذر بدء الجلسة."
+              : language === "fr"
+                ? "Impossible de démarrer la séance."
+                : "Unable to start the session.",
+        );
+      } finally {
+        setSessionProviderLoading(
+          null,
+        );
+      }
+    };
+
+
+  const handleStartSession =
+    async (
+      booking: Booking,
+    ) => {
+      const googleAvailable =
+        googleConnection.connected &&
+        Boolean(
+          booking.meeting_url,
+        );
+
+      const zoomAvailable =
+        zoomConnection.connected;
+
+      if (
+        googleAvailable &&
+        zoomAvailable
+      ) {
+        setSessionProviderBooking(
+          booking,
+        );
+        return;
+      }
+
+      if (googleAvailable) {
+        await chooseSessionProvider(
+          booking,
+          "google",
+        );
+        return;
+      }
+
+      if (zoomAvailable) {
+        await chooseSessionProvider(
+          booking,
+          "zoom",
+        );
+        return;
+      }
+
+      alert(
+        language === "ar"
+          ? "يرجى ربط Google أو Zoom أولاً."
+          : language === "fr"
+            ? "Veuillez d’abord connecter Google ou Zoom."
+            : "Please connect Google or Zoom first.",
+      );
+    };
+
+
   const runBookingAction =
     async (
       booking: Booking,
@@ -4477,9 +4656,14 @@ export default function TherapistDashboard() {
                     ) : (
                       displayedUpcomingBookings.map(
                         (booking) => {
-                          const sessionUrl =
-                            booking.meeting_url ||
-                            booking.zoom_start_url;
+                          const canStartSession =
+                            (
+                              googleConnection.connected &&
+                              Boolean(
+                                booking.meeting_url,
+                              )
+                            ) ||
+                            zoomConnection.connected;
 
                           return (
                             <article
@@ -4517,17 +4701,22 @@ export default function TherapistDashboard() {
                               </div>
 
                               <div className="mt-4 flex flex-wrap gap-2">
-                                {sessionUrl ? (
-                                  <a
-                                    href={
-                                      sessionUrl
+                                {canStartSession ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleStartSession(
+                                        booking,
+                                      )
                                     }
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="aan-button px-4 py-2 text-sm"
+                                    disabled={
+                                      sessionProviderLoading !==
+                                      null
+                                    }
+                                    className="aan-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {text.startSession}
-                                  </a>
+                                  </button>
                                 ) : (
                                   <span className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
                                     {text.meetingNotReady}
@@ -5348,6 +5537,118 @@ export default function TherapistDashboard() {
               ) : null}
             </div>
           </div>
+
+        {sessionProviderBooking ? (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              language === "ar"
+                ? "اختيار منصة الجلسة"
+                : language === "fr"
+                  ? "Choisir la plateforme de séance"
+                  : "Choose session platform"
+            }
+          >
+            <div className="w-full max-w-md rounded-3xl border border-aan-border bg-white p-6 shadow-2xl sm:p-7">
+              <p className="text-sm font-bold uppercase tracking-[0.16em] text-aan-gold">
+                AAN Psychotherapy
+              </p>
+
+              <h3 className="aan-heading mt-2 text-2xl">
+                {language === "ar"
+                  ? "كيف تريد بدء الجلسة؟"
+                  : language === "fr"
+                    ? "Comment souhaitez-vous démarrer la séance ?"
+                    : "How would you like to start the session?"}
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                {language === "ar"
+                  ? "اختر Google Meet أو Zoom لهذه الجلسة."
+                  : language === "fr"
+                    ? "Choisissez Google Meet ou Zoom pour cette séance."
+                    : "Choose Google Meet or Zoom for this session."}
+              </p>
+
+              <div className="mt-6 grid gap-3">
+                {googleConnection.connected &&
+                sessionProviderBooking.meeting_url ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void chooseSessionProvider(
+                        sessionProviderBooking,
+                        "google",
+                      )
+                    }
+                    disabled={
+                      sessionProviderLoading !==
+                      null
+                    }
+                    className="rounded-2xl border border-aan-border bg-[#fbf8f3] px-5 py-4 text-left font-bold text-aan-navy transition hover:border-aan-gold hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sessionProviderLoading ===
+                    "google"
+                      ? language === "ar"
+                        ? "جارٍ فتح Google Meet..."
+                        : language === "fr"
+                          ? "Ouverture de Google Meet..."
+                          : "Opening Google Meet..."
+                      : "Google Meet"}
+                  </button>
+                ) : null}
+
+                {zoomConnection.connected ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void chooseSessionProvider(
+                        sessionProviderBooking,
+                        "zoom",
+                      )
+                    }
+                    disabled={
+                      sessionProviderLoading !==
+                      null
+                    }
+                    className="rounded-2xl bg-aan-button px-5 py-4 text-left font-bold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sessionProviderLoading ===
+                    "zoom"
+                      ? language === "ar"
+                        ? "جارٍ تجهيز Zoom..."
+                        : language === "fr"
+                          ? "Préparation de Zoom..."
+                          : "Preparing Zoom..."
+                      : "Zoom"}
+                  </button>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSessionProviderBooking(
+                    null,
+                  )
+                }
+                disabled={
+                  sessionProviderLoading !==
+                  null
+                }
+                className="mt-4 w-full rounded-2xl border border-aan-border bg-white px-5 py-3 font-bold text-aan-secondary transition hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {language === "ar"
+                  ? "إلغاء"
+                  : language === "fr"
+                    ? "Annuler"
+                    : "Cancel"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {availabilityModalOpen ? (
           <div
