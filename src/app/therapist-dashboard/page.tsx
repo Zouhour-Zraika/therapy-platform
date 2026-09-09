@@ -3305,6 +3305,13 @@ export default function TherapistDashboard() {
             ),
         );
 
+        /*
+         * Recharge immédiatement depuis Supabase afin que le bouton
+         * "Démarrer la séance" utilise toujours la plateforme qui vient
+         * réellement d'être enregistrée côté serveur.
+         */
+        await getBookings();
+
         setSessionProviderBooking(
           null,
         );
@@ -3349,9 +3356,43 @@ export default function TherapistDashboard() {
         zoomConnection.connected;
 
       /*
-       * Existing bookings keep their own provider.
-       * Changing the global preferred provider must not silently
-       * switch a session that was already created.
+       * Pour une réservation déjà configurée, on ouvre directement
+       * le lien ACTIF enregistré pour cette séance.
+       *
+       * Cela évite de rappeler l'API de changement de plateforme
+       * au moment de simplement démarrer la séance.
+       */
+      if (
+        booking.meeting_provider ===
+          "google_meet" &&
+        googleAvailable &&
+        booking.meeting_url
+      ) {
+        window.open(
+          booking.meeting_url,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+
+      if (
+        booking.meeting_provider ===
+          "zoom" &&
+        zoomAvailable &&
+        booking.zoom_start_url
+      ) {
+        window.open(
+          booking.zoom_start_url,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+
+      /*
+       * Fallback uniquement si aucun lien actif n'est encore disponible.
+       * Dans ce cas l'API prépare la plateforme appropriée.
        */
       if (
         booking.meeting_provider ===
