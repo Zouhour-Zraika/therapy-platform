@@ -183,6 +183,35 @@ export default function PatientDashboard() {
           };
 
   useEffect(() => {
+    /*
+     * Compatibilité avec les anciens e-mails de changement envoyés
+     * vers /dashboard?reschedule=<bookingId>.
+     *
+     * Le vrai parcours de replanification se trouve sur /booking.
+     * On redirige donc immédiatement sans afficher le dashboard.
+     */
+    const params =
+      new URLSearchParams(
+        window.location.search,
+      );
+
+    const rescheduleBookingId =
+      params.get(
+        "reschedule",
+      );
+
+    if (
+      rescheduleBookingId
+    ) {
+      window.location.replace(
+        `/booking?reschedule=${encodeURIComponent(
+          rescheduleBookingId,
+        )}`,
+      );
+
+      return;
+    }
+
     void getBookings();
   }, []);
 

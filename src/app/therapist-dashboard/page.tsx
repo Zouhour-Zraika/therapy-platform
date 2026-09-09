@@ -3280,6 +3280,30 @@ export default function TherapistDashboard() {
           );
         }
 
+        /*
+         * IMPORTANT :
+         * meetingUrl peut volontairement être NULL lors d'un passage
+         * Google Meet -> Zoom. Il ne faut donc pas utiliser ?? ici,
+         * sinon l'ancien lien Meet reste dans l'état React.
+         */
+        const hasMeetingUrl =
+          Object.prototype.hasOwnProperty.call(
+            result,
+            "meetingUrl",
+          );
+
+        const hasZoomJoinUrl =
+          Object.prototype.hasOwnProperty.call(
+            result,
+            "zoomJoinUrl",
+          );
+
+        const hasZoomStartUrl =
+          Object.prototype.hasOwnProperty.call(
+            result,
+            "zoomStartUrl",
+          );
+
         setBookings(
           (current) =>
             current.map(
@@ -3290,20 +3314,32 @@ export default function TherapistDashboard() {
                       ...item,
                       meeting_provider:
                         result.meetingProvider ||
-                        provider,
+                        (provider ===
+                        "google"
+                          ? "google_meet"
+                          : "zoom"),
                       meeting_url:
-                        result.meetingUrl ??
-                        item.meeting_url,
+                        hasMeetingUrl
+                          ? result.meetingUrl
+                          : item.meeting_url,
                       zoom_join_url:
-                        result.zoomJoinUrl ??
-                        item.zoom_join_url,
+                        hasZoomJoinUrl
+                          ? result.zoomJoinUrl
+                          : item.zoom_join_url,
                       zoom_start_url:
-                        result.zoomStartUrl ??
-                        item.zoom_start_url,
+                        hasZoomStartUrl
+                          ? result.zoomStartUrl
+                          : item.zoom_start_url,
                     }
                   : item,
             ),
         );
+
+        /*
+         * Recharge immédiatement depuis Supabase afin que toute
+         * action suivante utilise la plateforme réellement enregistrée.
+         */
+        await getBookings();
 
         setSessionProviderBooking(
           null,
@@ -3349,34 +3385,171 @@ export default function TherapistDashboard() {
         zoomConnection.connected;
 
       /*
-       * Existing bookings keep their own provider.
-       * Changing the global preferred provider must not silently
-       * switch a session that was already created.
+       * Toujours relire la réservation en base avant de démarrer.
+       * Une bascule Meet <-> Zoom peut avoir eu lieu quelques secondes
+       * auparavant et l'objet React affiché peut être ancien.
        */
-      if (
-        booking.meeting_provider ===
-          "google_meet" &&
-        googleAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "google",
+      try {
+        const {
+          data:
+            freshBooking,
+          error:
+            freshBookingError,
+        } =
+          await supabase
+            .from("bookings")
+            .select(
+              "id, meeting_provider, meeting_url, zoom_join_url, zoom_start_url",
+            )
+            .eq(
+              "id",
+              booking.id,
+            )
+            .single<{
+              id: string;
+              meeting_provider:
+                string | null;
+              meeting_url:
+                string | null;
+              zoom_join_url:
+                string | null;
+              zoom_start_url:
+                string | null;
+            }>();
+
+        if (
+          freshBookingError
+        ) {
+          throw freshBookingError;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "google_meet" &&
+          googleAvailable &&
+          freshBooking.meeting_url
+        ) {
+          setBookings(
+            (current) =>
+              current.map(
+                (item) =>
+                  item.id ===
+                  booking.id
+                    ? {
+                        ...item,
+                        meeting_provider:
+                          "google_meet",
+                        meeting_url:
+                          freshBooking.meeting_url,
+                        zoom_join_url:
+                          freshBooking.zoom_join_url,
+                        zoom_start_url:
+                          freshBooking.zoom_start_url,
+                      }
+                    : item,
+              ),
+          );
+
+          window.open(
+            freshBooking.meeting_url,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          return;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "zoom" &&
+          zoomAvailable &&
+          freshBooking.zoom_start_url
+        ) {
+          setBookings(
+            (current) =>
+              current.map(
+                (item) =>
+                  item.id ===
+                  booking.id
+                    ? {
+                        ...item,
+                        meeting_provider:
+                          "zoom",
+                        meeting_url:
+                          null,
+                        zoom_join_url:
+                          freshBooking.zoom_join_url,
+                        zoom_start_url:
+                          freshBooking.zoom_start_url,
+                      }
+                    : item,
+              ),
+          );
+
+          window.open(
+            freshBooking.zoom_start_url,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          return;
+        }
+
+        /*
+         * Provider enregistré mais lien manquant :
+         * demander à l'API de préparer/recréer le lien.
+         */
+        if (
+          freshBooking.meeting_provider ===
+            "google_meet" &&
+          googleAvailable
+        ) {
+          await chooseSessionProvider(
+            {
+              ...booking,
+              meeting_provider:
+                freshBooking.meeting_provider,
+              meeting_url:
+                freshBooking.meeting_url,
+              zoom_join_url:
+                freshBooking.zoom_join_url,
+              zoom_start_url:
+                freshBooking.zoom_start_url,
+            },
+            "google",
+          );
+          return;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "zoom" &&
+          zoomAvailable
+        ) {
+          await chooseSessionProvider(
+            {
+              ...booking,
+              meeting_provider:
+                freshBooking.meeting_provider,
+              meeting_url:
+                freshBooking.meeting_url,
+              zoom_join_url:
+                freshBooking.zoom_join_url,
+              zoom_start_url:
+                freshBooking.zoom_start_url,
+            },
+            "zoom",
+          );
+          return;
+        }
+      } catch (freshBookingError) {
+        console.error(
+          "Fresh booking provider lookup failed:",
+          freshBookingError,
         );
-        return;
       }
 
-      if (
-        booking.meeting_provider ===
-          "zoom" &&
-        zoomAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "zoom",
-        );
-        return;
-      }
-
+      /*
+       * Fallback pour les rares réservations sans provider enregistré.
+       */
       if (
         preferredMeetingProvider ===
           "google_meet" &&
