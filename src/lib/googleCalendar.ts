@@ -17,6 +17,17 @@ type CreateGoogleMeetParams = {
   attendeeEmail?: string | null;
 };
 
+type CreateGoogleCalendarEventParams = {
+  therapistId: string;
+  summary: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone?: string;
+  attendeeEmail?: string | null;
+  location?: string | null;
+};
+
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_EVENTS_URL =
   "https://www.googleapis.com/calendar/v3/calendars/primary/events";
@@ -171,6 +182,52 @@ export async function createGoogleMeetForBooking({
   return {
     provider: "google_meet" as const,
     meetingUrl,
+    calendarEventId: event.id as string,
+    calendarEventUrl: event.htmlLink || null,
+  };
+}
+
+export async function createGoogleCalendarEventForBooking({
+  therapistId,
+  summary,
+  description,
+  start,
+  end,
+  timeZone = "Asia/Beirut",
+  attendeeEmail,
+  location,
+}: CreateGoogleCalendarEventParams) {
+  const accessToken = await getGoogleAccessToken(therapistId);
+
+  const response = await fetch(
+    `${GOOGLE_CALENDAR_EVENTS_URL}?sendUpdates=all`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary,
+        description:
+          description ||
+          "Online appointment booked through AAN Psychotherapy.",
+        location: location || undefined,
+        start: { dateTime: start, timeZone },
+        end: { dateTime: end, timeZone },
+        attendees: attendeeEmail ? [{ email: attendeeEmail }] : undefined,
+      }),
+    },
+  );
+
+  const event = await response.json();
+
+  if (!response.ok || !event.id) {
+    console.error("Google Calendar event creation failed:", event);
+    throw new Error("Unable to create the Google Calendar event.");
+  }
+
+  return {
     calendarEventId: event.id as string,
     calendarEventUrl: event.htmlLink || null,
   };

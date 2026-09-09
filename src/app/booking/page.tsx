@@ -273,6 +273,11 @@ function BookingContent() {
     setSelectedSlot,
   ] = useState<Slot | null>(null);
 
+  const [
+    selectedSlotDateKey,
+    setSelectedSlotDateKey,
+  ] = useState("");
+
   const [loading, setLoading] =
     useState(true);
 
@@ -1534,6 +1539,166 @@ function BookingContent() {
       availabilityPreference,
     ]);
 
+  const getSlotDateKey = (
+    slot: Slot,
+  ) => {
+    const start =
+      getScheduledStart(slot);
+
+    if (start) {
+      const parts =
+        new Intl.DateTimeFormat(
+          "en-CA",
+          {
+            timeZone:
+              selectedTimeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          },
+        ).formatToParts(start);
+
+      const values =
+        Object.fromEntries(
+          parts.map((part) => [
+            part.type,
+            part.value,
+          ]),
+        );
+
+      return `${values.year}-${values.month}-${values.day}`;
+    }
+
+    return (
+      slot.slot_date ||
+      slot.day ||
+      slot.id
+    );
+  };
+
+  const slotDateGroups =
+    useMemo(() => {
+      const groups =
+        new Map<
+          string,
+          Slot[]
+        >();
+
+      selectedTherapistSlots.forEach(
+        (slot) => {
+          const key =
+            getSlotDateKey(slot);
+
+          const current =
+            groups.get(key) || [];
+
+          current.push(slot);
+          groups.set(key, current);
+        },
+      );
+
+      return Array.from(
+        groups.entries(),
+      ).map(
+        ([key, slots]) => ({
+          key,
+          slots: [...slots].sort(
+            (a, b) => {
+              const aStart =
+                getScheduledStart(a);
+              const bStart =
+                getScheduledStart(b);
+
+              return (
+                (aStart?.getTime() || 0) -
+                (bStart?.getTime() || 0)
+              );
+            },
+          ),
+        }),
+      );
+    }, [
+      selectedTherapistSlots,
+      selectedTimeZone,
+    ]);
+
+  useEffect(() => {
+    if (
+      slotDateGroups.length === 0
+    ) {
+      setSelectedSlotDateKey("");
+      return;
+    }
+
+    const selectedSlotKey =
+      selectedSlot
+        ? getSlotDateKey(
+            selectedSlot,
+          )
+        : "";
+
+    if (
+      selectedSlotKey &&
+      slotDateGroups.some(
+        (group) =>
+          group.key ===
+          selectedSlotKey,
+      )
+    ) {
+      setSelectedSlotDateKey(
+        selectedSlotKey,
+      );
+      return;
+    }
+
+    if (
+      !slotDateGroups.some(
+        (group) =>
+          group.key ===
+          selectedSlotDateKey,
+      )
+    ) {
+      setSelectedSlotDateKey(
+        slotDateGroups[0].key,
+      );
+    }
+  }, [
+    slotDateGroups,
+    selectedSlot,
+    selectedSlotDateKey,
+  ]);
+
+  const activeSlotDateGroup =
+    slotDateGroups.find(
+      (group) =>
+        group.key ===
+        selectedSlotDateKey,
+    ) ||
+    slotDateGroups[0] ||
+    null;
+
+  const formatSlotDateChip = (
+    slot: Slot,
+  ) => {
+    const start =
+      getScheduledStart(slot);
+
+    if (start) {
+      return new Intl.DateTimeFormat(
+        getLocale(),
+        {
+          timeZone:
+            selectedTimeZone,
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        },
+      ).format(start);
+    }
+
+    return formatSlotDate(slot);
+  };
+
   const toggleSupport = (
     value: string,
   ) => {
@@ -1641,6 +1806,7 @@ function BookingContent() {
 
     setSelectedService(null);
     setSelectedSlot(null);
+    setSelectedSlotDateKey("");
 
     window.setTimeout(() => {
       bookingSectionRef.current?.scrollIntoView(
@@ -2653,6 +2819,7 @@ function BookingContent() {
                                       onClick={() => {
                                         setSelectedService(service);
                                         setSelectedSlot(null);
+                                        setSelectedSlotDateKey("");
                                       }}
                                       className={`rounded-2xl border p-4 text-start transition ${
                                         selected
@@ -2786,120 +2953,185 @@ function BookingContent() {
                             </p>
                           </div>
                         ) : (
-                          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {selectedTherapistSlots.map(
-                              (slot) => {
-                                const selected =
-                                  selectedSlot?.id ===
-                                  slot.id;
+                          <div className="mt-8 space-y-5">
+                            <div className="rounded-2xl border border-[#dfd5c5] bg-[#faf7f2] p-4 sm:p-5">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-bold text-[#223748]">
+                                    {language === "ar"
+                                      ? "اختر التاريخ"
+                                      : language === "fr"
+                                        ? "Choisissez une date"
+                                        : "Choose a date"}
+                                  </p>
 
-                                const start =
-                                  getScheduledStart(
-                                    slot,
-                                  );
+                                  <p className="mt-1 text-xs text-[#7a858b]">
+                                    {language === "ar"
+                                      ? `${slotDateGroups.length} أيام متاحة`
+                                      : language === "fr"
+                                        ? `${slotDateGroups.length} date(s) disponible(s)`
+                                        : `${slotDateGroups.length} available date(s)`}
+                                  </p>
+                                </div>
+                              </div>
 
-                                const end =
-                                  start
-                                    ? new Date(
-                                        start.getTime() +
-                                          2 *
-                                            60 *
-                                            60 *
-                                            1000,
-                                      )
-                                    : null;
+                              <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+                                {slotDateGroups.map(
+                                  (group) => {
+                                    const selected =
+                                      group.key ===
+                                      selectedSlotDateKey;
 
-                                return (
-                                  <button
-                                    key={
-                                      slot.id
-                                    }
-                                    type="button"
-                                    onClick={() =>
-                                      setSelectedSlot(
-                                        slot,
-                                      )
-                                    }
-                                    className={`rounded-2xl border p-5 text-start transition ${
-                                      selected
-                                        ? "border-[#415a72] bg-[#eef2f5] shadow-sm"
-                                        : "border-[#e3dbcf] bg-[#fffdf9] hover:border-[#b39668]"
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between gap-4">
-                                      <div>
-                                        <p className="font-bold text-[#223748]">
-                                          {formatSlotDate(
-                                            slot,
+                                    const firstSlot =
+                                      group.slots[0];
+
+                                    return (
+                                      <button
+                                        key={
+                                          group.key
+                                        }
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedSlotDateKey(
+                                            group.key,
+                                          );
+
+                                          if (
+                                            selectedSlot &&
+                                            getSlotDateKey(
+                                              selectedSlot,
+                                            ) !==
+                                              group.key
+                                          ) {
+                                            setSelectedSlot(
+                                              null,
+                                            );
+                                          }
+                                        }}
+                                        className={`min-w-[104px] shrink-0 rounded-xl border px-3 py-3 text-center transition ${
+                                          selected
+                                            ? "border-[#415a72] bg-[#415a72] text-white shadow-sm"
+                                            : "border-[#e3dbcf] bg-white text-[#223748] hover:border-[#b39668]"
+                                        }`}
+                                      >
+                                        <span className="block text-sm font-bold capitalize">
+                                          {formatSlotDateChip(
+                                            firstSlot,
                                           )}
-                                        </p>
+                                        </span>
 
-                                        <p className="mt-2 text-lg font-semibold text-[#415a72]">
-                                          {
-                                            formatSlotTime(
+                                        <span
+                                          className={`mt-1 block text-[11px] ${
+                                            selected
+                                              ? "text-white/75"
+                                              : "text-[#7a858b]"
+                                          }`}
+                                        >
+                                          {group.slots.length}{" "}
+                                          {language === "ar"
+                                            ? "موعد"
+                                            : language === "fr"
+                                              ? group.slots.length > 1
+                                                ? "créneaux"
+                                                : "créneau"
+                                              : group.slots.length > 1
+                                                ? "times"
+                                                : "time"}
+                                        </span>
+                                      </button>
+                                    );
+                                  },
+                                )}
+                              </div>
+                            </div>
+
+                            {activeSlotDateGroup && (
+                              <div className="rounded-2xl border border-[#dfd5c5] bg-white p-4 sm:p-5">
+                                <div>
+                                  <p className="text-sm font-bold text-[#223748]">
+                                    {language === "ar"
+                                      ? "اختر الوقت"
+                                      : language === "fr"
+                                        ? "Choisissez une heure"
+                                        : "Choose a time"}
+                                  </p>
+
+                                  <p className="mt-1 text-sm capitalize text-[#69747a]">
+                                    {formatSlotDate(
+                                      activeSlotDateGroup
+                                        .slots[0],
+                                    )}
+                                  </p>
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                                  {activeSlotDateGroup.slots.map(
+                                    (slot) => {
+                                      const selected =
+                                        selectedSlot?.id ===
+                                        slot.id;
+
+                                      return (
+                                        <button
+                                          key={
+                                            slot.id
+                                          }
+                                          type="button"
+                                          onClick={() =>
+                                            setSelectedSlot(
                                               slot,
                                             )
                                           }
-                                        </p>
-                                      </div>
+                                          className={`rounded-xl border px-4 py-3 text-center transition ${
+                                            selected
+                                              ? "border-[#415a72] bg-[#415a72] text-white shadow-sm"
+                                              : "border-[#e3dbcf] bg-[#fffdf9] text-[#223748] hover:border-[#b39668]"
+                                          }`}
+                                        >
+                                          <span className="block text-lg font-bold">
+                                            {formatSlotTime(
+                                              slot,
+                                            )}
+                                          </span>
 
-                                      <div
-                                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
-                                          selected
-                                            ? "border-[#415a72] bg-[#415a72] text-white"
-                                            : "border-[#c9c0b2]"
-                                        }`}
-                                      >
-                                        {selected
-                                          ? "✓"
-                                          : ""}
-                                      </div>
-                                    </div>
-
-                                    {start && (
-                                      <p className="mt-3 text-xs leading-5 text-[#7a858b]">
-                                        {formatTimeZoneName(
-                                          selectedTimeZone,
-                                        )}
-                                        {selectedTimeZone !==
-                                          "Asia/Beirut" && (
-                                          <>
-                                            <br />
-                                            {language === "ar"
-                                              ? `الوقت المقابل في لبنان: ${formatBeirutTime(
-                                                  slot,
-                                                )}`
-                                              : language === "fr"
-                                                ? `Heure correspondante au Liban : ${formatBeirutTime(
+                                          {selectedTimeZone !==
+                                            "Asia/Beirut" && (
+                                            <span
+                                              className={`mt-1 block text-[10px] ${
+                                                selected
+                                                  ? "text-white/70"
+                                                  : "text-[#7a858b]"
+                                              }`}
+                                            >
+                                              {language === "ar"
+                                                ? `لبنان ${formatBeirutTime(
                                                     slot,
                                                   )}`
-                                                : `Corresponding time in Lebanon: ${formatBeirutTime(
-                                                    slot,
-                                                  )}`}
-                                          </>
-                                        )}
-                                      </p>
-                                    )}
+                                                : language === "fr"
+                                                  ? `Liban ${formatBeirutTime(
+                                                      slot,
+                                                    )}`
+                                                  : `Lebanon ${formatBeirutTime(
+                                                      slot,
+                                                    )}`}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    },
+                                  )}
+                                </div>
 
-                                    {start &&
-                                      end && (
-                                        <p className="mt-4 text-xs leading-5 text-[#7a858b]">
-                                          {selectedService
-                                            ? language === "ar"
-                                              ? `مدة الجلسة: ${selectedService.duration_minutes} دقيقة`
-                                              : language === "fr"
-                                                ? `Durée de la séance : ${selectedService.duration_minutes} min`
-                                                : `Session duration: ${selectedService.duration_minutes} min`
-                                            : language === "ar"
-                                              ? "مدة الجلسة حسب الحجز الحالي"
-                                              : language === "fr"
-                                                ? "Durée de la séance selon la réservation actuelle"
-                                                : "Session duration according to the current booking"}
-                                        </p>
-                                      )}
-                                  </button>
-                                );
-                              },
+                                {selectedService && (
+                                  <p className="mt-4 text-xs text-[#7a858b]">
+                                    {language === "ar"
+                                      ? `مدة الجلسة: ${selectedService.duration_minutes} دقيقة`
+                                      : language === "fr"
+                                        ? `Durée de la séance : ${selectedService.duration_minutes} min`
+                                        : `Session duration: ${selectedService.duration_minutes} min`}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
@@ -3142,3 +3374,4 @@ export default function BookingPage() {
     </Suspense>
      );
 }
+

@@ -9,6 +9,7 @@ import {
 import Stripe from "stripe";
 
 import {
+  createGoogleCalendarEventForBooking,
   createGoogleMeetForBooking,
 } from "@/lib/googleCalendar";
 
@@ -1142,6 +1143,65 @@ export async function POST(
               supabaseAdmin,
             });
 
+          let calendarEventId =
+            updatedBooking.calendar_event_id;
+
+          if (!calendarEventId) {
+            try {
+              const calendarEvent =
+                await createGoogleCalendarEventForBooking({
+                  therapistId:
+                    updatedBooking.therapist_id,
+
+                  summary:
+                    `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
+
+                  description:
+                    [
+                      `AAN booking ${bookingId}`,
+                      "",
+                      "Platform: Zoom",
+                      `Join Zoom: ${zoomMeeting.joinUrl}`,
+                    ].join("\n"),
+
+                  location:
+                    zoomMeeting.joinUrl,
+
+                  start:
+                    updatedBooking.scheduled_start,
+
+                  end:
+                    updatedBooking.scheduled_end,
+
+                  timeZone:
+                    "Asia/Beirut",
+
+                  attendeeEmail:
+                    updatedBooking.patient_email,
+                });
+
+              calendarEventId =
+                calendarEvent.calendarEventId;
+            } catch (
+              calendarError
+            ) {
+              /*
+               * Zoom reste valide même si Google Calendar
+               * est temporairement indisponible ou non connecté.
+               */
+              console.error(
+                "Google Calendar event creation failed for Zoom booking:",
+                {
+                  bookingId,
+                  therapistId:
+                    updatedBooking.therapist_id,
+                  error:
+                    calendarError,
+                },
+              );
+            }
+          }
+
           const {
             data:
               bookingWithMeeting,
@@ -1159,6 +1219,9 @@ export async function POST(
 
                 zoom_start_url:
                   zoomMeeting.startUrl,
+
+                calendar_event_id:
+                  calendarEventId,
               })
               .eq(
                 "id",
@@ -1172,7 +1235,8 @@ export async function POST(
                 `
                   meeting_provider,
                   zoom_join_url,
-                  zoom_start_url
+                  zoom_start_url,
+                  calendar_event_id
                 `,
               )
               .maybeSingle();
@@ -1200,6 +1264,11 @@ export async function POST(
               .zoom_start_url =
               bookingWithMeeting
                 .zoom_start_url;
+
+            updatedBooking
+              .calendar_event_id =
+              bookingWithMeeting
+                .calendar_event_id;
           }
 
           console.log(
@@ -1213,6 +1282,10 @@ export async function POST(
 
               meetingProvider:
                 zoomMeeting.provider,
+
+              calendarEventId:
+                updatedBooking
+                  .calendar_event_id,
             },
           );
         } catch (

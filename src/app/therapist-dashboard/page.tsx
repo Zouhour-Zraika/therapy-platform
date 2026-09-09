@@ -4003,8 +4003,9 @@ export default function TherapistDashboard() {
                         : "Checking Google..."}
                   </p>
                 ) : googleConnection.connected ? (
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
                       G
                     </div>
 
@@ -4027,6 +4028,8 @@ export default function TherapistDashboard() {
                       </p>
                     </div>
 
+                    </div>
+
                     <button
                       type="button"
                       onClick={() =>
@@ -4035,7 +4038,7 @@ export default function TherapistDashboard() {
                       disabled={
                         disconnectingGoogle
                       }
-                      className="mt-4 shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                      className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                     >
                       {disconnectingGoogle
                         ? language === "ar"
@@ -4044,10 +4047,10 @@ export default function TherapistDashboard() {
                             ? "..."
                             : "..."
                         : language === "ar"
-                          ? "فصل"
+                          ? "فصل Google"
                           : language === "fr"
-                            ? "Déconnecter"
-                            : "Disconnect"}
+                            ? "Déconnecter Google"
+                            : "Disconnect Google"}
                     </button>
                   </div>
                 ) : (
@@ -4100,8 +4103,9 @@ export default function TherapistDashboard() {
                           : "Checking Zoom..."}
                     </p>
                   ) : zoomConnection.connected ? (
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] text-sm font-black text-[#2d5bff]">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] text-sm font-black text-[#2d5bff]">
                         Z
                       </div>
 
@@ -4124,6 +4128,8 @@ export default function TherapistDashboard() {
                         </p>
                       </div>
 
+                      </div>
+
                       <button
                         type="button"
                         onClick={() =>
@@ -4132,15 +4138,15 @@ export default function TherapistDashboard() {
                         disabled={
                           disconnectingZoom
                         }
-                        className="mt-4 shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                       >
                         {disconnectingZoom
                           ? "..."
                           : language === "ar"
-                            ? "فصل"
+                            ? "فصل Zoom"
                             : language === "fr"
-                              ? "Déconnecter"
-                              : "Disconnect"}
+                              ? "Déconnecter Zoom"
+                              : "Disconnect Zoom"}
                       </button>
                     </div>
                   ) : (
