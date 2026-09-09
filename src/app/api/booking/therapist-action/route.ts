@@ -321,14 +321,12 @@ async function sendEmail({
 
   const from =
     process.env.RESEND_FROM_EMAIL ||
-    process.env.EMAIL_FROM;
+    process.env.EMAIL_FROM ||
+    "AAN Psychotherapy <onboarding@resend.dev>";
 
-  if (
-    !resendApiKey ||
-    !from
-  ) {
+  if (!resendApiKey) {
     throw new Error(
-      "Email configuration is missing. Set RESEND_API_KEY and RESEND_FROM_EMAIL (or EMAIL_FROM).",
+      "Email configuration is missing. Set RESEND_API_KEY.",
     );
   }
 

@@ -3349,150 +3349,34 @@ export default function TherapistDashboard() {
         zoomConnection.connected;
 
       /*
-       * On relit toujours la réservation directement depuis Supabase
-       * avant d'ouvrir la séance. Cela évite d'utiliser une ancienne
-       * valeur locale juste après une bascule Zoom <-> Meet.
+       * Existing bookings keep their own provider.
+       * Changing the global preferred provider must not silently
+       * switch a session that was already created.
        */
-      try {
-        const {
-          data: freshBooking,
-          error: freshBookingError,
-        } = await supabase
-          .from("bookings")
-          .select(
-            "id, meeting_provider, meeting_url, zoom_start_url, zoom_join_url",
-          )
-          .eq("id", booking.id)
-          .single<{
-            id: string;
-            meeting_provider: string | null;
-            meeting_url: string | null;
-            zoom_start_url: string | null;
-            zoom_join_url: string | null;
-          }>();
-
-        if (freshBookingError) {
-          throw freshBookingError;
-        }
-
-        if (
-          freshBooking.meeting_provider ===
-            "google_meet" &&
-          googleAvailable &&
-          freshBooking.meeting_url
-        ) {
-          setBookings((current) =>
-            current.map((item) =>
-              item.id === booking.id
-                ? {
-                    ...item,
-                    meeting_provider:
-                      "google_meet",
-                    meeting_url:
-                      freshBooking.meeting_url,
-                    zoom_start_url:
-                      freshBooking.zoom_start_url,
-                    zoom_join_url:
-                      freshBooking.zoom_join_url,
-                  }
-                : item,
-            ),
-          );
-
-          window.open(
-            freshBooking.meeting_url,
-            "_blank",
-            "noopener,noreferrer",
-          );
-          return;
-        }
-
-        if (
-          freshBooking.meeting_provider ===
-            "zoom" &&
-          zoomAvailable &&
-          freshBooking.zoom_start_url
-        ) {
-          setBookings((current) =>
-            current.map((item) =>
-              item.id === booking.id
-                ? {
-                    ...item,
-                    meeting_provider:
-                      "zoom",
-                    meeting_url:
-                      freshBooking.meeting_url,
-                    zoom_start_url:
-                      freshBooking.zoom_start_url,
-                    zoom_join_url:
-                      freshBooking.zoom_join_url,
-                  }
-                : item,
-            ),
-          );
-
-          window.open(
-            freshBooking.zoom_start_url,
-            "_blank",
-            "noopener,noreferrer",
-          );
-          return;
-        }
-
-        if (
-          freshBooking.meeting_provider ===
-            "google_meet" &&
-          googleAvailable
-        ) {
-          await chooseSessionProvider(
-            {
-              ...booking,
-              meeting_provider:
-                freshBooking.meeting_provider,
-              meeting_url:
-                freshBooking.meeting_url,
-              zoom_start_url:
-                freshBooking.zoom_start_url,
-              zoom_join_url:
-                freshBooking.zoom_join_url,
-            },
-            "google",
-          );
-          return;
-        }
-
-        if (
-          freshBooking.meeting_provider ===
-            "zoom" &&
-          zoomAvailable
-        ) {
-          await chooseSessionProvider(
-            {
-              ...booking,
-              meeting_provider:
-                freshBooking.meeting_provider,
-              meeting_url:
-                freshBooking.meeting_url,
-              zoom_start_url:
-                freshBooking.zoom_start_url,
-              zoom_join_url:
-                freshBooking.zoom_join_url,
-            },
-            "zoom",
-          );
-          return;
-        }
-      } catch (freshBookingError) {
-        console.error(
-          "Fresh booking provider lookup failed:",
-          freshBookingError,
+      if (
+        booking.meeting_provider ===
+          "google_meet" &&
+        googleAvailable
+      ) {
+        await chooseSessionProvider(
+          booking,
+          "google",
         );
+        return;
       }
 
-      /*
-       * Fallback uniquement si aucune plateforme active n'a pu
-       * être déterminée depuis la réservation fraîche.
-       */
+      if (
+        booking.meeting_provider ===
+          "zoom" &&
+        zoomAvailable
+      ) {
+        await chooseSessionProvider(
+          booking,
+          "zoom",
+        );
+        return;
+      }
+
       if (
         preferredMeetingProvider ===
           "google_meet" &&
@@ -3653,12 +3537,26 @@ export default function TherapistDashboard() {
           return;
         }
 
-        alert(
+        if (
           action ===
-            "request_reschedule"
-            ? text.actionSuccessReschedule
-            : text.actionSuccessCancel,
-        );
+            "cancel_and_refund" &&
+          result.emailWarning
+        ) {
+          alert(
+            language === "ar"
+              ? "تم إلغاء الجلسة وطلب استرداد المبلغ، لكن تعذر إرسال البريد الإلكتروني للمريض."
+              : language === "fr"
+                ? "La séance a été annulée et le remboursement demandé, mais l’e-mail au patient n’a pas pu être envoyé."
+                : "The session was cancelled and the refund was requested, but the patient email could not be sent.",
+          );
+        } else {
+          alert(
+            action ===
+              "request_reschedule"
+              ? text.actionSuccessReschedule
+              : text.actionSuccessCancel,
+          );
+        }
 
         await getBookings();
         await getSlots();
