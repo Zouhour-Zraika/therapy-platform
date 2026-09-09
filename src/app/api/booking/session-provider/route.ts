@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createGoogleMeetForBooking } from "@/lib/googleCalendar";
+import {
+  createGoogleCalendarEventForBooking,
+  createGoogleMeetForBooking,
+  deleteGoogleCalendarEventForBooking,
+} from "@/lib/googleCalendar";
 
 export const runtime = "nodejs";
 
@@ -123,6 +127,93 @@ async function refreshZoomAccessToken(
   }
 
   return data;
+}
+
+
+async function notifyPatientOfPlatformChange({
+  request,
+  booking,
+  meetingProvider,
+  meetingUrl,
+}: {
+  request: NextRequest;
+  booking: BookingRow;
+  meetingProvider: "google_meet" | "zoom";
+  meetingUrl: string;
+}) {
+  if (!booking.patient_email) {
+    return;
+  }
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(
+      /\/$/,
+      "",
+    ) || request.nextUrl.origin;
+
+  try {
+    const response = await fetch(
+      `${siteUrl}/api/send-platform-change-email`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: booking.patient_email,
+          therapist:
+            booking.therapist_name || "Specialist",
+          meetingProvider,
+          meetingUrl,
+          scheduledStart:
+            booking.scheduled_start,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      console.error(
+        "Platform change patient email failed:",
+        response.status,
+        await response.text(),
+      );
+    }
+  } catch (error) {
+    // A notification failure must never block an emergency platform switch.
+    console.error(
+      "Platform change patient email request failed:",
+      error,
+    );
+  }
+}
+
+async function removePreviousCalendarEvent({
+  therapistId,
+  calendarEventId,
+}: {
+  therapistId: string;
+  calendarEventId: string | null;
+}) {
+  if (!calendarEventId) {
+    return;
+  }
+
+  try {
+    await deleteGoogleCalendarEventForBooking({
+      therapistId,
+      calendarEventId,
+    });
+  } catch (error) {
+    // The video switch must still work if Calendar is temporarily unavailable.
+    console.error(
+      "Previous Google Calendar event could not be removed:",
+      {
+        therapistId,
+        calendarEventId,
+        error,
+      },
+    );
+  }
 }
 
 export async function POST(
@@ -468,30 +559,18 @@ export async function POST(
     if (
       provider === "google"
     ) {
+      const providerChanged =
+        booking.meeting_provider !==
+        "google_meet";
+
+      /*
+       * Opening an already-active Google Meet must not create
+       * a new meeting or notify the patient again.
+       */
       if (
+        !providerChanged &&
         booking.meeting_url
       ) {
-        const {
-          error:
-            providerUpdateError,
-        } =
-          await supabaseAdmin
-            .from("bookings")
-            .update({
-              meeting_provider:
-                "google_meet",
-            })
-            .eq(
-              "id",
-              booking.id,
-            );
-
-        if (
-          providerUpdateError
-        ) {
-          throw providerUpdateError;
-        }
-
         return NextResponse.json({
           startUrl:
             booking.meeting_url,
@@ -505,6 +584,19 @@ export async function POST(
             booking.zoom_join_url,
           zoomStartUrl:
             booking.zoom_start_url,
+        });
+      }
+
+      /*
+       * When switching from Zoom -> Meet, create a fresh Meet.
+       * We first remove the previous Calendar event so the
+       * patient does not keep two conflicting session entries.
+       */
+      if (providerChanged) {
+        await removePreviousCalendarEvent({
+          therapistId: user.id,
+          calendarEventId:
+            booking.calendar_event_id,
         });
       }
 
@@ -554,6 +646,17 @@ export async function POST(
         throw googleUpdateError;
       }
 
+      if (providerChanged) {
+        await notifyPatientOfPlatformChange({
+          request,
+          booking,
+          meetingProvider:
+            "google_meet",
+          meetingUrl:
+            googleMeeting.meetingUrl,
+        });
+      }
+
       return NextResponse.json({
         startUrl:
           googleMeeting.meetingUrl,
@@ -567,6 +670,7 @@ export async function POST(
           booking.zoom_join_url,
         zoomStartUrl:
           booking.zoom_start_url,
+        providerChanged,
       });
     }
 
@@ -578,10 +682,92 @@ export async function POST(
      * Si une réunion Zoom existe déjà pour cette réservation,
      * on la réutilise.
      */
+    const zoomProviderChanged =
+      booking.meeting_provider !==
+      "zoom";
+
+    /*
+     * If Zoom is already the active provider, simply open it.
+     */
     if (
+      !zoomProviderChanged &&
       booking.zoom_start_url &&
       booking.zoom_join_url
     ) {
+      return NextResponse.json({
+        startUrl:
+          booking.zoom_start_url,
+        meetingUrl:
+          booking.meeting_url,
+        meetingProvider:
+          "zoom",
+        calendarEventId:
+          booking.calendar_event_id,
+        zoomJoinUrl:
+          booking.zoom_join_url,
+        zoomStartUrl:
+          booking.zoom_start_url,
+        providerChanged: false,
+      });
+    }
+
+    /*
+     * If a Zoom meeting already exists from an earlier state,
+     * reuse it for the emergency switch and rebuild Calendar.
+     */
+    if (
+      zoomProviderChanged &&
+      booking.zoom_start_url &&
+      booking.zoom_join_url
+    ) {
+      await removePreviousCalendarEvent({
+        therapistId:
+          user.id,
+        calendarEventId:
+          booking.calendar_event_id,
+      });
+
+      let newCalendarEventId:
+        string | null = null;
+
+      try {
+        const calendarEvent =
+          await createGoogleCalendarEventForBooking({
+            therapistId:
+              user.id,
+            summary:
+              `AAN Psychotherapy — ${
+                booking.therapist_name ||
+                "Session"
+              }`,
+            description:
+              [
+                `AAN booking ${booking.id}`,
+                "",
+                "Platform: Zoom",
+                `Join Zoom: ${booking.zoom_join_url}`,
+              ].join("\n"),
+            location:
+              booking.zoom_join_url,
+            start:
+              startDate.toISOString(),
+            end:
+              endDate.toISOString(),
+            timeZone:
+              "Asia/Beirut",
+            attendeeEmail:
+              booking.patient_email,
+          });
+
+        newCalendarEventId =
+          calendarEvent.calendarEventId;
+      } catch (calendarError) {
+        console.error(
+          "Google Calendar rebuild failed during Zoom switch:",
+          calendarError,
+        );
+      }
+
       const {
         error:
           providerUpdateError,
@@ -591,6 +777,8 @@ export async function POST(
           .update({
             meeting_provider:
               "zoom",
+            calendar_event_id:
+              newCalendarEventId,
           })
           .eq(
             "id",
@@ -603,6 +791,15 @@ export async function POST(
         throw providerUpdateError;
       }
 
+      await notifyPatientOfPlatformChange({
+        request,
+        booking,
+        meetingProvider:
+          "zoom",
+        meetingUrl:
+          booking.zoom_join_url,
+      });
+
       return NextResponse.json({
         startUrl:
           booking.zoom_start_url,
@@ -610,10 +807,13 @@ export async function POST(
           booking.meeting_url,
         meetingProvider:
           "zoom",
+        calendarEventId:
+          newCalendarEventId,
         zoomJoinUrl:
           booking.zoom_join_url,
         zoomStartUrl:
           booking.zoom_start_url,
+        providerChanged: true,
       });
     }
 
@@ -820,6 +1020,62 @@ export async function POST(
       );
     }
 
+    if (zoomProviderChanged) {
+      await removePreviousCalendarEvent({
+        therapistId:
+          user.id,
+        calendarEventId:
+          booking.calendar_event_id,
+      });
+    }
+
+    let newCalendarEventId:
+      string | null =
+      booking.calendar_event_id;
+
+    try {
+      const calendarEvent =
+        await createGoogleCalendarEventForBooking({
+          therapistId:
+            user.id,
+          summary:
+            `AAN Psychotherapy — ${
+              booking.therapist_name ||
+              "Session"
+            }`,
+          description:
+            [
+              `AAN booking ${booking.id}`,
+              "",
+              "Platform: Zoom",
+              `Join Zoom: ${zoomMeeting.join_url}`,
+            ].join("\n"),
+          location:
+            zoomMeeting.join_url,
+          start:
+            startDate.toISOString(),
+          end:
+            endDate.toISOString(),
+          timeZone:
+            "Asia/Beirut",
+          attendeeEmail:
+            booking.patient_email,
+        });
+
+      newCalendarEventId =
+        calendarEvent.calendarEventId;
+    } catch (calendarError) {
+      console.error(
+        "Google Calendar event creation failed for Zoom session:",
+        calendarError,
+      );
+
+      if (zoomProviderChanged) {
+        newCalendarEventId =
+          null;
+      }
+    }
+
     const {
       error:
         bookingUpdateError,
@@ -833,6 +1089,8 @@ export async function POST(
             zoomMeeting.start_url,
           meeting_provider:
             "zoom",
+          calendar_event_id:
+            newCalendarEventId,
         })
         .eq(
           "id",
@@ -845,6 +1103,17 @@ export async function POST(
       throw bookingUpdateError;
     }
 
+    if (zoomProviderChanged) {
+      await notifyPatientOfPlatformChange({
+        request,
+        booking,
+        meetingProvider:
+          "zoom",
+        meetingUrl:
+          zoomMeeting.join_url,
+      });
+    }
+
     return NextResponse.json({
       startUrl:
         zoomMeeting.start_url,
@@ -852,10 +1121,14 @@ export async function POST(
         booking.meeting_url,
       meetingProvider:
         "zoom",
+      calendarEventId:
+        newCalendarEventId,
       zoomJoinUrl:
         zoomMeeting.join_url,
       zoomStartUrl:
         zoomMeeting.start_url,
+      providerChanged:
+        zoomProviderChanged,
     });
   } catch (error) {
     console.error(

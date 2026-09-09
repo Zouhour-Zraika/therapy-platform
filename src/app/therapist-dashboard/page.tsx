@@ -3305,13 +3305,6 @@ export default function TherapistDashboard() {
             ),
         );
 
-        /*
-         * Recharge immédiatement depuis Supabase afin que le bouton
-         * "Démarrer la séance" utilise toujours la plateforme qui vient
-         * réellement d'être enregistrée côté serveur.
-         */
-        await getBookings();
-
         setSessionProviderBooking(
           null,
         );
@@ -3356,68 +3349,150 @@ export default function TherapistDashboard() {
         zoomConnection.connected;
 
       /*
-       * Pour une réservation déjà configurée, on ouvre directement
-       * le lien ACTIF enregistré pour cette séance.
-       *
-       * Cela évite de rappeler l'API de changement de plateforme
-       * au moment de simplement démarrer la séance.
+       * On relit toujours la réservation directement depuis Supabase
+       * avant d'ouvrir la séance. Cela évite d'utiliser une ancienne
+       * valeur locale juste après une bascule Zoom <-> Meet.
        */
-      if (
-        booking.meeting_provider ===
-          "google_meet" &&
-        googleAvailable &&
-        booking.meeting_url
-      ) {
-        window.open(
-          booking.meeting_url,
-          "_blank",
-          "noopener,noreferrer",
-        );
-        return;
-      }
+      try {
+        const {
+          data: freshBooking,
+          error: freshBookingError,
+        } = await supabase
+          .from("bookings")
+          .select(
+            "id, meeting_provider, meeting_url, zoom_start_url, zoom_join_url",
+          )
+          .eq("id", booking.id)
+          .single<{
+            id: string;
+            meeting_provider: string | null;
+            meeting_url: string | null;
+            zoom_start_url: string | null;
+            zoom_join_url: string | null;
+          }>();
 
-      if (
-        booking.meeting_provider ===
-          "zoom" &&
-        zoomAvailable &&
-        booking.zoom_start_url
-      ) {
-        window.open(
-          booking.zoom_start_url,
-          "_blank",
-          "noopener,noreferrer",
+        if (freshBookingError) {
+          throw freshBookingError;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "google_meet" &&
+          googleAvailable &&
+          freshBooking.meeting_url
+        ) {
+          setBookings((current) =>
+            current.map((item) =>
+              item.id === booking.id
+                ? {
+                    ...item,
+                    meeting_provider:
+                      "google_meet",
+                    meeting_url:
+                      freshBooking.meeting_url,
+                    zoom_start_url:
+                      freshBooking.zoom_start_url,
+                    zoom_join_url:
+                      freshBooking.zoom_join_url,
+                  }
+                : item,
+            ),
+          );
+
+          window.open(
+            freshBooking.meeting_url,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          return;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "zoom" &&
+          zoomAvailable &&
+          freshBooking.zoom_start_url
+        ) {
+          setBookings((current) =>
+            current.map((item) =>
+              item.id === booking.id
+                ? {
+                    ...item,
+                    meeting_provider:
+                      "zoom",
+                    meeting_url:
+                      freshBooking.meeting_url,
+                    zoom_start_url:
+                      freshBooking.zoom_start_url,
+                    zoom_join_url:
+                      freshBooking.zoom_join_url,
+                  }
+                : item,
+            ),
+          );
+
+          window.open(
+            freshBooking.zoom_start_url,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          return;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "google_meet" &&
+          googleAvailable
+        ) {
+          await chooseSessionProvider(
+            {
+              ...booking,
+              meeting_provider:
+                freshBooking.meeting_provider,
+              meeting_url:
+                freshBooking.meeting_url,
+              zoom_start_url:
+                freshBooking.zoom_start_url,
+              zoom_join_url:
+                freshBooking.zoom_join_url,
+            },
+            "google",
+          );
+          return;
+        }
+
+        if (
+          freshBooking.meeting_provider ===
+            "zoom" &&
+          zoomAvailable
+        ) {
+          await chooseSessionProvider(
+            {
+              ...booking,
+              meeting_provider:
+                freshBooking.meeting_provider,
+              meeting_url:
+                freshBooking.meeting_url,
+              zoom_start_url:
+                freshBooking.zoom_start_url,
+              zoom_join_url:
+                freshBooking.zoom_join_url,
+            },
+            "zoom",
+          );
+          return;
+        }
+      } catch (freshBookingError) {
+        console.error(
+          "Fresh booking provider lookup failed:",
+          freshBookingError,
         );
-        return;
       }
 
       /*
-       * Fallback uniquement si aucun lien actif n'est encore disponible.
-       * Dans ce cas l'API prépare la plateforme appropriée.
+       * Fallback uniquement si aucune plateforme active n'a pu
+       * être déterminée depuis la réservation fraîche.
        */
-      if (
-        booking.meeting_provider ===
-          "google_meet" &&
-        googleAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "google",
-        );
-        return;
-      }
-
-      if (
-        booking.meeting_provider ===
-          "zoom" &&
-        zoomAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "zoom",
-        );
-        return;
-      }
-
       if (
         preferredMeetingProvider ===
           "google_meet" &&
