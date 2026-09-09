@@ -232,3 +232,43 @@ export async function createGoogleCalendarEventForBooking({
     calendarEventUrl: event.htmlLink || null,
   };
 }
+
+
+export async function deleteGoogleCalendarEventForBooking({
+  therapistId,
+  calendarEventId,
+}: {
+  therapistId: string;
+  calendarEventId: string;
+}) {
+  const accessToken = await getGoogleAccessToken(therapistId);
+
+  const response = await fetch(
+    `${GOOGLE_CALENDAR_EVENTS_URL}/${encodeURIComponent(
+      calendarEventId,
+    )}?sendUpdates=all`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  // 404/410 mean the old event is already gone; this is safe/idempotent.
+  if (
+    !response.ok &&
+    response.status !== 404 &&
+    response.status !== 410
+  ) {
+    const body = await response.text();
+
+    console.error("Google Calendar event deletion failed:", {
+      status: response.status,
+      body,
+      calendarEventId,
+    });
+
+    throw new Error("Unable to remove the previous Google Calendar event.");
+  }
+}

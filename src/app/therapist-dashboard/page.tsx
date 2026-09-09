@@ -3348,6 +3348,35 @@ export default function TherapistDashboard() {
       const zoomAvailable =
         zoomConnection.connected;
 
+      /*
+       * Existing bookings keep their own provider.
+       * Changing the global preferred provider must not silently
+       * switch a session that was already created.
+       */
+      if (
+        booking.meeting_provider ===
+          "google_meet" &&
+        googleAvailable
+      ) {
+        await chooseSessionProvider(
+          booking,
+          "google",
+        );
+        return;
+      }
+
+      if (
+        booking.meeting_provider ===
+          "zoom" &&
+        zoomAvailable
+      ) {
+        await chooseSessionProvider(
+          booking,
+          "zoom",
+        );
+        return;
+      }
+
       if (
         preferredMeetingProvider ===
           "google_meet" &&
@@ -3860,7 +3889,7 @@ export default function TherapistDashboard() {
           className="min-h-screen bg-aan-background"
         >
           <div className="mx-auto flex max-w-[1500px]">
-            <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-64 shrink-0 border-r border-aan-border bg-white/80 px-5 py-8 backdrop-blur lg:flex lg:flex-col">
+            <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-72 shrink-0 overflow-y-auto border-r border-aan-border bg-white/80 px-5 py-7 backdrop-blur lg:flex lg:flex-col">
               <div className="space-y-2">
                 <button
                   type="button"
@@ -3992,108 +4021,137 @@ export default function TherapistDashboard() {
                 </button>
               </div>
 
-              <div className="mt-auto space-y-2">
-                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
-                {googleStatusLoading ? (
-                  <p className="text-sm font-semibold text-aan-secondary">
-                    {language === "ar"
-                      ? "جارٍ التحقق من Google..."
-                      : language === "fr"
-                        ? "Vérification Google..."
-                        : "Checking Google..."}
-                  </p>
-                ) : googleConnection.connected ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
-                      G
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-emerald-700">
-                        {language === "ar"
-                          ? "Google متصل ✓"
-                          : language === "fr"
-                            ? "Google connecté ✓"
-                            : "Google connected ✓"}
-                      </p>
-
-                      <p
-                        className="truncate text-[11px] text-aan-secondary"
-                        title={
-                          googleConnection.email || ""
-                        }
-                      >
-                        {googleConnection.email}
-                      </p>
-                    </div>
-
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void disconnectGoogleCalendar()
-                      }
-                      disabled={
-                        disconnectingGoogle
-                      }
-                      className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
-                    >
-                      {disconnectingGoogle
-                        ? language === "ar"
-                          ? "..."
-                          : language === "fr"
-                            ? "..."
-                            : "..."
-                        : language === "ar"
-                          ? "فصل Google"
-                          : language === "fr"
-                            ? "Déconnecter Google"
-                            : "Disconnect Google"}
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <p className="font-bold text-aan-navy">
-                      Google Calendar
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-aan-secondary">
+              <div className="mt-6 space-y-3 pb-5">
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                  {googleStatusLoading ? (
+                    <p className="text-sm font-semibold text-aan-secondary">
                       {language === "ar"
-                        ? "اربط حسابك لإنشاء روابط Meet تلقائياً."
+                        ? "جارٍ التحقق من Google..."
                         : language === "fr"
-                          ? "Connectez votre compte pour générer les liens Meet automatiquement."
-                          : "Connect your account to generate Meet links automatically."}
+                          ? "Vérification Google..."
+                          : "Checking Google..."}
                     </p>
+                  ) : googleConnection.connected ? (
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
+                          G
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void connectGoogleCalendar()
-                      }
-                      disabled={
-                        connectingGoogle
-                      }
-                      className="aan-button mt-4 w-full py-2.5 text-sm disabled:opacity-60"
-                    >
-                      {connectingGoogle
-                        ? language === "ar"
-                          ? "جارٍ الاتصال..."
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-emerald-700">
+                            {language === "ar"
+                              ? "Google متصل ✓"
+                              : language === "fr"
+                                ? "Google connecté ✓"
+                                : "Google connected ✓"}
+                          </p>
+
+                          <p
+                            className="truncate text-[11px] text-aan-secondary"
+                            title={googleConnection.email || ""}
+                          >
+                            {googleConnection.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                        <p className="text-xs font-bold text-emerald-800">
+                          {language === "ar"
+                            ? "Google Calendar مفعّل ✓"
+                            : language === "fr"
+                              ? "Google Calendar activé ✓"
+                              : "Google Calendar enabled ✓"}
+                        </p>
+
+                        <p className="mt-1 text-[11px] leading-4 text-aan-secondary">
+                          {language === "ar"
+                            ? "تُضاف جلساتك الجديدة تلقائياً إلى تقويم Google، سواء كنت تستخدم Google Meet أو Zoom."
+                            : language === "fr"
+                              ? "Vos nouvelles séances sont ajoutées automatiquement à votre Google Calendar, avec Google Meet ou Zoom."
+                              : "Your new sessions are added automatically to Google Calendar, whether you use Google Meet or Zoom."}
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(
+                              "https://calendar.google.com/",
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                          className="mt-2 text-[11px] font-bold text-aan-navy underline underline-offset-2 transition hover:text-aan-gold"
+                        >
+                          {language === "ar"
+                            ? "فتح Google Calendar ↗"
+                            : language === "fr"
+                              ? "Ouvrir Google Calendar ↗"
+                              : "Open Google Calendar ↗"}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void disconnectGoogleCalendar()
+                        }
+                        disabled={disconnectingGoogle}
+                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-xs font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                      >
+                        {disconnectingGoogle
+                          ? language === "ar"
+                            ? "جارٍ الفصل..."
+                            : language === "fr"
+                              ? "Déconnexion..."
+                              : "Disconnecting..."
+                          : language === "ar"
+                            ? "فصل Google"
+                            : language === "fr"
+                              ? "Déconnecter Google"
+                              : "Disconnect Google"}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="font-bold text-aan-navy">
+                        Google Calendar
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                        {language === "ar"
+                          ? "اربط حساب Google لإضافة جلساتك تلقائياً إلى التقويم وإنشاء روابط Google Meet عند اختياره."
                           : language === "fr"
-                            ? "Connexion..."
-                            : "Connecting..."
-                        : language === "ar"
-                          ? "ربط Google"
-                          : language === "fr"
-                            ? "Connecter Google"
-                            : "Connect Google"}
-                    </button>
-                  </>
-                )}
+                            ? "Connectez Google pour ajouter automatiquement vos séances au calendrier et créer les liens Google Meet lorsque cette plateforme est choisie."
+                            : "Connect Google to add sessions automatically to Calendar and create Google Meet links when that platform is selected."}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void connectGoogleCalendar()
+                        }
+                        disabled={connectingGoogle}
+                        className="aan-button mt-4 w-full py-2.5 text-sm disabled:opacity-60"
+                      >
+                        {connectingGoogle
+                          ? language === "ar"
+                            ? "جارٍ الاتصال..."
+                            : language === "fr"
+                              ? "Connexion..."
+                              : "Connecting..."
+                          : language === "ar"
+                            ? "ربط Google"
+                            : language === "fr"
+                              ? "Connecter Google"
+                              : "Connect Google"}
+                      </button>
+                    </>
+                  )}
                 </div>
 
-                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
                   {zoomStatusLoading ? (
                     <p className="text-sm font-semibold text-aan-secondary">
                       {language === "ar"
@@ -4104,8 +4162,8 @@ export default function TherapistDashboard() {
                     </p>
                   ) : zoomConnection.connected ? (
                     <div className="space-y-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] text-sm font-black text-[#2d5bff]">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] text-sm font-black text-[#2d5bff]">
                         Z
                       </div>
 
@@ -4138,7 +4196,7 @@ export default function TherapistDashboard() {
                         disabled={
                           disconnectingZoom
                         }
-                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-xs font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                       >
                         {disconnectingZoom
                           ? "..."
@@ -4189,7 +4247,7 @@ export default function TherapistDashboard() {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-bold text-aan-navy">
                       {language === "ar"
@@ -4210,10 +4268,10 @@ export default function TherapistDashboard() {
 
                   <p className="mt-1 text-[11px] leading-4 text-aan-secondary">
                     {language === "ar"
-                      ? "تُستخدم تلقائياً بعد الدفع."
+                      ? "تُستخدم تلقائياً لإنشاء رابط الجلسة بعد الدفع. يمكنك تغييرها لاحقاً إذا لزم الأمر."
                       : language === "fr"
-                        ? "Utilisée automatiquement après paiement."
-                        : "Used automatically after payment."}
+                        ? "Utilisée automatiquement pour créer le lien de séance après paiement. Vous pourrez changer de plateforme ensuite si nécessaire."
+                        : "Used automatically to create the session link after payment. You can switch platform later if needed."}
                   </p>
 
                   <div className="mt-2 grid grid-cols-2 gap-2">
@@ -4283,7 +4341,7 @@ export default function TherapistDashboard() {
 
             <div
               id="dashboard"
-              className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-10"
+              className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-8 xl:px-10"
             >
               <header className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                 <div>
