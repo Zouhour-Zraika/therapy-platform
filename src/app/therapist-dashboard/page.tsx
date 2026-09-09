@@ -3992,8 +3992,8 @@ export default function TherapistDashboard() {
                 </button>
               </div>
 
-              <div className="mt-auto space-y-3">
-                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+              <div className="mt-auto space-y-2">
+                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
                 {googleStatusLoading ? (
                   <p className="text-sm font-semibold text-aan-secondary">
                     {language === "ar"
@@ -4003,25 +4003,28 @@ export default function TherapistDashboard() {
                         : "Checking Google..."}
                   </p>
                 ) : googleConnection.connected ? (
-                  <>
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] font-black text-aan-gold">
-                        G
-                      </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
+                      G
+                    </div>
 
-                      <div className="min-w-0">
-                        <p className="font-bold text-emerald-700">
-                          {language === "ar"
-                            ? "Google متصل ✓"
-                            : language === "fr"
-                              ? "Google connecté ✓"
-                              : "Google connected ✓"}
-                        </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-emerald-700">
+                        {language === "ar"
+                          ? "Google متصل ✓"
+                          : language === "fr"
+                            ? "Google connecté ✓"
+                            : "Google connected ✓"}
+                      </p>
 
-                        <p className="mt-1 break-all text-xs text-aan-secondary">
-                          {googleConnection.email}
-                        </p>
-                      </div>
+                      <p
+                        className="truncate text-[11px] text-aan-secondary"
+                        title={
+                          googleConnection.email || ""
+                        }
+                      >
+                        {googleConnection.email}
+                      </p>
                     </div>
 
                     <button
@@ -4032,21 +4035,21 @@ export default function TherapistDashboard() {
                       disabled={
                         disconnectingGoogle
                       }
-                      className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                      className="shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                     >
                       {disconnectingGoogle
                         ? language === "ar"
-                          ? "جارٍ الفصل..."
+                          ? "..."
                           : language === "fr"
-                            ? "Déconnexion..."
-                            : "Disconnecting..."
+                            ? "..."
+                            : "..."
                         : language === "ar"
-                          ? "فصل Google"
+                          ? "فصل"
                           : language === "fr"
-                            ? "Déconnecter Google"
-                            : "Disconnect Google"}
+                            ? "Déconnecter"
+                            : "Disconnect"}
                     </button>
-                  </>
+                  </div>
                 ) : (
                   <>
                     <p className="font-bold text-aan-navy">
@@ -4087,7 +4090,7 @@ export default function TherapistDashboard() {
                 )}
                 </div>
 
-                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
                   {zoomStatusLoading ? (
                     <p className="text-sm font-semibold text-aan-secondary">
                       {language === "ar"
@@ -4097,25 +4100,28 @@ export default function TherapistDashboard() {
                           : "Checking Zoom..."}
                     </p>
                   ) : zoomConnection.connected ? (
-                    <>
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] font-black text-[#2d5bff]">
-                          Z
-                        </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eef3ff] text-sm font-black text-[#2d5bff]">
+                        Z
+                      </div>
 
-                        <div className="min-w-0">
-                          <p className="font-bold text-emerald-700">
-                            {language === "ar"
-                              ? "Zoom متصل ✓"
-                              : language === "fr"
-                                ? "Zoom connecté ✓"
-                                : "Zoom connected ✓"}
-                          </p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-emerald-700">
+                          {language === "ar"
+                            ? "Zoom متصل ✓"
+                            : language === "fr"
+                              ? "Zoom connecté ✓"
+                              : "Zoom connected ✓"}
+                        </p>
 
-                          <p className="mt-1 break-all text-xs text-aan-secondary">
-                            {zoomConnection.email}
-                          </p>
-                        </div>
+                        <p
+                          className="truncate text-[11px] text-aan-secondary"
+                          title={
+                            zoomConnection.email || ""
+                          }
+                        >
+                          {zoomConnection.email}
+                        </p>
                       </div>
 
                       <button
@@ -4126,21 +4132,17 @@ export default function TherapistDashboard() {
                         disabled={
                           disconnectingZoom
                         }
-                        className="mt-4 w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-sm font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                        className="shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                       >
                         {disconnectingZoom
-                          ? language === "ar"
-                            ? "جارٍ الفصل..."
-                            : language === "fr"
-                              ? "Déconnexion..."
-                              : "Disconnecting..."
+                          ? "..."
                           : language === "ar"
-                            ? "فصل Zoom"
+                            ? "فصل"
                             : language === "fr"
-                              ? "Déconnecter Zoom"
-                              : "Disconnect Zoom"}
+                              ? "Déconnecter"
+                              : "Disconnect"}
                       </button>
-                    </>
+                    </div>
                   ) : (
                     <>
                       <p className="font-bold text-aan-navy">
@@ -4181,24 +4183,34 @@ export default function TherapistDashboard() {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
-                  <p className="font-bold text-aan-navy">
+                <div className="rounded-2xl border border-aan-border bg-white p-3 shadow-[var(--aan-shadow-sm)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-aan-navy">
+                      {language === "ar"
+                        ? "منصة الجلسات"
+                        : language === "fr"
+                          ? "Plateforme principale"
+                          : "Primary platform"}
+                    </p>
+
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-aan-secondary">
+                      {language === "ar"
+                        ? "افتراضي"
+                        : language === "fr"
+                          ? "Par défaut"
+                          : "Default"}
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-[11px] leading-4 text-aan-secondary">
                     {language === "ar"
-                      ? "منصة الجلسات الرئيسية"
+                      ? "تُستخدم تلقائياً بعد الدفع."
                       : language === "fr"
-                        ? "Plateforme principale"
-                        : "Primary session platform"}
+                        ? "Utilisée automatiquement après paiement."
+                        : "Used automatically after payment."}
                   </p>
 
-                  <p className="mt-1 text-xs leading-5 text-aan-secondary">
-                    {language === "ar"
-                      ? "سيتم استخدام هذه المنصة تلقائياً للجلسات الجديدة بعد الدفع. تبقى المنصة الأخرى متاحة كحل احتياطي."
-                      : language === "fr"
-                        ? "Cette plateforme sera utilisée automatiquement pour les nouvelles séances après paiement. L’autre reste disponible comme solution de secours."
-                        : "This platform will be used automatically for new sessions after payment. The other remains available as a backup."}
-                  </p>
-
-                  <div className="mt-4 grid gap-2">
+                  <div className="mt-2 grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() =>
@@ -4210,7 +4222,7 @@ export default function TherapistDashboard() {
                         savingPreferredMeetingProvider ||
                         !googleConnection.connected
                       }
-                      className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`rounded-xl border px-2 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         preferredMeetingProvider ===
                         "google_meet"
                           ? "border-aan-gold bg-[#fbf8f3] text-aan-navy"
@@ -4235,7 +4247,7 @@ export default function TherapistDashboard() {
                         savingPreferredMeetingProvider ||
                         !zoomConnection.connected
                       }
-                      className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`rounded-xl border px-2 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         preferredMeetingProvider ===
                         "zoom"
                           ? "border-[#7893db] bg-[#eef3ff] text-aan-navy"
