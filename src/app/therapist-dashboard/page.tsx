@@ -85,6 +85,11 @@ type TherapistProfile = {
   languages_ar: string | null;
 
   photo_url: string | null;
+
+  preferred_meeting_provider:
+    | "google_meet"
+    | "zoom"
+    | null;
 };
 
 type TherapistService = {
@@ -302,6 +307,18 @@ export default function TherapistDashboard() {
   const [
     disconnectingZoom,
     setDisconnectingZoom,
+  ] = useState(false);
+
+  const [
+    preferredMeetingProvider,
+    setPreferredMeetingProvider,
+  ] = useState<
+    "google_meet" | "zoom"
+  >("google_meet");
+
+  const [
+    savingPreferredMeetingProvider,
+    setSavingPreferredMeetingProvider,
   ] = useState(false);
 
   const [
@@ -1418,7 +1435,8 @@ export default function TherapistDashboard() {
             languages_ar,
 
             price,
-            photo_url
+            photo_url,
+            preferred_meeting_provider
           `,
         )
         .eq("id", user.id)
@@ -1582,6 +1600,13 @@ export default function TherapistDashboard() {
 
       setPhotoUrl(
         data.photo_url || "",
+      );
+
+      setPreferredMeetingProvider(
+        data.preferred_meeting_provider ===
+          "zoom"
+          ? "zoom"
+          : "google_meet",
       );
     };
       const handlePhotoChange = (
@@ -3088,6 +3113,111 @@ export default function TherapistDashboard() {
     };
 
 
+  const savePreferredMeetingProvider =
+    async (
+      provider:
+        | "google_meet"
+        | "zoom",
+    ) => {
+      if (
+        provider === "google_meet" &&
+        !googleConnection.connected
+      ) {
+        alert(
+          language === "ar"
+            ? "يرجى ربط Google أولاً."
+            : language === "fr"
+              ? "Veuillez d’abord connecter Google."
+              : "Please connect Google first.",
+        );
+        return;
+      }
+
+      if (
+        provider === "zoom" &&
+        !zoomConnection.connected
+      ) {
+        alert(
+          language === "ar"
+            ? "يرجى ربط Zoom أولاً."
+            : language === "fr"
+              ? "Veuillez d’abord connecter Zoom."
+              : "Please connect Zoom first.",
+        );
+        return;
+      }
+
+      setSavingPreferredMeetingProvider(
+        true,
+      );
+
+      try {
+        const user =
+          await getCurrentUser();
+
+        if (!user) {
+          alert(
+            text.loginRequired,
+          );
+          return;
+        }
+
+        const {
+          error,
+        } =
+          await supabase
+            .from("therapists")
+            .update({
+              preferred_meeting_provider:
+                provider,
+            })
+            .eq(
+              "id",
+              user.id,
+            );
+
+        if (error) {
+          throw error;
+        }
+
+        setPreferredMeetingProvider(
+          provider,
+        );
+
+        alert(
+          language === "ar"
+            ? provider === "google_meet"
+              ? "تم تعيين Google Meet كمنصة الجلسات الرئيسية."
+              : "تم تعيين Zoom كمنصة الجلسات الرئيسية."
+            : language === "fr"
+              ? provider === "google_meet"
+                ? "Google Meet est maintenant votre plateforme principale."
+                : "Zoom est maintenant votre plateforme principale."
+              : provider === "google_meet"
+                ? "Google Meet is now your primary session platform."
+                : "Zoom is now your primary session platform.",
+        );
+      } catch (error) {
+        console.error(
+          "Preferred meeting provider save error:",
+          error,
+        );
+
+        alert(
+          language === "ar"
+            ? "تعذر حفظ منصة الجلسات الرئيسية."
+            : language === "fr"
+              ? "Impossible d’enregistrer la plateforme principale."
+              : "Unable to save the primary session platform.",
+        );
+      } finally {
+        setSavingPreferredMeetingProvider(
+          false,
+        );
+      }
+    };
+
+
   const chooseSessionProvider =
     async (
       booking: Booking,
@@ -3219,11 +3349,25 @@ export default function TherapistDashboard() {
         zoomConnection.connected;
 
       if (
-        googleAvailable &&
+        preferredMeetingProvider ===
+          "google_meet" &&
+        googleAvailable
+      ) {
+        await chooseSessionProvider(
+          booking,
+          "google",
+        );
+        return;
+      }
+
+      if (
+        preferredMeetingProvider ===
+          "zoom" &&
         zoomAvailable
       ) {
-        setSessionProviderBooking(
+        await chooseSessionProvider(
           booking,
+          "zoom",
         );
         return;
       }
@@ -3250,6 +3394,30 @@ export default function TherapistDashboard() {
           : language === "fr"
             ? "Veuillez d’abord connecter Google ou Zoom."
             : "Please connect Google or Zoom first.",
+      );
+    };
+
+
+  const handleChangeSessionPlatform =
+    (
+      booking: Booking,
+    ) => {
+      if (
+        googleConnection.connected &&
+        zoomConnection.connected
+      ) {
+        setSessionProviderBooking(
+          booking,
+        );
+        return;
+      }
+
+      alert(
+        language === "ar"
+          ? "يجب ربط Google وZoom لاستخدام منصة بديلة."
+          : language === "fr"
+            ? "Connectez Google et Zoom pour disposer d’une plateforme de secours."
+            : "Connect both Google and Zoom to use a backup platform.",
       );
     };
 
@@ -4012,6 +4180,86 @@ export default function TherapistDashboard() {
                     </>
                   )}
                 </div>
+
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                  <p className="font-bold text-aan-navy">
+                    {language === "ar"
+                      ? "منصة الجلسات الرئيسية"
+                      : language === "fr"
+                        ? "Plateforme principale"
+                        : "Primary session platform"}
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                    {language === "ar"
+                      ? "سيتم استخدام هذه المنصة تلقائياً للجلسات الجديدة بعد الدفع. تبقى المنصة الأخرى متاحة كحل احتياطي."
+                      : language === "fr"
+                        ? "Cette plateforme sera utilisée automatiquement pour les nouvelles séances après paiement. L’autre reste disponible comme solution de secours."
+                        : "This platform will be used automatically for new sessions after payment. The other remains available as a backup."}
+                  </p>
+
+                  <div className="mt-4 grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void savePreferredMeetingProvider(
+                          "google_meet",
+                        )
+                      }
+                      disabled={
+                        savingPreferredMeetingProvider ||
+                        !googleConnection.connected
+                      }
+                      className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        preferredMeetingProvider ===
+                        "google_meet"
+                          ? "border-aan-gold bg-[#fbf8f3] text-aan-navy"
+                          : "border-aan-border bg-white text-aan-secondary hover:text-aan-navy"
+                      }`}
+                    >
+                      Google Meet
+                      {preferredMeetingProvider ===
+                      "google_meet"
+                        ? " ✓"
+                        : ""}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void savePreferredMeetingProvider(
+                          "zoom",
+                        )
+                      }
+                      disabled={
+                        savingPreferredMeetingProvider ||
+                        !zoomConnection.connected
+                      }
+                      className={`rounded-xl border px-3 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        preferredMeetingProvider ===
+                        "zoom"
+                          ? "border-[#7893db] bg-[#eef3ff] text-aan-navy"
+                          : "border-aan-border bg-white text-aan-secondary hover:text-aan-navy"
+                      }`}
+                    >
+                      Zoom
+                      {preferredMeetingProvider ===
+                      "zoom"
+                        ? " ✓"
+                        : ""}
+                    </button>
+                  </div>
+
+                  {savingPreferredMeetingProvider ? (
+                    <p className="mt-3 text-xs text-aan-secondary">
+                      {language === "ar"
+                        ? "جارٍ الحفظ..."
+                        : language === "fr"
+                          ? "Enregistrement..."
+                          : "Saving..."}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </aside>
 
@@ -4697,21 +4945,46 @@ export default function TherapistDashboard() {
 
                               <div className="mt-4 flex flex-wrap gap-2">
                                 {canStartSession ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void handleStartSession(
-                                        booking,
-                                      )
-                                    }
-                                    disabled={
-                                      sessionProviderLoading !==
-                                      null
-                                    }
-                                    className="aan-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {text.startSession}
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void handleStartSession(
+                                          booking,
+                                        )
+                                      }
+                                      disabled={
+                                        sessionProviderLoading !==
+                                        null
+                                      }
+                                      className="aan-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {text.startSession}
+                                    </button>
+
+                                    {googleConnection.connected &&
+                                    zoomConnection.connected ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleChangeSessionPlatform(
+                                            booking,
+                                          )
+                                        }
+                                        disabled={
+                                          sessionProviderLoading !==
+                                          null
+                                        }
+                                        className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-secondary transition hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {language === "ar"
+                                          ? "تغيير المنصة"
+                                          : language === "fr"
+                                            ? "Changer de plateforme"
+                                            : "Change platform"}
+                                      </button>
+                                    ) : null}
+                                  </>
                                 ) : (
                                   <span className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
                                     {text.meetingNotReady}
