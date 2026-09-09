@@ -4035,7 +4035,7 @@ export default function TherapistDashboard() {
                       disabled={
                         disconnectingGoogle
                       }
-                      className="shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                      className="mt-4 shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                     >
                       {disconnectingGoogle
                         ? language === "ar"
@@ -4132,7 +4132,7 @@ export default function TherapistDashboard() {
                         disabled={
                           disconnectingZoom
                         }
-                        className="shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                        className="mt-4 shrink-0 rounded-lg border border-aan-border bg-[#fbf8f3] px-2.5 py-1.5 text-[11px] font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                       >
                         {disconnectingZoom
                           ? "..."

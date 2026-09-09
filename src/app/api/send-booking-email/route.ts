@@ -10,6 +10,8 @@ type BookingEmailRequest = {
   bookingId?: string;
   paymentProvider?: string;
   transactionId?: string;
+  meetingProvider?: "google_meet" | "zoom";
+  meetingUrl?: string;
 };
 
 export async function POST(request: Request) {
@@ -38,6 +40,16 @@ export async function POST(request: Request) {
     const price = Number(body.price || 0);
     const language = body.language === "ar" ? "ar" : "en";
 
+    const meetingProvider =
+      body.meetingProvider === "zoom"
+        ? "zoom"
+        : body.meetingProvider === "google_meet"
+          ? "google_meet"
+          : undefined;
+
+    const meetingUrl =
+      body.meetingUrl?.trim() || "";
+
     if (!email) {
       return NextResponse.json(
         {
@@ -59,6 +71,155 @@ export async function POST(request: Request) {
     const formattedPrice = Number.isFinite(price)
       ? price.toFixed(2)
       : "0.00";
+
+    const providerLabel =
+      meetingProvider === "zoom"
+        ? "Zoom"
+        : meetingProvider === "google_meet"
+          ? "Google Meet"
+          : "";
+
+    const meetingButtonArabic =
+      meetingUrl && providerLabel
+        ? `
+          <tr>
+            <td style="padding: 0 36px 32px;">
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                border="0"
+              >
+                <tr>
+                  <td align="center">
+                    <p
+                      style="
+                        margin: 0 0 14px;
+                        color: #5f6f82;
+                        font-size: 15px;
+                        line-height: 1.8;
+                      "
+                    >
+                      منصة الجلسة:
+                      <strong style="color: #24364b;">
+                        ${providerLabel}
+                      </strong>
+                    </p>
+
+                    <a
+                      href="${meetingUrl}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style="
+                        display: inline-block;
+                        background-color: #61779d;
+                        color: #ffffff;
+                        text-decoration: none;
+                        font-size: 16px;
+                        font-weight: 700;
+                        padding: 14px 24px;
+                        border-radius: 12px;
+                      "
+                    >
+                      الانضمام إلى الجلسة عبر ${providerLabel}
+                    </a>
+
+                    <p
+                      style="
+                        margin: 14px 0 0;
+                        color: #7d8794;
+                        font-size: 12px;
+                        line-height: 1.7;
+                        word-break: break-all;
+                      "
+                    >
+                      إذا لم يعمل الزر، استخدم هذا الرابط:<br />
+                      <a
+                        href="${meetingUrl}"
+                        style="color: #61779d;"
+                      >
+                        ${meetingUrl}
+                      </a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        `
+        : "";
+
+    const meetingButtonEnglish =
+      meetingUrl && providerLabel
+        ? `
+          <tr>
+            <td style="padding: 0 36px 32px;">
+              <table
+                role="presentation"
+                width="100%"
+                cellspacing="0"
+                cellpadding="0"
+                border="0"
+              >
+                <tr>
+                  <td align="center">
+                    <p
+                      style="
+                        margin: 0 0 14px;
+                        color: #5f6f82;
+                        font-size: 15px;
+                        line-height: 1.8;
+                      "
+                    >
+                      Session platform:
+                      <strong style="color: #24364b;">
+                        ${providerLabel}
+                      </strong>
+                    </p>
+
+                    <a
+                      href="${meetingUrl}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style="
+                        display: inline-block;
+                        background-color: #61779d;
+                        color: #ffffff;
+                        text-decoration: none;
+                        font-size: 16px;
+                        font-weight: 700;
+                        padding: 14px 24px;
+                        border-radius: 12px;
+                      "
+                    >
+                      Join session with ${providerLabel}
+                    </a>
+
+                    <p
+                      style="
+                        margin: 14px 0 0;
+                        color: #7d8794;
+                        font-size: 12px;
+                        line-height: 1.7;
+                        word-break: break-all;
+                      "
+                    >
+                      If the button does not work, use this link:<br />
+                      <a
+                        href="${meetingUrl}"
+                        style="color: #61779d;"
+                      >
+                        ${meetingUrl}
+                      </a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        `
+        : "";
 
     const html = isArabic
       ? `
@@ -202,6 +363,8 @@ export async function POST(request: Request) {
                         </table>
                       </td>
                     </tr>
+
+                    ${meetingButtonArabic}
 
                     <tr>
                       <td
@@ -369,6 +532,8 @@ export async function POST(request: Request) {
                         </table>
                       </td>
                     </tr>
+
+                    ${meetingButtonEnglish}
 
                     <tr>
                       <td
