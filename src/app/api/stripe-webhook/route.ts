@@ -149,6 +149,35 @@ type ActiveAssignment = {
   status: string;
 };
 
+
+type BusinessSettingsRow = {
+  aan_commission_rate:
+    | number
+    | string
+    | null;
+};
+
+type ExistingPaymentFinancials = {
+  aan_commission_rate:
+    | number
+    | null;
+  aan_commission_amount:
+    | number
+    | null;
+  specialist_rate:
+    | number
+    | null;
+  specialist_amount:
+    | number
+    | null;
+};
+
+function roundMoney(value: number) {
+  return Math.round(
+    (value + Number.EPSILON) * 100,
+  ) / 100;
+}
+
 async function refreshZoomAccessToken({
   therapistId,
   refreshToken,
@@ -836,6 +865,66 @@ export async function POST(
 
     /*
      * =======================================================
+     * Charger la commission AAN depuis les paramètres métier.
+     *
+     * La valeur par défaut de 30% sert uniquement de filet
+     * de sécurité si la ligne de configuration n'existe pas.
+     * Les administrateurs peuvent modifier ce taux depuis
+     * platform_business_settings sans redéployer le code.
+     * =======================================================
+     */
+    const {
+      data:
+        businessSettings,
+      error:
+        businessSettingsError,
+    } =
+      await supabaseAdmin
+        .from(
+          "platform_business_settings",
+        )
+        .select(
+          "aan_commission_rate",
+        )
+        .eq(
+          "id",
+          1,
+        )
+        .maybeSingle<BusinessSettingsRow>();
+
+    if (
+      businessSettingsError
+    ) {
+      throw businessSettingsError;
+    }
+
+    const configuredCommissionRate =
+      Number(
+        businessSettings
+          ?.aan_commission_rate ??
+          30,
+      );
+
+    if (
+      !Number.isFinite(
+        configuredCommissionRate,
+      ) ||
+      configuredCommissionRate < 0 ||
+      configuredCommissionRate > 100
+    ) {
+      throw new Error(
+        "Invalid AAN commission rate configuration.",
+      );
+    }
+
+    const configuredSpecialistRate =
+      roundMoney(
+        100 -
+          configuredCommissionRate,
+      );
+
+    /*
+     * =======================================================
      * Vérification du prix
      * =======================================================
      */
@@ -906,9 +995,113 @@ export async function POST(
 
     /*
      * =======================================================
-     * Paiement idempotent
+     * Paiement idempotent + snapshot financier historique.
+     *
+     * IMPORTANT :
+     * - pour un NOUVEAU paiement, on snapshot le taux admin
+     *   courant et les montants 30/70 correspondants ;
+     * - si Stripe rejoue le même webhook plus tard après un
+     *   changement de commission, on conserve le snapshot
+     *   historique déjà enregistré pour cette transaction.
      * =======================================================
      */
+
+    const {
+      data:
+        existingPayment,
+      error:
+        existingPaymentError,
+    } =
+      await supabaseAdmin
+        .from("payments")
+        .select(
+          `
+            aan_commission_rate,
+            aan_commission_amount,
+            specialist_rate,
+            specialist_amount
+          `,
+        )
+        .eq(
+          "transaction_id",
+          transactionId,
+        )
+        .maybeSingle<ExistingPaymentFinancials>();
+
+    if (
+      existingPaymentError
+    ) {
+      throw existingPaymentError;
+    }
+
+    const existingAanCommissionRate =
+      existingPayment
+        ?.aan_commission_rate;
+
+    const existingAanCommissionAmount =
+      existingPayment
+        ?.aan_commission_amount;
+
+    const existingSpecialistRate =
+      existingPayment
+        ?.specialist_rate;
+
+    const existingSpecialistAmount =
+      existingPayment
+        ?.specialist_amount;
+
+    const hasHistoricalFinancialSnapshot =
+      existingAanCommissionRate !==
+        null &&
+      existingAanCommissionRate !==
+        undefined &&
+      existingAanCommissionAmount !==
+        null &&
+      existingAanCommissionAmount !==
+        undefined &&
+      existingSpecialistRate !==
+        null &&
+      existingSpecialistRate !==
+        undefined &&
+      existingSpecialistAmount !==
+        null &&
+      existingSpecialistAmount !==
+        undefined;
+
+    const aanCommissionRate =
+      hasHistoricalFinancialSnapshot
+        ? Number(
+            existingAanCommissionRate,
+          )
+        : configuredCommissionRate;
+
+    const specialistRate =
+      hasHistoricalFinancialSnapshot
+        ? Number(
+            existingSpecialistRate,
+          )
+        : configuredSpecialistRate;
+
+    const aanCommissionAmount =
+      hasHistoricalFinancialSnapshot
+        ? Number(
+            existingAanCommissionAmount,
+          )
+        : roundMoney(
+            amount *
+              (aanCommissionRate /
+                100),
+          );
+
+    const specialistAmount =
+      hasHistoricalFinancialSnapshot
+        ? Number(
+            existingSpecialistAmount,
+          )
+        : roundMoney(
+            amount -
+              aanCommissionAmount,
+          );
 
     const {
       error:
@@ -933,6 +1126,18 @@ export async function POST(
 
             transaction_id:
               transactionId,
+
+            aan_commission_rate:
+              aanCommissionRate,
+
+            aan_commission_amount:
+              aanCommissionAmount,
+
+            specialist_rate:
+              specialistRate,
+
+            specialist_amount:
+              specialistAmount,
           },
           {
             onConflict:
@@ -1864,6 +2069,11 @@ export async function POST(
 
         currency,
 
+        aanCommissionRate,
+        aanCommissionAmount,
+        specialistRate,
+        specialistAmount,
+
         alreadyProcessed:
           bookingWasAlreadyPaid,
 
@@ -1895,6 +2105,11 @@ export async function POST(
       amount,
 
       currency,
+
+      aanCommissionRate,
+      aanCommissionAmount,
+      specialistRate,
+      specialistAmount,
 
       alreadyProcessed:
         bookingWasAlreadyPaid,
