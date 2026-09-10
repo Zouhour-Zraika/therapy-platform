@@ -734,7 +734,9 @@ function SuccessContent() {
                       type="button"
                       onClick={() =>
                         router.push(
-                          "/booking",
+                          `/booking?packId=${encodeURIComponent(
+                            pack.id,
+                          )}`,
                         )
                       }
                       className="aan-button flex items-center justify-center px-6 py-4 text-center font-bold"

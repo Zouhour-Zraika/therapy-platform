@@ -60,6 +60,20 @@ type PatientPackOption = {
 
 type PurchaseMode = "single" | "pack";
 
+type ActivePatientPack = {
+  id: string;
+  patient_id: string;
+  therapist_id: string;
+  therapist_service_id: string;
+  sessions_total: number;
+  sessions_remaining: number;
+  session_price: number;
+  discount_rate: number;
+  total_price: number;
+  status: string;
+  valid_until: string | null;
+};
+
 type Slot = {
   id: string;
   slot_date: string | null;
@@ -242,6 +256,9 @@ function BookingContent() {
   const purchaseFromUrl =
     searchParams.get("purchase");
 
+  const redeemPackId =
+    searchParams.get("packId");
+
   const bookingSectionRef =
     useRef<HTMLDivElement | null>(null);
 
@@ -274,6 +291,9 @@ function BookingContent() {
 
   const [patientPackError, setPatientPackError] =
     useState("");
+
+  const [activePatientPack, setActivePatientPack] =
+    useState<ActivePatientPack | null>(null);
 
   const [allSlots, setAllSlots] =
     useState<Slot[]>([]);
@@ -472,7 +492,102 @@ function BookingContent() {
         loadedSlots,
       );
 
-      if (rescheduleBookingId) {
+      if (redeemPackId) {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          window.location.href =
+            `/login?redirect=${encodeURIComponent(
+              `/booking?packId=${redeemPackId}`,
+            )}`;
+          return;
+        }
+
+        const {
+          data: packData,
+          error: packError,
+        } = await supabase
+          .from("patient_packs")
+          .select("id, patient_id, therapist_id, therapist_service_id, sessions_total, sessions_remaining, session_price, discount_rate, total_price, status, valid_until")
+          .eq("id", redeemPackId)
+          .eq("patient_id", user.id)
+          .maybeSingle<ActivePatientPack>();
+
+        if (packError || !packData) {
+          console.error(
+            "Unable to load Patient Pack for redemption:",
+            packError,
+          );
+
+          setDataError(
+            language === "ar"
+              ? "تعذر تحميل باقة المريض."
+              : language === "fr"
+                ? "Impossible de charger votre Pack Patient."
+                : "Unable to load your Patient Pack.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        const validUntilMs =
+          packData.valid_until
+            ? new Date(packData.valid_until).getTime()
+            : NaN;
+
+        if (
+          packData.status !== "active" ||
+          Number(packData.sessions_remaining) <= 0 ||
+          !Number.isFinite(validUntilMs) ||
+          validUntilMs <= Date.now()
+        ) {
+          setDataError(
+            language === "ar"
+              ? "هذه الباقة غير صالحة للحجز حالياً."
+              : language === "fr"
+                ? "Ce Pack Patient n’est plus disponible pour réserver une séance."
+                : "This Patient Pack can no longer be used to book a session.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        const packTherapist =
+          loadedTherapists.find(
+            (therapist) =>
+              therapist.id === packData.therapist_id,
+          ) || null;
+
+        const packService =
+          loadedServices.find(
+            (service) =>
+              service.id === packData.therapist_service_id &&
+              service.therapist_id === packData.therapist_id &&
+              service.service_type === "individual",
+          ) || null;
+
+        if (!packTherapist || !packService) {
+          setDataError(
+            language === "ar"
+              ? "المختص أو الخدمة المرتبطة بهذه الباقة غير متاحين حالياً."
+              : language === "fr"
+                ? "Le spécialiste ou la consultation liés à ce Pack ne sont plus disponibles."
+                : "The specialist or service linked to this Pack is no longer available.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        setActivePatientPack(packData);
+        setSelectedTherapist(packTherapist);
+        setSelectedService(packService);
+        setPurchaseMode("single");
+        setSelectedSlot(null);
+        setStep(4);
+      } else if (rescheduleBookingId) {
         const {
           data: { user },
           error: userError,
@@ -674,6 +789,7 @@ function BookingContent() {
     directSlotId,
     directServiceId,
     rescheduleBookingId,
+    redeemPackId,
     language,
     t,
   ]);
@@ -681,6 +797,7 @@ function BookingContent() {
   useEffect(() => {
     if (
       rescheduleBookingId ||
+      redeemPackId ||
       !selectedTherapist ||
       !selectedService ||
       selectedService.service_type !== "individual"
@@ -770,6 +887,7 @@ function BookingContent() {
     selectedTherapist,
     selectedService,
     rescheduleBookingId,
+    redeemPackId,
     purchaseFromUrl,
     language,
   ]);
@@ -1967,12 +2085,21 @@ function BookingContent() {
     async () => {
       const isPackPurchase =
         !rescheduleBookingId &&
+        !redeemPackId &&
         purchaseMode === "pack";
+
+      const isPackRedemption =
+        !rescheduleBookingId &&
+        Boolean(
+          redeemPackId &&
+          activePatientPack,
+        );
 
       if (
         !selectedTherapist ||
         (!rescheduleBookingId && !selectedService) ||
         (!isPackPurchase && !selectedSlot) ||
+        (isPackRedemption && !activePatientPack) ||
         bookingLoading
       ) {
         return;
@@ -2052,6 +2179,11 @@ function BookingContent() {
               purchaseMode:
                 isPackPurchase ? "pack" : "single",
 
+              packId:
+                isPackRedemption
+                  ? redeemPackId
+                  : null,
+
               returnUrl,
             }),
           );
@@ -2079,6 +2211,16 @@ function BookingContent() {
             bookingReturnParams.set(
               "purchase",
               "pack",
+            );
+          }
+
+          if (
+            isPackRedemption &&
+            redeemPackId
+          ) {
+            bookingReturnParams.set(
+              "packId",
+              redeemPackId,
             );
           }
 
@@ -2119,6 +2261,79 @@ function BookingContent() {
           window.location.href =
             "/login";
 
+          return;
+        }
+
+        if (isPackRedemption) {
+          if (
+            !activePatientPack ||
+            !redeemPackId ||
+            !selectedSlot
+          ) {
+            return;
+          }
+
+          const response = await fetch(
+            "/api/patient-pack/redeem",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                packId: redeemPackId,
+                slotId: selectedSlot.id,
+                language,
+              }),
+            },
+          );
+
+          const result =
+            await response.json();
+
+          if (!response.ok) {
+            console.error(
+              "Patient Pack redemption error:",
+              result,
+            );
+
+            if (
+              result.code ===
+              "SLOT_NOT_AVAILABLE"
+            ) {
+              setAllSlots(
+                (current) =>
+                  current.filter(
+                    (slot) =>
+                      slot.id !==
+                      selectedSlot.id,
+                  ),
+              );
+              setSelectedSlot(null);
+            }
+
+            alert(
+              result.error ||
+                (language === "ar"
+                  ? "تعذر حجز الجلسة باستخدام الباقة. يرجى المحاولة مرة أخرى."
+                  : language === "fr"
+                    ? "Impossible de réserver cette séance avec votre Pack. Veuillez réessayer."
+                    : "Unable to book this session with your Patient Pack. Please try again."),
+            );
+            return;
+          }
+
+          alert(
+            language === "ar"
+              ? `تم تأكيد جلستك. لا يوجد أي دفع إضافي. الجلسات المتبقية: ${result.sessionsRemaining}.`
+              : language === "fr"
+                ? `Votre séance est confirmée. Aucun paiement supplémentaire. Séances restantes : ${result.sessionsRemaining}.`
+                : `Your session is confirmed. No additional payment. Sessions remaining: ${result.sessionsRemaining}.`,
+          );
+
+          window.location.href =
+            "/dashboard";
           return;
         }
 
@@ -2987,7 +3202,7 @@ function BookingContent() {
                           </div>
                         </div>
 
-                        {!directTherapistId && !rescheduleBookingId && (
+                        {!directTherapistId && !rescheduleBookingId && !redeemPackId && (
                           <button
                             type="button"
                             onClick={() => {
@@ -3039,7 +3254,44 @@ function BookingContent() {
                                   : "Consultation type"}
                             </p>
 
-                            {selectedTherapistServices.length === 0 ? (
+                            {activePatientPack ? (
+                              <div className="mt-4 rounded-2xl border border-[#d8c7aa] bg-white p-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div>
+                                    <p className="font-bold text-[#223748]">
+                                      {language === "ar"
+                                        ? "باقة المريض الخاصة بك"
+                                        : language === "fr"
+                                          ? "Votre Pack Patient"
+                                          : "Your Patient Pack"}
+                                    </p>
+                                    <p className="mt-1 text-sm text-[#69747a]">
+                                      {language === "ar"
+                                        ? `جلسة فردية · ${selectedService?.duration_minutes || 50} دقيقة · مشمولة في الباقة`
+                                        : language === "fr"
+                                          ? `Individuelle · ${selectedService?.duration_minutes || 50} min · Incluse dans votre Pack`
+                                          : `Individual · ${selectedService?.duration_minutes || 50} min · Included in your Pack`}
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-xl bg-[#eef2f5] px-4 py-3 text-sm font-bold text-[#223748]">
+                                    {language === "ar"
+                                      ? `${activePatientPack.sessions_remaining}/${activePatientPack.sessions_total} جلسات متبقية`
+                                      : language === "fr"
+                                        ? `${activePatientPack.sessions_remaining}/${activePatientPack.sessions_total} séances restantes`
+                                        : `${activePatientPack.sessions_remaining}/${activePatientPack.sessions_total} sessions remaining`}
+                                  </div>
+                                </div>
+
+                                <p className="mt-4 text-sm font-semibold leading-6 text-[#415a72]">
+                                  {language === "ar"
+                                    ? "هذه الحجز مشمول في باقتك. لن يُطلب منك أي دفع إضافي."
+                                    : language === "fr"
+                                      ? "Cette réservation est incluse dans votre Pack. Aucun paiement supplémentaire ne sera demandé."
+                                      : "This booking is included in your Patient Pack. No additional payment will be required."}
+                                </p>
+                              </div>
+                            ) : selectedTherapistServices.length === 0 ? (
                               <p className="mt-3 text-sm text-[#69747a]">
                                 {language === "ar"
                                   ? "لا توجد أنواع جلسات متاحة حالياً لهذا المختص."
@@ -3048,58 +3300,61 @@ function BookingContent() {
                                     : "No consultation type is currently available for this specialist."}
                               </p>
                             ) : (
-                              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                {selectedTherapistServices.map((service) => {
-                                  const selected = selectedService?.id === service.id;
+                              <>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                  {selectedTherapistServices.map((service) => {
+                                    const selected = selectedService?.id === service.id;
 
-                                  return (
-                                    <button
-                                      key={service.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedService(service);
-                                        setPurchaseMode("single");
-                                        setPatientPack(null);
-                                        setPatientPackError("");
-                                        setSelectedSlot(null);
-                                        setSelectedSlotDateKey("");
-                                      }}
-                                      className={`rounded-2xl border p-4 text-start transition ${
-                                        selected
-                                          ? "border-[#415a72] bg-[#eef2f5] shadow-sm"
-                                          : "border-[#e3dbcf] bg-white hover:border-[#b39668]"
-                                      }`}
-                                    >
-                                      <span className="block font-bold text-[#223748]">
-                                        {getServiceLabel(service.service_type)}
-                                      </span>
-                                      <span className="mt-2 block text-sm text-[#69747a]">
-                                        ${Number(service.price)} · {service.duration_minutes} min
-                                        {service.price_per_participant
-                                          ? language === "ar"
-                                            ? " / للمشارك"
-                                            : language === "fr"
-                                              ? " / participant"
-                                              : " / participant"
-                                          : ""}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                    return (
+                                      <button
+                                        key={service.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedService(service);
+                                          setPurchaseMode("single");
+                                          setPatientPack(null);
+                                          setPatientPackError("");
+                                          setSelectedSlot(null);
+                                          setSelectedSlotDateKey("");
+                                        }}
+                                        className={`rounded-2xl border p-4 text-start transition ${
+                                          selected
+                                            ? "border-[#415a72] bg-[#eef2f5] shadow-sm"
+                                            : "border-[#e3dbcf] bg-white hover:border-[#b39668]"
+                                        }`}
+                                      >
+                                        <span className="block font-bold text-[#223748]">
+                                          {getServiceLabel(service.service_type)}
+                                        </span>
+                                        <span className="mt-2 block text-sm text-[#69747a]">
+                                          ${Number(service.price)} · {service.duration_minutes} min
+                                          {service.price_per_participant
+                                            ? language === "ar"
+                                              ? " / للمشارك"
+                                              : language === "fr"
+                                                ? " / participant"
+                                                : " / participant"
+                                            : ""}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <p className="mt-4 text-sm leading-6 text-[#69747a]">
+                                  {language === "ar"
+                                    ? "إذا لم تكن تعرف نوع الاستشارة المناسب، اختر «فردية» أو تواصل مع AAN لتوجيهك."
+                                    : language === "fr"
+                                      ? "Vous ne savez pas quel type de consultation choisir ? Choisissez « Individuelle » ou contactez AAN pour être orienté(e)."
+                                      : "Not sure which consultation type to choose? Choose “Individual” or contact AAN for guidance."}
+                                </p>
+                              </>
                             )}
-
-                            <p className="mt-4 text-sm leading-6 text-[#69747a]">
-                              {language === "ar"
-                                ? "إذا لم تكن تعرف نوع الاستشارة المناسب، اختر «فردية» أو تواصل مع AAN لتوجيهك."
-                                : language === "fr"
-                                  ? "Vous ne savez pas quel type de consultation choisir ? Choisissez « Individuelle » ou contactez AAN pour être orienté(e)."
-                                  : "Not sure which consultation type to choose? Choose “Individual” or contact AAN for guidance."}
-                            </p>
                           </div>
                         )}
 
                         {!rescheduleBookingId &&
+                          !activePatientPack &&
                           selectedService?.service_type === "individual" && (
                             <div className="mt-6 rounded-2xl border border-[#dfd5c5] bg-[#faf7f2] p-5 sm:p-6">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -3705,10 +3960,13 @@ function BookingContent() {
                               </p>
 
                               <p className="mt-1 font-bold text-[#223748]">
-                                $
-                                {
-                                  selectedService?.price ?? selectedTherapist.price
-                                }
+                                {activePatientPack
+                                  ? language === "ar"
+                                    ? "مشمولة في الباقة"
+                                    : language === "fr"
+                                      ? "Incluse dans votre Pack"
+                                      : "Included in your Pack"
+                                  : `$${selectedService?.price ?? selectedTherapist.price}`}
                               </p>
                             </div>
                           </div>
@@ -3721,6 +3979,12 @@ function BookingContent() {
                                   : language === "fr"
                                     ? "Ce créneau remplacera votre rendez-vous actuel avec le même spécialiste. Votre paiement reste valable et aucun nouveau paiement ne sera demandé."
                                     : "This time will replace your current appointment with the same specialist. Your existing payment remains valid and no new payment will be required."
+                                : activePatientPack
+                                  ? language === "ar"
+                                    ? `سيتم استخدام جلسة واحدة من باقتك لتأكيد هذا الموعد. لن يتم طلب أي دفع جديد.${selectedService ? ` مدة هذه الجلسة ${selectedService.duration_minutes} دقيقة.` : ""}`
+                                    : language === "fr"
+                                      ? `Une séance de votre Pack sera utilisée pour confirmer ce créneau. Aucun nouveau paiement ne sera demandé.${selectedService ? ` La durée de cette consultation est de ${selectedService.duration_minutes} minutes.` : ""}`
+                                      : `One session from your Patient Pack will be used to confirm this appointment. No new payment will be required.${selectedService ? ` This consultation lasts ${selectedService.duration_minutes} minutes.` : ""}`
                                 : language === "ar"
                                   ? `عند المتابعة إلى الدفع، سيتم الاحتفاظ بهذا الموعد لك لمدة 10 دقائق فقط. إذا لم يتم الدفع خلال هذه المدة، سيصبح الموعد متاحاً من جديد.${selectedService ? ` مدة هذه الجلسة ${selectedService.duration_minutes} دقيقة.` : ""}`
                                   : language === "fr"
@@ -3747,18 +4011,30 @@ function BookingContent() {
                                   : language === "fr"
                                     ? "Modification du créneau..."
                                     : "Rescheduling..."
-                                : isArabic
-                                  ? "جارٍ إنشاء الحجز..."
-                                  : "Creating booking..."
+                                : activePatientPack
+                                  ? language === "ar"
+                                    ? "جارٍ تأكيد الجلسة..."
+                                    : language === "fr"
+                                      ? "Confirmation de la séance..."
+                                      : "Confirming session..."
+                                  : isArabic
+                                    ? "جارٍ إنشاء الحجز..."
+                                    : "Creating booking..."
                               : rescheduleBookingId
                                 ? language === "ar"
                                   ? "تأكيد الموعد الجديد"
                                   : language === "fr"
                                     ? "Confirmer le nouveau créneau"
                                     : "Confirm new time"
-                                : t(
-                                    "booking.session.continueToPayment",
-                                  )}
+                                : activePatientPack
+                                  ? language === "ar"
+                                    ? "تأكيد باستخدام الباقة"
+                                    : language === "fr"
+                                      ? "Confirmer avec mon Pack"
+                                      : "Confirm with my Pack"
+                                  : t(
+                                      "booking.session.continueToPayment",
+                                    )}
                           </button>
                         </div>
                       )}
