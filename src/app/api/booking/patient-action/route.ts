@@ -584,14 +584,34 @@ export async function POST(
       );
     }
 
-    const deadlineCheck =
-      ensureMoreThan24Hours(
-        booking,
-        language,
-      );
+    /*
+     * Règle métier des 24 heures :
+     *
+     * - demande initiée par le patient -> limite de 24 h ;
+     * - annulation initiée par le patient -> limite de 24 h ;
+     * - choix du nouveau créneau après une demande du patient
+     *   -> limite de 24 h ;
+     * - choix du nouveau créneau après une demande du spécialiste
+     *   -> AUTORISÉ même à moins de 24 h.
+     *
+     * On ne contourne donc la limite que pour l'action "reschedule"
+     * lorsque la demande active vient du spécialiste.
+     */
+    const therapistRequestedReschedule =
+      action === "reschedule" &&
+      booking.reschedule_requested_by ===
+        "therapist";
 
-    if (!deadlineCheck.ok) {
-      return deadlineCheck.response;
+    if (!therapistRequestedReschedule) {
+      const deadlineCheck =
+        ensureMoreThan24Hours(
+          booking,
+          language,
+        );
+
+      if (!deadlineCheck.ok) {
+        return deadlineCheck.response;
+      }
     }
 
     if (

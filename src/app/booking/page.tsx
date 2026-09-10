@@ -461,7 +461,7 @@ function BookingContent() {
           error: existingBookingError,
         } = await supabase
           .from("bookings")
-          .select("id, patient_id, therapist_id, status, scheduled_start, therapist_service_id, service_type, duration_minutes")
+          .select("id, patient_id, therapist_id, status, scheduled_start, therapist_service_id, service_type, duration_minutes, reschedule_requested_by, reschedule_requested_at")
           .eq("id", rescheduleBookingId)
           .eq("patient_id", user.id)
           .eq("status", "paid")
@@ -474,6 +474,8 @@ function BookingContent() {
             therapist_service_id: string | null;
             service_type: string | null;
             duration_minutes: number | null;
+            reschedule_requested_by: string | null;
+            reschedule_requested_at: string | null;
           }>();
 
         if (
@@ -496,7 +498,21 @@ function BookingContent() {
           return;
         }
 
-        if (existingBooking.scheduled_start) {
+        /*
+         * Règle métier :
+         * - si le PATIENT demande lui-même le changement, la limite
+         *   de 24 h reste obligatoire ;
+         * - si le SPÉCIALISTE a demandé au patient de choisir un autre
+         *   créneau, on autorise ce changement même à moins de 24 h.
+         */
+        const therapistRequestedReschedule =
+          existingBooking.reschedule_requested_by ===
+          "therapist";
+
+        if (
+          existingBooking.scheduled_start &&
+          !therapistRequestedReschedule
+        ) {
           const currentStartMs = new Date(
             existingBooking.scheduled_start,
           ).getTime();

@@ -571,6 +571,36 @@ export async function POST(
         !providerChanged &&
         booking.meeting_url
       ) {
+        /*
+         * Google Meet est la plateforme active :
+         * on supprime les anciennes URLs Zoom de la réservation.
+         * Il ne doit jamais rester deux plateformes "actives"
+         * en même temps dans bookings.
+         */
+        if (
+          booking.zoom_join_url ||
+          booking.zoom_start_url
+        ) {
+          const {
+            error:
+              clearStaleZoomError,
+          } =
+            await supabaseAdmin
+              .from("bookings")
+              .update({
+                zoom_join_url: null,
+                zoom_start_url: null,
+              })
+              .eq(
+                "id",
+                booking.id,
+              );
+
+          if (clearStaleZoomError) {
+            throw clearStaleZoomError;
+          }
+        }
+
         return NextResponse.json({
           startUrl:
             booking.meeting_url,
@@ -581,9 +611,10 @@ export async function POST(
           calendarEventId:
             booking.calendar_event_id,
           zoomJoinUrl:
-            booking.zoom_join_url,
+            null,
           zoomStartUrl:
-            booking.zoom_start_url,
+            null,
+          providerChanged: false,
         });
       }
 
@@ -634,6 +665,18 @@ export async function POST(
               "google_meet",
             calendar_event_id:
               googleMeeting.calendarEventId,
+
+            /*
+             * IMPORTANT :
+             * une fois la séance basculée vers Meet, les anciennes
+             * URLs Zoom ne doivent plus rester attachées au booking.
+             * Si on rebascule ensuite vers Zoom, une nouvelle réunion
+             * Zoom sera créée proprement.
+             */
+            zoom_join_url:
+              null,
+            zoom_start_url:
+              null,
           })
           .eq(
             "id",
@@ -644,6 +687,49 @@ export async function POST(
         googleUpdateError
       ) {
         throw googleUpdateError;
+      }
+
+      /*
+       * Vérification serveur : on confirme que Supabase a réellement
+       * enregistré Google Meet comme provider actif avant de répondre.
+       */
+      const {
+        data:
+          persistedGoogleBooking,
+        error:
+          persistedGoogleBookingError,
+      } =
+        await supabaseAdmin
+          .from("bookings")
+          .select(
+            "meeting_provider, meeting_url, zoom_join_url, zoom_start_url, calendar_event_id",
+          )
+          .eq(
+            "id",
+            booking.id,
+          )
+          .single<{
+            meeting_provider: string | null;
+            meeting_url: string | null;
+            zoom_join_url: string | null;
+            zoom_start_url: string | null;
+            calendar_event_id: string | null;
+          }>();
+
+      if (
+        persistedGoogleBookingError
+      ) {
+        throw persistedGoogleBookingError;
+      }
+
+      if (
+        persistedGoogleBooking.meeting_provider !==
+          "google_meet" ||
+        !persistedGoogleBooking.meeting_url
+      ) {
+        throw new Error(
+          "La bascule vers Google Meet n'a pas été enregistrée correctement.",
+        );
       }
 
       if (providerChanged) {
@@ -667,9 +753,9 @@ export async function POST(
         calendarEventId:
           googleMeeting.calendarEventId,
         zoomJoinUrl:
-          booking.zoom_join_url,
+          null,
         zoomStartUrl:
-          booking.zoom_start_url,
+          null,
         providerChanged,
       });
     }
@@ -694,11 +780,31 @@ export async function POST(
       booking.zoom_start_url &&
       booking.zoom_join_url
     ) {
+      if (booking.meeting_url) {
+        const {
+          error:
+            clearStaleMeetError,
+        } =
+          await supabaseAdmin
+            .from("bookings")
+            .update({
+              meeting_url: null,
+            })
+            .eq(
+              "id",
+              booking.id,
+            );
+
+        if (clearStaleMeetError) {
+          throw clearStaleMeetError;
+        }
+      }
+
       return NextResponse.json({
         startUrl:
           booking.zoom_start_url,
         meetingUrl:
-          booking.meeting_url,
+          null,
         meetingProvider:
           "zoom",
         calendarEventId:
@@ -777,6 +883,8 @@ export async function POST(
           .update({
             meeting_provider:
               "zoom",
+            meeting_url:
+              null,
             calendar_event_id:
               newCalendarEventId,
           })
@@ -804,7 +912,7 @@ export async function POST(
         startUrl:
           booking.zoom_start_url,
         meetingUrl:
-          booking.meeting_url,
+          null,
         meetingProvider:
           "zoom",
         calendarEventId:
@@ -1089,6 +1197,8 @@ export async function POST(
             zoomMeeting.start_url,
           meeting_provider:
             "zoom",
+          meeting_url:
+            null,
           calendar_event_id:
             newCalendarEventId,
         })
@@ -1118,7 +1228,7 @@ export async function POST(
       startUrl:
         zoomMeeting.start_url,
       meetingUrl:
-        booking.meeting_url,
+        null,
       meetingProvider:
         "zoom",
       calendarEventId:
