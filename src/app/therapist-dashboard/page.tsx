@@ -3378,225 +3378,97 @@ export default function TherapistDashboard() {
     async (
       booking: Booking,
     ) => {
-      const googleAvailable =
-        googleConnection.connected;
-
-      const zoomAvailable =
-        zoomConnection.connected;
-
       /*
-       * Toujours relire la réservation en base avant de démarrer.
-       * Une bascule Meet <-> Zoom peut avoir eu lieu quelques secondes
-       * auparavant et l'objet React affiché peut être ancien.
+       * "Démarrer la séance" ne décide plus jamais lui-même
+       * entre Meet et Zoom.
+       *
+       * Le serveur relit la réservation en base et renvoie le lien
+       * correspondant STRICTEMENT à meeting_provider.
+       *
+       * Cela supprime définitivement les effets d'un état React
+       * périmé, d'un ancien lien encore en mémoire ou de la
+       * plateforme principale globale.
        */
       try {
         const {
-          data:
-            freshBooking,
+          data: {
+            session,
+          },
           error:
-            freshBookingError,
+            sessionError,
         } =
-          await supabase
-            .from("bookings")
-            .select(
-              "id, meeting_provider, meeting_url, zoom_join_url, zoom_start_url",
-            )
-            .eq(
-              "id",
-              booking.id,
-            )
-            .single<{
-              id: string;
-              meeting_provider:
-                string | null;
-              meeting_url:
-                string | null;
-              zoom_join_url:
-                string | null;
-              zoom_start_url:
-                string | null;
-            }>();
+          await supabase.auth.getSession();
 
         if (
-          freshBookingError
+          sessionError ||
+          !session
         ) {
-          throw freshBookingError;
-        }
-
-        if (
-          freshBooking.meeting_provider ===
-            "google_meet" &&
-          googleAvailable &&
-          freshBooking.meeting_url
-        ) {
-          setBookings(
-            (current) =>
-              current.map(
-                (item) =>
-                  item.id ===
-                  booking.id
-                    ? {
-                        ...item,
-                        meeting_provider:
-                          "google_meet",
-                        meeting_url:
-                          freshBooking.meeting_url,
-                        zoom_join_url:
-                          freshBooking.zoom_join_url,
-                        zoom_start_url:
-                          freshBooking.zoom_start_url,
-                      }
-                    : item,
-              ),
-          );
-
-          window.open(
-            freshBooking.meeting_url,
-            "_blank",
-            "noopener,noreferrer",
+          alert(
+            text.loginRequired,
           );
           return;
         }
 
-        if (
-          freshBooking.meeting_provider ===
-            "zoom" &&
-          zoomAvailable &&
-          freshBooking.zoom_start_url
-        ) {
-          setBookings(
-            (current) =>
-              current.map(
-                (item) =>
-                  item.id ===
-                  booking.id
-                    ? {
-                        ...item,
-                        meeting_provider:
-                          "zoom",
-                        meeting_url:
-                          null,
-                        zoom_join_url:
-                          freshBooking.zoom_join_url,
-                        zoom_start_url:
-                          freshBooking.zoom_start_url,
-                      }
-                    : item,
-              ),
+        const response =
+          await fetch(
+            "/api/booking/start-session",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+              body:
+                JSON.stringify({
+                  bookingId:
+                    booking.id,
+                }),
+            },
           );
 
-          window.open(
-            freshBooking.zoom_start_url,
-            "_blank",
-            "noopener,noreferrer",
+        const result =
+          await response.json();
+
+        if (
+          !response.ok ||
+          !result.startUrl
+        ) {
+          throw new Error(
+            result?.error ||
+              "Unable to start the session.",
           );
-          return;
         }
 
         /*
-         * Provider enregistré mais lien manquant :
-         * demander à l'API de préparer/recréer le lien.
+         * Recharge la carte après la décision serveur afin que
+         * l'interface reflète également la plateforme active.
          */
-        if (
-          freshBooking.meeting_provider ===
-            "google_meet" &&
-          googleAvailable
-        ) {
-          await chooseSessionProvider(
-            {
-              ...booking,
-              meeting_provider:
-                freshBooking.meeting_provider,
-              meeting_url:
-                freshBooking.meeting_url,
-              zoom_join_url:
-                freshBooking.zoom_join_url,
-              zoom_start_url:
-                freshBooking.zoom_start_url,
-            },
-            "google",
-          );
-          return;
-        }
+        await getBookings();
 
-        if (
-          freshBooking.meeting_provider ===
-            "zoom" &&
-          zoomAvailable
-        ) {
-          await chooseSessionProvider(
-            {
-              ...booking,
-              meeting_provider:
-                freshBooking.meeting_provider,
-              meeting_url:
-                freshBooking.meeting_url,
-              zoom_join_url:
-                freshBooking.zoom_join_url,
-              zoom_start_url:
-                freshBooking.zoom_start_url,
-            },
-            "zoom",
-          );
-          return;
-        }
-      } catch (freshBookingError) {
+        window.open(
+          result.startUrl,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      } catch (error) {
         console.error(
-          "Fresh booking provider lookup failed:",
-          freshBookingError,
+          "Start session error:",
+          error,
+        );
+
+        alert(
+          error instanceof Error &&
+            error.message
+            ? error.message
+            : language === "ar"
+              ? "تعذر بدء الجلسة."
+              : language === "fr"
+                ? "Impossible de démarrer la séance."
+                : "Unable to start the session.",
         );
       }
-
-      /*
-       * Fallback pour les rares réservations sans provider enregistré.
-       */
-      if (
-        preferredMeetingProvider ===
-          "google_meet" &&
-        googleAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "google",
-        );
-        return;
-      }
-
-      if (
-        preferredMeetingProvider ===
-          "zoom" &&
-        zoomAvailable
-      ) {
-        await chooseSessionProvider(
-          booking,
-          "zoom",
-        );
-        return;
-      }
-
-      if (googleAvailable) {
-        await chooseSessionProvider(
-          booking,
-          "google",
-        );
-        return;
-      }
-
-      if (zoomAvailable) {
-        await chooseSessionProvider(
-          booking,
-          "zoom",
-        );
-        return;
-      }
-
-      alert(
-        language === "ar"
-          ? "يرجى ربط Google أو Zoom أولاً."
-          : language === "fr"
-            ? "Veuillez d’abord connecter Google ou Zoom."
-            : "Please connect Google or Zoom first.",
-      );
     };
 
 
