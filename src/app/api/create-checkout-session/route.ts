@@ -5,10 +5,23 @@ import Stripe from "stripe";
 export const runtime = "nodejs";
 
 type Language = "en" | "fr" | "ar";
+type PurchaseType = "booking" | "patient_pack";
 
 type CheckoutRequest = {
   bookingId?: string;
   language?: Language;
+
+  /*
+   * Nouveau :
+   * - booking = paiement normal d'une séance existante
+   * - patient_pack = achat d'un pack de séances individuelles
+   *
+   * Si purchaseType est absent, on garde le comportement historique
+   * afin de ne rien casser dans le paiement actuel.
+   */
+  purchaseType?: PurchaseType;
+  therapistId?: string;
+  serviceId?: string;
 };
 
 type BookingRecord = {
@@ -24,9 +37,90 @@ type BookingRecord = {
   created_at: string;
 };
 
+type TherapistRecord = {
+  id: string;
+  full_name: string | null;
+  work_status: string | null;
+  care_domain: string | null;
+};
+
+type TherapistServiceRecord = {
+  id: string;
+  therapist_id: string;
+  service_type: string;
+  price: number;
+  duration_minutes: number;
+  is_active: boolean;
+};
+
+type BusinessSettingsRecord = {
+  patient_pack_sessions: number;
+  patient_pack_discount_rate: number;
+  patient_pack_validity_months: number;
+};
+
+type ActiveAssignmentRecord = {
+  id: string;
+  therapist_id: string;
+};
+
+type PendingPackRecord = {
+  id: string;
+  patient_id: string;
+  therapist_id: string;
+  therapist_service_id: string;
+  sessions_total: number;
+  sessions_remaining: number;
+  session_price: number;
+  discount_rate: number;
+  total_price: number;
+  status: string;
+};
+
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeLanguage(value: unknown): Language {
+  return value === "ar"
+    ? "ar"
+    : value === "fr"
+      ? "fr"
+      : "en";
+}
+
+function createSupabaseClient(
+  supabaseUrl: string,
+  key: string,
+  accessToken?: string,
+) {
+  return createClient(
+    supabaseUrl,
+    key,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+      ...(accessToken
+        ? {
+            global: {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+          }
+        : {}),
+    },
+  );
+}
+
 export async function POST(request: Request) {
+  let createdPendingPackId: string | null = null;
+
   try {
     const stripeSecretKey =
       process.env.STRIPE_SECRET_KEY;
@@ -108,22 +202,10 @@ export async function POST(request: Request) {
     }
 
     const supabaseAuth =
-      createClient(
+      createSupabaseClient(
         supabaseUrl,
         supabaseAnonKey,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-            detectSessionInUrl: false,
-          },
-          global: {
-            headers: {
-              Authorization:
-                `Bearer ${accessToken}`,
-            },
-          },
-        },
+        accessToken,
       );
 
     const {
@@ -152,31 +234,816 @@ export async function POST(request: Request) {
       );
     }
 
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabaseAuth
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle<{
+        role: string | null;
+      }>();
+
+    if (
+      profileError ||
+      !profile ||
+      profile.role !== "patient"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Patient authentication is required.",
+        },
+        {
+          status: 403,
+        },
+      );
+    }
+
     const supabaseAdmin =
-      createClient(
+      createSupabaseClient(
         supabaseUrl,
         supabaseServerKey,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-            detectSessionInUrl: false,
-          },
-        },
       );
 
     const body =
       (await request.json()) as CheckoutRequest;
 
+    const language =
+      normalizeLanguage(body.language);
+
+    const purchaseType: PurchaseType =
+      body.purchaseType === "patient_pack"
+        ? "patient_pack"
+        : "booking";
+
+    const requestOrigin =
+      new URL(
+        request.url,
+      ).origin;
+
+    const publicSiteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(
+        /\/$/,
+        "",
+      ) ||
+      requestOrigin;
+
+    /*
+     * ============================================================
+     * PATIENT PACK
+     * ============================================================
+     *
+     * On ne crée PAS quatre bookings.
+     *
+     * Le paiement achète un crédit de plusieurs séances.
+     * Les séances seront ensuite réservées une par une.
+     */
+    if (purchaseType === "patient_pack") {
+      const therapistId =
+        String(
+          body.therapistId || "",
+        ).trim();
+
+      const serviceId =
+        String(
+          body.serviceId || "",
+        ).trim();
+
+      if (
+        !therapistId ||
+        !serviceId
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              language === "ar"
+                ? "المختص ونوع الجلسة مطلوبان لشراء الباقة."
+                : language === "fr"
+                  ? "Le spécialiste et le type de séance sont requis pour acheter le pack."
+                  : "Specialist and service are required to purchase the pack.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * 1. Spécialiste :
+       * toujours relu côté serveur.
+       */
+      const {
+        data: therapist,
+        error: therapistError,
+      } = await supabaseAdmin
+        .from("therapists")
+        .select(
+          "id, full_name, work_status, care_domain",
+        )
+        .eq(
+          "id",
+          therapistId,
+        )
+        .maybeSingle<TherapistRecord>();
+
+      if (therapistError) {
+        throw therapistError;
+      }
+
+      if (!therapist) {
+        return NextResponse.json(
+          {
+            error:
+              language === "fr"
+                ? "Le spécialiste est introuvable."
+                : language === "ar"
+                  ? "تعذر العثور على المختص."
+                  : "The specialist was not found.",
+          },
+          {
+            status: 404,
+          },
+        );
+      }
+
+      if (
+        therapist.work_status !== "active"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              language === "fr"
+                ? "Ce spécialiste n’accepte plus de nouvelles réservations."
+                : language === "ar"
+                  ? "هذا المختص لا يقبل حجوزات جديدة حالياً."
+                  : "This specialist is no longer accepting new bookings.",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      /*
+       * 2. Service :
+       * un pack patient est exclusivement un pack
+       * de séances INDIVIDUELLES.
+       */
+      const {
+        data: service,
+        error: serviceError,
+      } = await supabaseAdmin
+        .from("therapist_services")
+        .select(
+          "id, therapist_id, service_type, price, duration_minutes, is_active",
+        )
+        .eq(
+          "id",
+          serviceId,
+        )
+        .eq(
+          "therapist_id",
+          therapist.id,
+        )
+        .eq(
+          "is_active",
+          true,
+        )
+        .maybeSingle<TherapistServiceRecord>();
+
+      if (serviceError) {
+        throw serviceError;
+      }
+
+      if (
+        !service ||
+        service.service_type !== "individual"
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              language === "fr"
+                ? "Le Pack Patient est disponible uniquement pour les séances individuelles."
+                : language === "ar"
+                  ? "باقة المريض متاحة فقط للجلسات الفردية."
+                  : "The Patient Pack is available only for individual sessions.",
+            code:
+              "PACK_INDIVIDUAL_ONLY",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const sessionPrice =
+        Number(service.price);
+
+      if (
+        !Number.isFinite(sessionPrice) ||
+        sessionPrice <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "The individual service has an invalid price.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * 3. Règle du spécialiste actif par care_domain.
+       *
+       * Le pack ne doit pas permettre de contourner
+       * la protection déjà appliquée aux bookings.
+       */
+      const careDomain =
+        therapist.care_domain
+          ?.trim() ||
+        null;
+
+      if (careDomain) {
+        const {
+          data: activeAssignment,
+          error: assignmentError,
+        } = await supabaseAdmin
+          .from(
+            "patient_therapist_assignments",
+          )
+          .select(
+            "id, therapist_id",
+          )
+          .eq(
+            "patient_id",
+            user.id,
+          )
+          .eq(
+            "care_domain",
+            careDomain,
+          )
+          .eq(
+            "status",
+            "active",
+          )
+          .limit(1)
+          .maybeSingle<ActiveAssignmentRecord>();
+
+        if (assignmentError) {
+          throw assignmentError;
+        }
+
+        if (
+          activeAssignment &&
+          activeAssignment.therapist_id !==
+            therapist.id
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                language === "fr"
+                  ? "Vous êtes déjà suivi(e) par un spécialiste dans ce domaine. Pour changer de spécialiste, veuillez contacter la clinique AAN."
+                  : language === "ar"
+                    ? "لديك بالفعل مختص نشط في هذا المجال. لتغيير المختص، يرجى التواصل مع عيادة AAN."
+                    : "You already have an active specialist in this area. To change specialist, please contact AAN.",
+              code:
+                "ACTIVE_SPECIALIST_CONFLICT",
+            },
+            {
+              status: 409,
+            },
+          );
+        }
+      }
+
+      /*
+       * 4. Configuration du Pack :
+       * source de vérité = platform_business_settings.
+       */
+      const {
+        data: settings,
+        error: settingsError,
+      } = await supabaseAdmin
+        .from(
+          "platform_business_settings",
+        )
+        .select(
+          "patient_pack_sessions, patient_pack_discount_rate, patient_pack_validity_months",
+        )
+        .eq(
+          "id",
+          1,
+        )
+        .maybeSingle<BusinessSettingsRecord>();
+
+      if (settingsError) {
+        throw settingsError;
+      }
+
+      if (!settings) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack business settings are missing.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      const sessionsTotal =
+        Number(
+          settings.patient_pack_sessions,
+        );
+
+      const discountRate =
+        Number(
+          settings.patient_pack_discount_rate,
+        );
+
+      const validityMonths =
+        Number(
+          settings.patient_pack_validity_months,
+        );
+
+      if (
+        !Number.isInteger(sessionsTotal) ||
+        sessionsTotal <= 0 ||
+        !Number.isFinite(discountRate) ||
+        discountRate < 0 ||
+        discountRate > 100 ||
+        !Number.isInteger(validityMonths) ||
+        validityMonths <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack business settings are invalid.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      const grossPrice =
+        roundMoney(
+          sessionPrice *
+            sessionsTotal,
+        );
+
+      const totalPrice =
+        roundMoney(
+          grossPrice *
+            (1 -
+              discountRate /
+                100),
+        );
+
+      if (totalPrice <= 0) {
+        return NextResponse.json(
+          {
+            error:
+              "The Patient Pack total price is invalid.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      /*
+       * 5. Eviter plusieurs packs actifs/en attente
+       * identiques pour le même patient + spécialiste.
+       *
+       * Un pack "used", "expired", "cancelled" ou "refunded"
+       * n'empêche pas un nouvel achat.
+       */
+      const {
+        data: existingPack,
+        error: existingPackError,
+      } = await supabaseAdmin
+        .from("patient_packs")
+        .select(
+          "id, status, sessions_remaining",
+        )
+        .eq(
+          "patient_id",
+          user.id,
+        )
+        .eq(
+          "therapist_id",
+          therapist.id,
+        )
+        .eq(
+          "therapist_service_id",
+          service.id,
+        )
+        .in(
+          "status",
+          [
+            "pending",
+            "active",
+          ],
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          },
+        )
+        .limit(1)
+        .maybeSingle<{
+          id: string;
+          status: string;
+          sessions_remaining: number;
+        }>();
+
+      if (existingPackError) {
+        throw existingPackError;
+      }
+
+      if (
+        existingPack?.status === "active" &&
+        Number(
+          existingPack.sessions_remaining,
+        ) > 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              language === "fr"
+                ? "Vous avez déjà un Pack Patient actif avec ce spécialiste."
+                : language === "ar"
+                  ? "لديك بالفعل باقة مريض فعّالة مع هذا المختص."
+                  : "You already have an active Patient Pack with this specialist.",
+            code:
+              "ACTIVE_PACK_EXISTS",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      /*
+       * Les anciens pending non payés peuvent rester après
+       * un abandon de Stripe. On les annule avant d'en créer
+       * un nouveau pour éviter les doublons.
+       */
+      if (
+        existingPack?.status === "pending"
+      ) {
+        const {
+          error: cancelPendingError,
+        } = await supabaseAdmin
+          .from("patient_packs")
+          .update({
+            status:
+              "cancelled",
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            existingPack.id,
+          )
+          .eq(
+            "status",
+            "pending",
+          );
+
+        if (cancelPendingError) {
+          throw cancelPendingError;
+        }
+      }
+
+      /*
+       * 6. Snapshot du pack AVANT Stripe.
+       *
+       * Le webhook activera ce pack après confirmation
+       * réelle du paiement.
+       */
+      const {
+        data: pendingPack,
+        error: pendingPackError,
+      } = await supabaseAdmin
+        .from("patient_packs")
+        .insert({
+          patient_id:
+            user.id,
+
+          therapist_id:
+            therapist.id,
+
+          therapist_service_id:
+            service.id,
+
+          sessions_total:
+            sessionsTotal,
+
+          sessions_remaining:
+            sessionsTotal,
+
+          session_price:
+            sessionPrice,
+
+          discount_rate:
+            discountRate,
+
+          total_price:
+            totalPrice,
+
+          status:
+            "pending",
+
+          payment_provider:
+            "stripe",
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .select(
+          `
+            id,
+            patient_id,
+            therapist_id,
+            therapist_service_id,
+            sessions_total,
+            sessions_remaining,
+            session_price,
+            discount_rate,
+            total_price,
+            status
+          `,
+        )
+        .single<PendingPackRecord>();
+
+      if (
+        pendingPackError ||
+        !pendingPack
+      ) {
+        if (pendingPackError) {
+          throw pendingPackError;
+        }
+
+        throw new Error(
+          "Unable to create Patient Pack.",
+        );
+      }
+
+      createdPendingPackId =
+        pendingPack.id;
+
+      const therapistName =
+        therapist.full_name?.trim() ||
+        (
+          language === "ar"
+            ? "المختص"
+            : language === "fr"
+              ? "Spécialiste"
+              : "Specialist"
+        );
+
+      const email =
+        user.email?.trim();
+
+      if (!email) {
+        throw new Error(
+          language === "fr"
+            ? "L’adresse e-mail du patient est manquante."
+            : language === "ar"
+              ? "البريد الإلكتروني للمريض غير موجود."
+              : "The patient email address is missing.",
+        );
+      }
+
+      const productName =
+        language === "ar"
+          ? `باقة المريض - ${sessionsTotal} جلسات مع ${therapistName}`
+          : language === "fr"
+            ? `Pack Patient - ${sessionsTotal} séances avec ${therapistName}`
+            : `Patient Pack - ${sessionsTotal} sessions with ${therapistName}`;
+
+      const productDescription =
+        language === "ar"
+          ? `جلسات فردية · خصم ${discountRate}% · صالحة لمدة ${validityMonths} أشهر`
+          : language === "fr"
+            ? `Séances individuelles · remise ${discountRate}% · validité ${validityMonths} mois`
+            : `Individual sessions · ${discountRate}% discount · valid for ${validityMonths} months`;
+
+      const stripeLocale =
+        language === "fr"
+          ? "fr"
+          : language === "en"
+            ? "en"
+            : "auto";
+
+      const successUrl =
+        `${publicSiteUrl}/success` +
+        `?packId=${encodeURIComponent(
+          pendingPack.id,
+        )}` +
+        `&session_id={CHECKOUT_SESSION_ID}`;
+
+      const cancelUrl =
+        `${publicSiteUrl}/booking` +
+        `?therapistId=${encodeURIComponent(
+          therapist.id,
+        )}` +
+        `&serviceId=${encodeURIComponent(
+          service.id,
+        )}`;
+
+      const session =
+        await stripe.checkout.sessions.create(
+          {
+            mode:
+              "payment",
+
+            customer_email:
+              email,
+
+            locale:
+              stripeLocale,
+
+            payment_method_types: [
+              "card",
+            ],
+
+            line_items: [
+              {
+                quantity: 1,
+
+                price_data: {
+                  currency:
+                    "usd",
+
+                  unit_amount:
+                    Math.round(
+                      totalPrice *
+                        100,
+                    ),
+
+                  product_data: {
+                    name:
+                      productName,
+
+                    description:
+                      productDescription,
+                  },
+                },
+              },
+            ],
+
+            metadata: {
+              purchaseType:
+                "patient_pack",
+
+              packId:
+                pendingPack.id,
+
+              patientId:
+                user.id,
+
+              therapistId:
+                therapist.id,
+
+              serviceId:
+                service.id,
+
+              therapist:
+                therapistName,
+
+              sessionsTotal:
+                String(
+                  sessionsTotal,
+                ),
+
+              sessionPrice:
+                String(
+                  sessionPrice,
+                ),
+
+              discountRate:
+                String(
+                  discountRate,
+                ),
+
+              validityMonths:
+                String(
+                  validityMonths,
+                ),
+
+              totalPrice:
+                String(
+                  totalPrice,
+                ),
+
+              language,
+
+              email,
+
+              paymentProvider:
+                "stripe",
+            },
+
+            payment_intent_data: {
+              metadata: {
+                purchaseType:
+                  "patient_pack",
+
+                packId:
+                  pendingPack.id,
+
+                patientId:
+                  user.id,
+
+                therapistId:
+                  therapist.id,
+
+                serviceId:
+                  service.id,
+
+                paymentProvider:
+                  "stripe",
+              },
+            },
+
+            success_url:
+              successUrl,
+
+            cancel_url:
+              cancelUrl,
+          },
+        );
+
+      if (!session.url) {
+        throw new Error(
+          "Stripe did not return a checkout URL.",
+        );
+      }
+
+      /*
+       * Stripe Checkout est créé :
+       * le pending ne doit plus être supprimé par le catch.
+       * Le webhook s'occupera de l'activation après paiement.
+       */
+      createdPendingPackId =
+        null;
+
+      return NextResponse.json({
+        provider:
+          "stripe",
+
+        purchaseType:
+          "patient_pack",
+
+        sessionId:
+          session.id,
+
+        packId:
+          pendingPack.id,
+
+        therapistId:
+          therapist.id,
+
+        serviceId:
+          service.id,
+
+        sessionsTotal,
+
+        sessionPrice,
+
+        discountRate,
+
+        validityMonths,
+
+        amount:
+          totalPrice,
+
+        currency:
+          "USD",
+
+        url:
+          session.url,
+      });
+    }
+
+    /*
+     * ============================================================
+     * BOOKING NORMAL
+     * ============================================================
+     *
+     * Cette partie conserve le comportement existant.
+     */
     const bookingId =
       body.bookingId?.trim();
-
-    const language: Language =
-      body.language === "ar"
-        ? "ar"
-        : body.language === "fr"
-          ? "fr"
-          : "en";
 
     if (!bookingId) {
       const errorMessage =
@@ -497,18 +1364,6 @@ export async function POST(request: Request) {
             : "Booked session";
     }
 
-    const requestOrigin =
-      new URL(
-        request.url,
-      ).origin;
-
-    const publicSiteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(
-        /\/$/,
-        "",
-      ) ||
-      requestOrigin;
-
     const successUrl =
       `${publicSiteUrl}/success` +
       `?bookingId=${encodeURIComponent(
@@ -589,22 +1444,36 @@ export async function POST(request: Request) {
           ],
 
           metadata: {
+            purchaseType:
+              "booking",
+
             bookingId,
+
             patientId:
               user.id,
+
             therapist,
+
             slot,
+
             language,
+
             email,
+
             paymentProvider:
               "stripe",
           },
 
           payment_intent_data: {
             metadata: {
+              purchaseType:
+                "booking",
+
               bookingId,
+
               patientId:
                 user.id,
+
               paymentProvider:
                 "stripe",
             },
@@ -633,21 +1502,84 @@ export async function POST(request: Request) {
     return NextResponse.json({
       provider:
         "stripe",
+
+      purchaseType:
+        "booking",
+
       sessionId:
         session.id,
+
       bookingId,
+
       amount:
         numericPrice,
+
       currency:
         "USD",
+
       url:
         session.url,
+
       expiresAt:
         new Date(
           expiresAtMs,
         ).toISOString(),
     });
   } catch (error) {
+    /*
+     * Si la création Stripe du Pack échoue après l'INSERT,
+     * on supprime uniquement le pending créé par CET appel.
+     */
+    if (createdPendingPackId) {
+      try {
+        const supabaseUrl =
+          process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+        const supabaseServerKey =
+          process.env.SUPABASE_SECRET_KEY ||
+          process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+        if (
+          supabaseUrl &&
+          supabaseServerKey
+        ) {
+          const supabaseAdmin =
+            createSupabaseClient(
+              supabaseUrl,
+              supabaseServerKey,
+            );
+
+          const {
+            error: cleanupError,
+          } = await supabaseAdmin
+            .from("patient_packs")
+            .delete()
+            .eq(
+              "id",
+              createdPendingPackId,
+            )
+            .eq(
+              "status",
+              "pending",
+            );
+
+          if (cleanupError) {
+            console.error(
+              "Patient Pack checkout rollback error:",
+              cleanupError,
+            );
+          }
+        }
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "Patient Pack checkout rollback error:",
+          cleanupError,
+        );
+      }
+    }
+
     console.error(
       "Stripe checkout session error:",
       error,

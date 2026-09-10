@@ -27,6 +27,28 @@ type BookingStatus = {
   payment_transaction_id: string | null;
 };
 
+type PatientPackStatus = {
+  id: string;
+  status: string;
+
+  patient_id: string;
+  therapist_id: string;
+  therapist_service_id: string;
+
+  sessions_total: number;
+  sessions_remaining: number;
+
+  session_price: number;
+  discount_rate: number;
+  total_price: number;
+
+  purchased_at: string | null;
+  valid_until: string | null;
+
+  payment_provider: string | null;
+  payment_transaction_id: string | null;
+};
+
 export async function GET(request: Request) {
   const stripeSecretKey =
     process.env.STRIPE_SECRET_KEY;
@@ -68,11 +90,31 @@ export async function GET(request: Request) {
         "bookingId",
       );
 
+    const requestedPackId =
+      url.searchParams.get(
+        "packId",
+      );
+
     if (!sessionId) {
       return NextResponse.json(
         {
           error:
             "Stripe session ID is missing.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      requestedBookingId &&
+      requestedPackId
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Provide either bookingId or packId, not both.",
         },
         {
           status: 400,
@@ -94,8 +136,292 @@ export async function GET(request: Request) {
         sessionId,
       );
 
+    /*
+     * Toutes les Checkout Sessions créées par
+     * cette application doivent déclarer Stripe.
+     */
+    const paymentProvider =
+      session.metadata
+        ?.paymentProvider;
+
+    if (
+      paymentProvider &&
+      paymentProvider !==
+        "stripe"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid payment provider.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const purchaseType =
+      session.metadata
+        ?.purchaseType
+        ?.trim();
+
+    const metadataBookingId =
+      session.metadata
+        ?.bookingId
+        ?.trim();
+
+    const metadataPackId =
+      session.metadata
+        ?.packId
+        ?.trim();
+
+    const isPackPurchase =
+      purchaseType ===
+        "patient_pack" ||
+      Boolean(metadataPackId);
+
+    const supabaseAdmin =
+      createClient(
+        supabaseUrl,
+        supabaseServerKey,
+        {
+          auth: {
+            autoRefreshToken:
+              false,
+
+            persistSession:
+              false,
+
+            detectSessionInUrl:
+              false,
+          },
+        },
+      );
+
+    const stripeAmount =
+      typeof session.amount_total ===
+      "number"
+        ? session.amount_total /
+          100
+        : null;
+
+    const currency =
+      session.currency
+        ?.toUpperCase() ||
+      "USD";
+
+    /*
+     * =======================================================
+     * PATIENT PACK
+     * =======================================================
+     */
+    if (isPackPurchase) {
+      const packId =
+        metadataPackId;
+
+      if (!packId) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack ID was not found in Stripe metadata.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * Protection supplémentaire :
+       * le packId présent dans l'URL doit correspondre
+       * à celui enregistré chez Stripe.
+       */
+      if (
+        requestedPackId &&
+        requestedPackId !==
+          packId
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack ID does not match the Stripe session.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * Si l'URL contient bookingId alors que Stripe
+       * identifie un pack, on refuse la requête.
+       */
+      if (requestedBookingId) {
+        return NextResponse.json(
+          {
+            error:
+              "This Stripe session belongs to a Patient Pack, not a booking.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const {
+        data: pack,
+        error: packError,
+      } =
+        await supabaseAdmin
+          .from(
+            "patient_packs",
+          )
+          .select(
+            `
+              id,
+              status,
+              patient_id,
+              therapist_id,
+              therapist_service_id,
+              sessions_total,
+              sessions_remaining,
+              session_price,
+              discount_rate,
+              total_price,
+              purchased_at,
+              valid_until,
+              payment_provider,
+              payment_transaction_id
+            `,
+          )
+          .eq(
+            "id",
+            packId,
+          )
+          .maybeSingle<PatientPackStatus>();
+
+      if (packError) {
+        throw packError;
+      }
+
+      if (!pack) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack was not found.",
+          },
+          {
+            status: 404,
+          },
+        );
+      }
+
+      /*
+       * Vérification ownership via les metadata Stripe
+       * lorsqu'elles sont disponibles.
+       */
+      const metadataPatientId =
+        session.metadata
+          ?.patientId
+          ?.trim();
+
+      if (
+        metadataPatientId &&
+        metadataPatientId !==
+          pack.patient_id
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack ownership does not match the Stripe session.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const packPrice =
+        Number(
+          pack.total_price,
+        );
+
+      const amountMatches =
+        stripeAmount !==
+          null &&
+        Number.isFinite(
+          packPrice,
+        ) &&
+        Math.abs(
+          stripeAmount -
+            packPrice,
+        ) <= 0.001;
+
+      if (
+        session.payment_status ===
+          "paid" &&
+        !amountMatches
+      ) {
+        console.error(
+          "Patient Pack payment status amount mismatch:",
+          {
+            sessionId,
+            packId,
+            stripeAmount,
+            packPrice,
+          },
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Payment amount does not match the Patient Pack price.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * Stripe peut déjà être "paid" pendant que le webhook
+       * termine encore l'activation du pack dans Supabase.
+       */
+      return NextResponse.json({
+        provider:
+          "stripe",
+
+        purchaseType:
+          "patient_pack",
+
+        paymentStatus:
+          session.payment_status,
+
+        checkoutStatus:
+          session.status,
+
+        amount:
+          stripeAmount,
+
+        currency,
+
+        pack,
+
+        packConfirmed:
+          pack.status ===
+            "active" ||
+          pack.status ===
+            "used",
+      });
+    }
+
+    /*
+     * =======================================================
+     * BOOKING NORMAL
+     * =======================================================
+     */
     const bookingId =
-      session.metadata?.bookingId?.trim();
+      metadataBookingId;
 
     if (!bookingId) {
       return NextResponse.json(
@@ -131,48 +457,17 @@ export async function GET(request: Request) {
       );
     }
 
-    /*
-     * On vérifie également que cette
-     * Checkout Session appartient bien
-     * au provider Stripe.
-     */
-    const paymentProvider =
-      session.metadata
-        ?.paymentProvider;
-
-    if (
-      paymentProvider &&
-      paymentProvider !==
-        "stripe"
-    ) {
+    if (requestedPackId) {
       return NextResponse.json(
         {
           error:
-            "Invalid payment provider.",
+            "This Stripe session belongs to a booking, not a Patient Pack.",
         },
         {
           status: 400,
         },
       );
     }
-
-    const supabaseAdmin =
-      createClient(
-        supabaseUrl,
-        supabaseServerKey,
-        {
-          auth: {
-            autoRefreshToken:
-              false,
-
-            persistSession:
-              false,
-
-            detectSessionInUrl:
-              false,
-          },
-        },
-      );
 
     /*
      * On récupère l'état actuel
@@ -184,31 +479,32 @@ export async function GET(request: Request) {
     const {
       data: booking,
       error: bookingError,
-    } = await supabaseAdmin
-      .from("bookings")
-      .select(
-        `
-          id,
-          status,
-          price,
-          therapist_name,
-          slot_day,
-          slot_time,
-          scheduled_start,
-          scheduled_end,
-          meeting_url,
-          meeting_provider,
-          calendar_event_id,
-          payment_provider,
-          payment_method,
-          payment_transaction_id
-        `,
-      )
-      .eq(
-        "id",
-        bookingId,
-      )
-      .maybeSingle<BookingStatus>();
+    } =
+      await supabaseAdmin
+        .from("bookings")
+        .select(
+          `
+            id,
+            status,
+            price,
+            therapist_name,
+            slot_day,
+            slot_time,
+            scheduled_start,
+            scheduled_end,
+            meeting_url,
+            meeting_provider,
+            calendar_event_id,
+            payment_provider,
+            payment_method,
+            payment_transaction_id
+          `,
+        )
+        .eq(
+          "id",
+          bookingId,
+        )
+        .maybeSingle<BookingStatus>();
 
     if (bookingError) {
       throw bookingError;
@@ -233,20 +529,14 @@ export async function GET(request: Request) {
      * ce contrôle avant de passer la
      * réservation à paid.
      */
-    const stripeAmount =
-      typeof session.amount_total ===
-      "number"
-        ? session.amount_total /
-          100
-        : null;
-
     const bookingPrice =
       Number(
         booking.price,
       );
 
     const amountMatches =
-      stripeAmount !== null &&
+      stripeAmount !==
+        null &&
       Number.isFinite(
         bookingPrice,
       ) &&
@@ -282,8 +572,6 @@ export async function GET(request: Request) {
     }
 
     /*
-     * Attention :
-     *
      * Stripe peut déjà indiquer "paid"
      * alors que le webhook n'a pas encore
      * terminé la mise à jour Supabase.
@@ -292,7 +580,11 @@ export async function GET(request: Request) {
      * que /success effectue plusieurs essais.
      */
     return NextResponse.json({
-      provider: "stripe",
+      provider:
+        "stripe",
+
+      purchaseType:
+        "booking",
 
       paymentStatus:
         session.payment_status,
@@ -303,9 +595,7 @@ export async function GET(request: Request) {
       amount:
         stripeAmount,
 
-      currency:
-        session.currency?.toUpperCase() ||
-        "USD",
+      currency,
 
       booking,
 

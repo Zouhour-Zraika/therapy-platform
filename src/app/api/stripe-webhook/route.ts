@@ -172,6 +172,33 @@ type ExistingPaymentFinancials = {
     | null;
 };
 
+
+type PatientPackRecord = {
+  id: string;
+  patient_id: string;
+  therapist_id: string;
+  therapist_service_id: string;
+  sessions_total: number;
+  sessions_remaining: number;
+  session_price: number;
+  discount_rate: number;
+  total_price: number;
+  status: string;
+  purchased_at: string | null;
+  valid_until: string | null;
+  payment_provider: string | null;
+  payment_transaction_id: string | null;
+  aan_commission_rate: number | null;
+  aan_commission_amount: number | null;
+  specialist_rate: number | null;
+  specialist_amount: number | null;
+};
+
+type PatientPackTherapistInfo = {
+  id: string;
+  care_domain: string | null;
+};
+
 function roundMoney(value: number) {
   return Math.round(
     (value + Number.EPSILON) * 100,
@@ -710,6 +737,769 @@ export async function POST(
 
         reason:
           "Payment is not paid yet.",
+      });
+    }
+
+    /*
+     * =======================================================
+     * PATIENT PACK
+     * =======================================================
+     *
+     * Une Checkout Session de type "patient_pack" n'est pas
+     * liée à un booking. Le paiement active le crédit de
+     * séances, puis les séances seront réservées une par une.
+     */
+    const purchaseType =
+      session.metadata
+        ?.purchaseType
+        ?.trim();
+
+    if (
+      purchaseType ===
+      "patient_pack"
+    ) {
+      const packId =
+        session.metadata
+          ?.packId
+          ?.trim();
+
+      if (!packId) {
+        console.error(
+          "Stripe Patient Pack session does not contain packId:",
+          session.id,
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack identifier is missing.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const language:
+        Language =
+        session.metadata
+          ?.language ===
+        "ar"
+          ? "ar"
+          : session.metadata
+                ?.language ===
+              "fr"
+            ? "fr"
+            : "en";
+
+      const paymentIntentId =
+        typeof session
+          .payment_intent ===
+        "string"
+          ? session.payment_intent
+          : session
+              .payment_intent
+              ?.id;
+
+      const transactionId =
+        paymentIntentId ||
+        session.id;
+
+      const amount =
+        typeof session
+          .amount_total ===
+        "number"
+          ? session.amount_total /
+            100
+          : 0;
+
+      const currency =
+        session.currency
+          ?.toUpperCase() ||
+        "USD";
+
+      /*
+       * Le pack est toujours relu dans Supabase.
+       * Stripe metadata sert à identifier l'achat,
+       * mais pas à déterminer son prix.
+       */
+      const {
+        data:
+          existingPack,
+        error:
+          packReadError,
+      } =
+        await supabaseAdmin
+          .from(
+            "patient_packs",
+          )
+          .select(
+            `
+              id,
+              patient_id,
+              therapist_id,
+              therapist_service_id,
+              sessions_total,
+              sessions_remaining,
+              session_price,
+              discount_rate,
+              total_price,
+              status,
+              purchased_at,
+              valid_until,
+              payment_provider,
+              payment_transaction_id,
+              aan_commission_rate,
+              aan_commission_amount,
+              specialist_rate,
+              specialist_amount
+            `,
+          )
+          .eq(
+            "id",
+            packId,
+          )
+          .maybeSingle<PatientPackRecord>();
+
+      if (packReadError) {
+        throw packReadError;
+      }
+
+      if (!existingPack) {
+        console.error(
+          "Patient Pack not found:",
+          packId,
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack not found.",
+          },
+          {
+            status: 404,
+          },
+        );
+      }
+
+      /*
+       * Vérification supplémentaire :
+       * le patient contenu dans Stripe doit correspondre
+       * au propriétaire du pack lorsque la metadata existe.
+       */
+      const metadataPatientId =
+        session.metadata
+          ?.patientId
+          ?.trim();
+
+      if (
+        metadataPatientId &&
+        metadataPatientId !==
+          existingPack.patient_id
+      ) {
+        console.error(
+          "Patient Pack ownership mismatch:",
+          {
+            packId,
+            metadataPatientId,
+            packPatientId:
+              existingPack.patient_id,
+          },
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack ownership mismatch.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const packPrice =
+        Number(
+          existingPack.total_price,
+        );
+
+      if (
+        !Number.isFinite(
+          packPrice,
+        ) ||
+        packPrice <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Patient Pack price is invalid.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      if (
+        Math.abs(
+          amount -
+            packPrice,
+        ) > 0.001
+      ) {
+        console.error(
+          "Stripe Patient Pack amount mismatch:",
+          {
+            packId,
+            expectedAmount:
+              packPrice,
+            paidAmount:
+              amount,
+            sessionId:
+              session.id,
+          },
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Payment amount does not match the Patient Pack price.",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      /*
+       * Commission AAN :
+       * - nouveau paiement = snapshot du taux admin courant ;
+       * - replay Stripe = conservation du snapshot déjà présent.
+       */
+      const {
+        data:
+          businessSettings,
+        error:
+          businessSettingsError,
+      } =
+        await supabaseAdmin
+          .from(
+            "platform_business_settings",
+          )
+          .select(
+            "aan_commission_rate",
+          )
+          .eq(
+            "id",
+            1,
+          )
+          .maybeSingle<BusinessSettingsRow>();
+
+      if (
+        businessSettingsError
+      ) {
+        throw businessSettingsError;
+      }
+
+      const configuredCommissionRate =
+        Number(
+          businessSettings
+            ?.aan_commission_rate ??
+            30,
+        );
+
+      if (
+        !Number.isFinite(
+          configuredCommissionRate,
+        ) ||
+        configuredCommissionRate < 0 ||
+        configuredCommissionRate > 100
+      ) {
+        throw new Error(
+          "Invalid AAN commission rate configuration.",
+        );
+      }
+
+      const configuredSpecialistRate =
+        roundMoney(
+          100 -
+            configuredCommissionRate,
+        );
+
+      const hasHistoricalFinancialSnapshot =
+        existingPack
+          .aan_commission_rate !==
+          null &&
+        existingPack
+          .aan_commission_amount !==
+          null &&
+        existingPack
+          .specialist_rate !==
+          null &&
+        existingPack
+          .specialist_amount !==
+          null;
+
+      const aanCommissionRate =
+        hasHistoricalFinancialSnapshot
+          ? Number(
+              existingPack
+                .aan_commission_rate,
+            )
+          : configuredCommissionRate;
+
+      const specialistRate =
+        hasHistoricalFinancialSnapshot
+          ? Number(
+              existingPack
+                .specialist_rate,
+            )
+          : configuredSpecialistRate;
+
+      const aanCommissionAmount =
+        hasHistoricalFinancialSnapshot
+          ? Number(
+              existingPack
+                .aan_commission_amount,
+            )
+          : roundMoney(
+              amount *
+                (
+                  aanCommissionRate /
+                  100
+                ),
+            );
+
+      const specialistAmount =
+        hasHistoricalFinancialSnapshot
+          ? Number(
+              existingPack
+                .specialist_amount,
+            )
+          : roundMoney(
+              amount -
+                aanCommissionAmount,
+            );
+
+      /*
+       * Validité :
+       * le nombre de mois est celui snapshoté dans
+       * la Checkout Session créée par notre serveur.
+       */
+      const validityMonths =
+        Number(
+          session.metadata
+            ?.validityMonths,
+        );
+
+      if (
+        !Number.isInteger(
+          validityMonths,
+        ) ||
+        validityMonths <= 0
+      ) {
+        throw new Error(
+          "Patient Pack validity is missing or invalid.",
+        );
+      }
+
+      const packWasAlreadyActive =
+        existingPack.status ===
+          "active" ||
+        existingPack.status ===
+          "used";
+
+      let purchasedAt =
+        existingPack
+          .purchased_at;
+
+      let validUntil =
+        existingPack
+          .valid_until;
+
+      if (!purchasedAt) {
+        purchasedAt =
+          new Date().toISOString();
+      }
+
+      if (!validUntil) {
+        const expiry =
+          new Date(
+            purchasedAt,
+          );
+
+        expiry.setUTCMonth(
+          expiry.getUTCMonth() +
+            validityMonths,
+        );
+
+        validUntil =
+          expiry.toISOString();
+      }
+
+      /*
+       * On ne réinitialise JAMAIS sessions_remaining
+       * lors d'un replay du webhook.
+       */
+      const {
+        data:
+          updatedPack,
+        error:
+          packUpdateError,
+      } =
+        await supabaseAdmin
+          .from(
+            "patient_packs",
+          )
+          .update({
+            status:
+              packWasAlreadyActive
+                ? existingPack.status
+                : "active",
+
+            purchased_at:
+              purchasedAt,
+
+            valid_until:
+              validUntil,
+
+            payment_provider:
+              "stripe",
+
+            payment_transaction_id:
+              existingPack
+                .payment_transaction_id ||
+              transactionId,
+
+            aan_commission_rate:
+              aanCommissionRate,
+
+            aan_commission_amount:
+              aanCommissionAmount,
+
+            specialist_rate:
+              specialistRate,
+
+            specialist_amount:
+              specialistAmount,
+
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            packId,
+          )
+          .select(
+            `
+              id,
+              patient_id,
+              therapist_id,
+              therapist_service_id,
+              sessions_total,
+              sessions_remaining,
+              session_price,
+              discount_rate,
+              total_price,
+              status,
+              purchased_at,
+              valid_until,
+              payment_provider,
+              payment_transaction_id,
+              aan_commission_rate,
+              aan_commission_amount,
+              specialist_rate,
+              specialist_amount
+            `,
+          )
+          .maybeSingle<PatientPackRecord>();
+
+      if (
+        packUpdateError
+      ) {
+        throw packUpdateError;
+      }
+
+      if (!updatedPack) {
+        throw new Error(
+          "Patient Pack was not updated after successful payment.",
+        );
+      }
+
+      /*
+       * Acheter un pack avec un spécialiste crée/conserve
+       * aussi la relation clinique active pour ce domaine,
+       * exactement comme un paiement de séance.
+       */
+      const {
+        data:
+          packTherapist,
+        error:
+          packTherapistError,
+      } =
+        await supabaseAdmin
+          .from(
+            "therapists",
+          )
+          .select(
+            "id, care_domain",
+          )
+          .eq(
+            "id",
+            updatedPack
+              .therapist_id,
+          )
+          .maybeSingle<PatientPackTherapistInfo>();
+
+      if (
+        packTherapistError
+      ) {
+        throw packTherapistError;
+      }
+
+      const careDomain =
+        packTherapist
+          ?.care_domain
+          ?.trim() ||
+        null;
+
+      if (careDomain) {
+        const {
+          data:
+            activeAssignment,
+          error:
+            assignmentReadError,
+        } =
+          await supabaseAdmin
+            .from(
+              "patient_therapist_assignments",
+            )
+            .select(
+              "id, therapist_id, care_domain, status",
+            )
+            .eq(
+              "patient_id",
+              updatedPack
+                .patient_id,
+            )
+            .eq(
+              "care_domain",
+              careDomain,
+            )
+            .eq(
+              "status",
+              "active",
+            )
+            .limit(1)
+            .maybeSingle<ActiveAssignment>();
+
+        if (
+          assignmentReadError
+        ) {
+          throw assignmentReadError;
+        }
+
+        if (
+          !activeAssignment
+        ) {
+          const {
+            error:
+              assignmentInsertError,
+          } =
+            await supabaseAdmin
+              .from(
+                "patient_therapist_assignments",
+              )
+              .insert({
+                patient_id:
+                  updatedPack
+                    .patient_id,
+
+                therapist_id:
+                  updatedPack
+                    .therapist_id,
+
+                care_domain:
+                  careDomain,
+
+                status:
+                  "active",
+              });
+
+          if (
+            assignmentInsertError
+          ) {
+            const {
+              data:
+                assignmentAfterInsert,
+              error:
+                assignmentAfterInsertError,
+            } =
+              await supabaseAdmin
+                .from(
+                  "patient_therapist_assignments",
+                )
+                .select(
+                  "id, therapist_id, care_domain, status",
+                )
+                .eq(
+                  "patient_id",
+                  updatedPack
+                    .patient_id,
+                )
+                .eq(
+                  "care_domain",
+                  careDomain,
+                )
+                .eq(
+                  "status",
+                  "active",
+                )
+                .limit(1)
+                .maybeSingle<ActiveAssignment>();
+
+            if (
+              assignmentAfterInsertError ||
+              !assignmentAfterInsert
+            ) {
+              throw assignmentInsertError;
+            }
+
+            if (
+              assignmentAfterInsert
+                .therapist_id !==
+              updatedPack
+                .therapist_id
+            ) {
+              console.error(
+                "CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:",
+                {
+                  packId,
+                  patientId:
+                    updatedPack.patient_id,
+                  paidTherapistId:
+                    updatedPack.therapist_id,
+                  activeTherapistId:
+                    assignmentAfterInsert
+                      .therapist_id,
+                  careDomain,
+                },
+              );
+            }
+          }
+        } else if (
+          activeAssignment
+            .therapist_id !==
+          updatedPack
+            .therapist_id
+        ) {
+          console.error(
+            "CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:",
+            {
+              packId,
+              patientId:
+                updatedPack.patient_id,
+              paidTherapistId:
+                updatedPack.therapist_id,
+              activeTherapistId:
+                activeAssignment
+                  .therapist_id,
+              careDomain,
+            },
+          );
+        }
+      }
+
+      console.log(
+        "STRIPE PATIENT PACK PAYMENT CONFIRMED:",
+        {
+          packId,
+
+          patientId:
+            updatedPack.patient_id,
+
+          therapistId:
+            updatedPack.therapist_id,
+
+          transactionId,
+
+          amount,
+
+          currency,
+
+          sessionsTotal:
+            updatedPack.sessions_total,
+
+          sessionsRemaining:
+            updatedPack.sessions_remaining,
+
+          purchasedAt:
+            updatedPack.purchased_at,
+
+          validUntil:
+            updatedPack.valid_until,
+
+          aanCommissionRate,
+
+          aanCommissionAmount,
+
+          specialistRate,
+
+          specialistAmount,
+
+          alreadyProcessed:
+            packWasAlreadyActive,
+        },
+      );
+
+      return NextResponse.json({
+        received:
+          true,
+
+        purchaseType:
+          "patient_pack",
+
+        packId,
+
+        packStatus:
+          updatedPack.status,
+
+        paymentStatus:
+          "paid",
+
+        paymentProvider:
+          "stripe",
+
+        paymentMethod:
+          "card",
+
+        transactionId,
+
+        amount,
+
+        currency,
+
+        sessionsTotal:
+          updatedPack.sessions_total,
+
+        sessionsRemaining:
+          updatedPack.sessions_remaining,
+
+        purchasedAt:
+          updatedPack.purchased_at,
+
+        validUntil:
+          updatedPack.valid_until,
+
+        aanCommissionRate,
+
+        aanCommissionAmount,
+
+        specialistRate,
+
+        specialistAmount,
+
+        alreadyProcessed:
+          packWasAlreadyActive,
       });
     }
 
