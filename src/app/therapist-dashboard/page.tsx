@@ -3247,6 +3247,9 @@ export default function TherapistDashboard() {
           return;
         }
 
+        /*
+         * 1) Change la plateforme de la réservation.
+         */
         const response =
           await fetch(
             "/api/booking/session-provider",
@@ -3272,72 +3275,76 @@ export default function TherapistDashboard() {
 
         if (
           !response.ok ||
-          !result.startUrl
+          !result.meetingProvider
         ) {
           throw new Error(
             result?.error ||
-              "Unable to prepare the session.",
+              "Unable to change the session platform.",
+          );
+        }
+
+        const expectedProvider =
+          provider === "google"
+            ? "google_meet"
+            : "zoom";
+
+        /*
+         * 2) Vérifie immédiatement avec la route utilisée par
+         *    "Démarrer la séance".
+         *
+         * Ainsi, le changement n'est considéré comme réussi que si
+         * la source de vérité serveur renvoie réellement la nouvelle
+         * plateforme active.
+         */
+        const verificationResponse =
+          await fetch(
+            "/api/booking/start-session",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              },
+              body:
+                JSON.stringify({
+                  bookingId:
+                    booking.id,
+                }),
+            },
+          );
+
+        const verification =
+          await verificationResponse.json();
+
+        if (
+          !verificationResponse.ok
+        ) {
+          throw new Error(
+            verification?.error ||
+              "Unable to verify the active session platform.",
+          );
+        }
+
+        if (
+          verification.provider !==
+          expectedProvider
+        ) {
+          throw new Error(
+            language === "ar"
+              ? "لم يتم حفظ تغيير المنصة بشكل صحيح. يرجى المحاولة مرة أخرى."
+              : language === "fr"
+                ? "Le changement de plateforme n’a pas été enregistré correctement. Veuillez réessayer."
+                : "The platform change was not saved correctly. Please try again.",
           );
         }
 
         /*
-         * IMPORTANT :
-         * meetingUrl peut volontairement être NULL lors d'un passage
-         * Google Meet -> Zoom. Il ne faut donc pas utiliser ?? ici,
-         * sinon l'ancien lien Meet reste dans l'état React.
-         */
-        const hasMeetingUrl =
-          Object.prototype.hasOwnProperty.call(
-            result,
-            "meetingUrl",
-          );
-
-        const hasZoomJoinUrl =
-          Object.prototype.hasOwnProperty.call(
-            result,
-            "zoomJoinUrl",
-          );
-
-        const hasZoomStartUrl =
-          Object.prototype.hasOwnProperty.call(
-            result,
-            "zoomStartUrl",
-          );
-
-        setBookings(
-          (current) =>
-            current.map(
-              (item) =>
-                item.id ===
-                booking.id
-                  ? {
-                      ...item,
-                      meeting_provider:
-                        result.meetingProvider ||
-                        (provider ===
-                        "google"
-                          ? "google_meet"
-                          : "zoom"),
-                      meeting_url:
-                        hasMeetingUrl
-                          ? result.meetingUrl
-                          : item.meeting_url,
-                      zoom_join_url:
-                        hasZoomJoinUrl
-                          ? result.zoomJoinUrl
-                          : item.zoom_join_url,
-                      zoom_start_url:
-                        hasZoomStartUrl
-                          ? result.zoomStartUrl
-                          : item.zoom_start_url,
-                    }
-                  : item,
-            ),
-        );
-
-        /*
-         * Recharge immédiatement depuis Supabase afin que toute
-         * action suivante utilise la plateforme réellement enregistrée.
+         * 3) Recharge les réservations depuis Supabase.
+         *    Aucun lien n'est ouvert ici : "Changer de plateforme"
+         *    change uniquement la plateforme. Seul le bouton
+         *    "Démarrer la séance" ouvre la réunion.
          */
         await getBookings();
 
@@ -3345,10 +3352,18 @@ export default function TherapistDashboard() {
           null,
         );
 
-        window.open(
-          result.startUrl,
-          "_blank",
-          "noopener,noreferrer",
+        alert(
+          language === "ar"
+            ? provider === "google"
+              ? "تم تغيير هذه الجلسة إلى Google Meet."
+              : "تم تغيير هذه الجلسة إلى Zoom."
+            : language === "fr"
+              ? provider === "google"
+                ? "Cette séance utilise maintenant Google Meet."
+                : "Cette séance utilise maintenant Zoom."
+              : provider === "google"
+                ? "This session now uses Google Meet."
+                : "This session now uses Zoom.",
         );
       } catch (error) {
         console.error(
@@ -3361,10 +3376,10 @@ export default function TherapistDashboard() {
             error.message
             ? error.message
             : language === "ar"
-              ? "تعذر بدء الجلسة."
+              ? "تعذر تغيير منصة الجلسة."
               : language === "fr"
-                ? "Impossible de démarrer la séance."
-                : "Unable to start the session.",
+                ? "Impossible de changer la plateforme de la séance."
+                : "Unable to change the session platform.",
         );
       } finally {
         setSessionProviderLoading(
