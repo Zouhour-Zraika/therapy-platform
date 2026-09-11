@@ -3976,8 +3976,8 @@ export default function TherapistDashboard() {
           }
           className="min-h-screen bg-aan-background"
         >
-          <div className="mx-auto flex max-w-[1500px]">
-            <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-72 shrink-0 overflow-y-auto border-r border-aan-border bg-white/80 px-5 py-7 backdrop-blur lg:flex lg:flex-col">
+          <div className="mx-auto flex w-full max-w-[1720px] px-3 sm:px-5 xl:px-6 2xl:px-8">
+            <aside className="sticky top-0 hidden h-[calc(100vh-1px)] w-[292px] shrink-0 overflow-y-auto border-r border-aan-border bg-white/80 px-5 py-7 backdrop-blur lg:flex lg:flex-col xl:w-[304px]">
               <div className="space-y-2">
                 <button
                   type="button"
@@ -4153,7 +4153,7 @@ export default function TherapistDashboard() {
                               : "Google Calendar enabled ✓"}
                         </p>
 
-                        <p className="mt-1 text-[11px] leading-4 text-aan-secondary">
+                        <p className="mt-1 text-[11px] leading-[1.45] text-aan-secondary">
                           {language === "ar"
                             ? "تُضاف جلساتك الجديدة تلقائياً إلى تقويم Google، سواء كنت تستخدم Google Meet أو Zoom."
                             : language === "fr"
@@ -4429,7 +4429,7 @@ export default function TherapistDashboard() {
 
             <div
               id="dashboard"
-              className="min-w-0 flex-1 px-5 py-8 sm:px-8 lg:px-8 xl:px-10"
+              className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-7 xl:px-8"
             >
               <header className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                 <div>
@@ -4573,7 +4573,7 @@ export default function TherapistDashboard() {
                 className={`grid gap-6 ${
                   activeView ===
                   "dashboard"
-                    ? "xl:grid-cols-2"
+                    ? "xl:grid-cols-[minmax(0,1.04fr)_minmax(0,0.96fr)]"
                     : "grid-cols-1"
                 }`}
               >
@@ -4662,8 +4662,8 @@ export default function TherapistDashboard() {
                     </div>
                   </div>
 
-                  <div className="mt-7 grid gap-4 border-t border-aan-border pt-5 sm:grid-cols-3">
-                    <div>
+                  <div className="mt-7 grid gap-x-5 gap-y-4 border-t border-aan-border pt-5 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
                         {text.experience}
                       </p>
@@ -4680,20 +4680,29 @@ export default function TherapistDashboard() {
                       </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
                         {text.specialty}
                       </p>
-                      <p className="mt-1 font-semibold text-aan-navy">
+                      <p className="mt-1 truncate font-semibold text-aan-navy">
                         {specialty || "—"}
                       </p>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
+                        {text.approach}
+                      </p>
+                      <p className="mt-1 line-clamp-2 font-semibold text-aan-navy">
+                        {therapeuticApproach || "—"}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-aan-gold">
                         {text.languages}
                       </p>
-                      <p className="mt-1 whitespace-pre-line font-semibold text-aan-navy">
+                      <p className="mt-1 line-clamp-2 whitespace-pre-line font-semibold text-aan-navy">
                         {languages || "—"}
                       </p>
                     </div>
