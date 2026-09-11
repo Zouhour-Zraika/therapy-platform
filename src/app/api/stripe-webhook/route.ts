@@ -3120,6 +3120,14 @@ export async function POST(
                           .zoom_join_url
                       : updatedBooking
                           .meeting_url,
+
+                  backupMeetingProvider:
+                    updatedBooking
+                      .backup_meeting_provider,
+
+                  backupJoinUrl:
+                    updatedBooking
+                      .backup_join_url,
                 }),
             },
           );
