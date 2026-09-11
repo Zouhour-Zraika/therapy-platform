@@ -74,6 +74,11 @@ type ActivePatientPack = {
   valid_until: string | null;
 };
 
+type PackRedemptionSuccess = {
+  bookingId: string;
+  sessionsRemaining: number;
+};
+
 type Slot = {
   id: string;
   slot_date: string | null;
@@ -294,6 +299,9 @@ function BookingContent() {
 
   const [activePatientPack, setActivePatientPack] =
     useState<ActivePatientPack | null>(null);
+
+  const [packRedemptionSuccess, setPackRedemptionSuccess] =
+    useState<PackRedemptionSuccess | null>(null);
 
   const [allSlots, setAllSlots] =
     useState<Slot[]>([]);
@@ -2324,16 +2332,68 @@ function BookingContent() {
             return;
           }
 
-          alert(
-            language === "ar"
-              ? `تم تأكيد جلستك. لا يوجد أي دفع إضافي. الجلسات المتبقية: ${result.sessionsRemaining}.`
-              : language === "fr"
-                ? `Votre séance est confirmée. Aucun paiement supplémentaire. Séances restantes : ${result.sessionsRemaining}.`
-                : `Your session is confirmed. No additional payment. Sessions remaining: ${result.sessionsRemaining}.`,
+          const redeemedSlotId =
+            selectedSlot.id;
+
+          const nextSessionsRemaining =
+            Number(
+              result.sessionsRemaining,
+            );
+
+          setActivePatientPack(
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    sessions_remaining:
+                      Number.isFinite(
+                        nextSessionsRemaining,
+                      )
+                        ? nextSessionsRemaining
+                        : current.sessions_remaining,
+                    status:
+                      result.packStatus ||
+                      current.status,
+                  }
+                : current,
           );
 
-          window.location.href =
-            "/dashboard";
+          setAllSlots(
+            (current) =>
+              current.filter(
+                (slot) =>
+                  slot.id !==
+                  redeemedSlotId,
+              ),
+          );
+
+          setSelectedSlot(null);
+          setSelectedSlotDateKey("");
+
+          setPackRedemptionSuccess({
+            bookingId:
+              result.bookingId || "",
+            sessionsRemaining:
+              Number.isFinite(
+                nextSessionsRemaining,
+              )
+                ? nextSessionsRemaining
+                : Math.max(
+                    activePatientPack.sessions_remaining -
+                      1,
+                    0,
+                  ),
+          });
+
+          window.setTimeout(() => {
+            bookingSectionRef.current?.scrollIntoView(
+              {
+                behavior: "smooth",
+                block: "start",
+              },
+            );
+          }, 100);
+
           return;
         }
 
@@ -3153,6 +3213,127 @@ function BookingContent() {
                         bookingSectionRef
                       }
                     >
+                      {packRedemptionSuccess &&
+                        activePatientPack && (
+                          <div className="mb-6 rounded-[1.75rem] border border-emerald-200 bg-emerald-50 p-6 sm:p-7">
+                            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex items-start gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-2xl font-bold text-emerald-700 shadow-sm">
+                                  ✓
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">
+                                    {language === "ar"
+                                      ? "تم تأكيد الحجز بالباقة"
+                                      : language === "fr"
+                                        ? "Réservation Pack confirmée"
+                                        : "Pack booking confirmed"}
+                                  </p>
+
+                                  <h2 className="mt-2 text-2xl font-bold text-[#223748]">
+                                    {language === "ar"
+                                      ? `تم حجز الجلسة ${
+                                          activePatientPack.sessions_total -
+                                          packRedemptionSuccess.sessionsRemaining
+                                        } من ${activePatientPack.sessions_total} ضمن باقتك`
+                                      : language === "fr"
+                                        ? `Séance ${
+                                            activePatientPack.sessions_total -
+                                            packRedemptionSuccess.sessionsRemaining
+                                          } sur ${activePatientPack.sessions_total} réservée avec votre Pack`
+                                        : `Session ${
+                                            activePatientPack.sessions_total -
+                                            packRedemptionSuccess.sessionsRemaining
+                                          } of ${activePatientPack.sessions_total} booked with your Pack`}
+                                  </h2>
+
+                                  <p className="mt-2 text-sm leading-6 text-[#52636f]">
+                                    {language === "ar"
+                                      ? "لم يتم طلب أي دفع إضافي. تم إرسال تأكيد الحجز إليك عبر البريد الإلكتروني."
+                                      : language === "fr"
+                                        ? "Aucun paiement supplémentaire n’a été demandé. La confirmation de la séance vous a été envoyée par e-mail."
+                                        : "No additional payment was required. Your session confirmation has been sent by email."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 rounded-2xl border border-emerald-200 bg-white px-5 py-4 text-center">
+                                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#7a858b]">
+                                  {language === "ar"
+                                    ? "الرصيد المتبقي"
+                                    : language === "fr"
+                                      ? "Crédit restant"
+                                      : "Remaining credit"}
+                                </p>
+
+                                <p className="mt-1 text-2xl font-bold text-[#223748]">
+                                  {packRedemptionSuccess.sessionsRemaining}/
+                                  {activePatientPack.sessions_total}
+                                </p>
+
+                                <p className="mt-1 text-xs text-[#69747a]">
+                                  {language === "ar"
+                                    ? "جلسات متبقية"
+                                    : language === "fr"
+                                      ? "séances restantes"
+                                      : "sessions remaining"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                              {packRedemptionSuccess.sessionsRemaining >
+                                0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPackRedemptionSuccess(
+                                      null,
+                                    );
+
+                                    window.setTimeout(
+                                      () => {
+                                        bookingSectionRef.current?.scrollIntoView(
+                                          {
+                                            behavior:
+                                              "smooth",
+                                            block:
+                                              "start",
+                                          },
+                                        );
+                                      },
+                                      50,
+                                    );
+                                  }}
+                                  className="rounded-xl bg-[#415a72] px-5 py-3 font-bold text-white transition hover:bg-[#32495f]"
+                                >
+                                  {language === "ar"
+                                    ? "حجز جلسة أخرى من الباقة"
+                                    : language === "fr"
+                                      ? "Réserver une autre séance du Pack"
+                                      : "Book another Pack session"}
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.location.href =
+                                    "/dashboard";
+                                }}
+                                className="rounded-xl border border-[#d9cebd] bg-white px-5 py-3 font-bold text-[#415a72] transition hover:bg-[#f8f4ee]"
+                              >
+                                {language === "ar"
+                                  ? "عرض مواعيدي"
+                                  : language === "fr"
+                                    ? "Voir mes rendez-vous"
+                                    : "View my appointments"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                       {rescheduleBookingId && (
                         <div className="mb-6 rounded-2xl border border-[#b39668]/40 bg-[#fbf8f3] p-5 text-[#223748]">
                           <p className="font-bold">

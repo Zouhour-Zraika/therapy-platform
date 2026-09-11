@@ -17,8 +17,25 @@ type Booking = {
   created_at: string;
   scheduled_start: string | null;
   zoom_join_url: string | null;
+  patient_pack_id?: string | null;
+  payment_source?: string | null;
+  payment_provider?: string | null;
   reschedule_requested_by?: string | null;
   reschedule_requested_at?: string | null;
+};
+
+type PatientPack = {
+  id: string;
+  therapist_id: string;
+  therapist_service_id: string;
+  sessions_total: number;
+  sessions_remaining: number;
+  session_price: number;
+  discount_rate: number;
+  total_price: number;
+  status: string;
+  valid_until: string | null;
+  therapist_name: string;
 };
 
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
@@ -36,6 +53,7 @@ const DAYS_AR: Record<string, string> = {
 
 export default function PatientDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [patientPacks, setPatientPacks] = useState<PatientPack[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -82,6 +100,14 @@ export default function PatientDashboard() {
           actionError: "تعذر تنفيذ هذا الإجراء. يرجى المحاولة مرة أخرى.",
           refundProviderPending: "الاسترداد التلقائي لهذا المزود غير مفعّل بعد. يرجى التواصل مع AAN.",
           manageUntil: "التغيير والإلغاء متاحان حتى 24 ساعة قبل الجلسة.",
+          packTitle: "باقة المريض",
+          packRemaining: "جلسات متبقية",
+          packValidUntil: "صالحة حتى",
+          packBookSession: "حجز جلسة من الباقة",
+          packIncluded: "مشمولة في باقتك",
+          packSession: "جلسة",
+          packOf: "من",
+          packNoExtraPayment: "لا يوجد دفع إضافي لهذه الجلسة.",
           sessionPast: "جلسة سابقة",
         }
       : language === "fr"
@@ -131,6 +157,14 @@ export default function PatientDashboard() {
               "Le remboursement automatique pour ce prestataire n’est pas encore activé. Veuillez contacter AAN.",
             manageUntil:
               "Changement et annulation possibles jusqu’à 24 h avant la séance.",
+            packTitle: "Mon Pack Patient",
+            packRemaining: "séances restantes",
+            packValidUntil: "Valable jusqu’au",
+            packBookSession: "Réserver une séance du Pack",
+            packIncluded: "Incluse dans votre Pack",
+            packSession: "Séance",
+            packOf: "sur",
+            packNoExtraPayment: "Aucun paiement supplémentaire pour cette séance.",
             sessionPast: "Séance passée",
           }
         : {
@@ -179,6 +213,14 @@ export default function PatientDashboard() {
               "Automatic refunds for this payment provider are not active yet. Please contact AAN.",
             manageUntil:
               "Changes and cancellations are available until 24 hours before the session.",
+            packTitle: "My Patient Pack",
+            packRemaining: "sessions remaining",
+            packValidUntil: "Valid until",
+            packBookSession: "Book a Pack session",
+            packIncluded: "Included in your Pack",
+            packSession: "Session",
+            packOf: "of",
+            packNoExtraPayment: "No additional payment for this session.",
             sessionPast: "Past session",
           };
 
@@ -238,17 +280,124 @@ export default function PatientDashboard() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*")
-        .eq("patient_id", user.id)
-        .order("created_at", { ascending: false });
+      const [
+        { data: bookingData, error: bookingError },
+        { data: packData, error: packError },
+      ] = await Promise.all([
+        supabase
+          .from("bookings")
+          .select("*")
+          .eq("patient_id", user.id)
+          .order("created_at", { ascending: false }),
 
-      if (error) {
-        throw error;
+        supabase
+          .from("patient_packs")
+          .select(
+            "id, therapist_id, therapist_service_id, sessions_total, sessions_remaining, session_price, discount_rate, total_price, status, valid_until",
+          )
+          .eq("patient_id", user.id)
+          .in("status", ["active", "used"])
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (bookingError) {
+        throw bookingError;
       }
 
-      setBookings((data as Booking[] | null) || []);
+      if (packError) {
+        console.error("Unable to load patient packs:", packError);
+      }
+
+      const loadedBookings =
+        (bookingData as Booking[] | null) || [];
+
+      setBookings(loadedBookings);
+
+      const rawPacks =
+        (packData || []) as Array<{
+          id: string;
+          therapist_id: string;
+          therapist_service_id: string;
+          sessions_total: number;
+          sessions_remaining: number;
+          session_price: number;
+          discount_rate: number;
+          total_price: number;
+          status: string;
+          valid_until: string | null;
+        }>;
+
+      if (rawPacks.length > 0) {
+        const therapistIds = Array.from(
+          new Set(
+            rawPacks.map(
+              (pack) => pack.therapist_id,
+            ),
+          ),
+        );
+
+        const {
+          data: therapistData,
+          error: therapistError,
+        } = await supabase
+          .from("therapists")
+          .select("id, full_name")
+          .in("id", therapistIds);
+
+        if (therapistError) {
+          console.error(
+            "Unable to load pack specialists:",
+            therapistError,
+          );
+        }
+
+        const therapistNames = new Map(
+          (therapistData || []).map(
+            (therapist) => [
+              therapist.id,
+              therapist.full_name,
+            ],
+          ),
+        );
+
+        const now = Date.now();
+
+        setPatientPacks(
+          rawPacks
+            .filter((pack) => {
+              if (
+                pack.status !== "active" ||
+                Number(pack.sessions_remaining) <= 0
+              ) {
+                return false;
+              }
+
+              if (!pack.valid_until) {
+                return true;
+              }
+
+              const validUntilMs =
+                new Date(
+                  pack.valid_until,
+                ).getTime();
+
+              return (
+                Number.isNaN(validUntilMs) ||
+                validUntilMs > now
+              );
+            })
+            .map((pack) => ({
+              ...pack,
+              therapist_name:
+                therapistNames.get(
+                  pack.therapist_id,
+                ) || "",
+            })),
+        );
+      } else {
+        setPatientPacks([]);
+      }
+
       setNowMs(Date.now());
     } catch (error) {
       console.error("Unable to load patient bookings:", error);
@@ -303,6 +452,85 @@ export default function PatientDashboard() {
     }
 
     return `$${new Intl.NumberFormat("en-US").format(price)}`;
+  };
+
+  const formatPackValidity = (
+    value: string | null,
+  ) => {
+    if (!value) {
+      return "—";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "—";
+    }
+
+    return new Intl.DateTimeFormat(
+      getLocale(),
+      {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      },
+    ).format(date);
+  };
+
+  const isPackBooking = (
+    booking: Booking,
+  ) =>
+    Boolean(
+      booking.patient_pack_id ||
+        booking.payment_source ===
+          "patient_pack" ||
+        booking.payment_provider ===
+          "patient_pack",
+    );
+
+  const getPackForBooking = (
+    booking: Booking,
+  ) => {
+    if (!booking.patient_pack_id) {
+      return null;
+    }
+
+    return (
+      patientPacks.find(
+        (pack) =>
+          pack.id ===
+          booking.patient_pack_id,
+      ) || null
+    );
+  };
+
+  const getPackSessionNumber = (
+    booking: Booking,
+  ) => {
+    if (!booking.patient_pack_id) {
+      return null;
+    }
+
+    const packBookings = bookings
+      .filter(
+        (item) =>
+          item.patient_pack_id ===
+            booking.patient_pack_id &&
+          item.status === "paid",
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime(),
+      );
+
+    const index = packBookings.findIndex(
+      (item) => item.id === booking.id,
+    );
+
+    return index >= 0
+      ? index + 1
+      : null;
   };
 
   const getLocale = () => {
@@ -602,6 +830,79 @@ export default function PatientDashboard() {
               </div>
             </header>
 
+            {!loading &&
+              patientPacks.length > 0 && (
+                <section className="mb-10 rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10">
+                  <div className="mb-6">
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                      AAN Psychotherapy
+                    </p>
+
+                    <h2 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                      {copy.packTitle}
+                    </h2>
+                  </div>
+
+                  <div className="grid gap-5">
+                    {patientPacks.map(
+                      (pack) => (
+                        <article
+                          key={pack.id}
+                          className="rounded-[1.75rem] border border-[#d8c7aa] bg-[linear-gradient(145deg,#fffaf2_0%,#f7f2e9_100%)] p-6 sm:p-7"
+                        >
+                          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                              {pack.therapist_name && (
+                                <p className="font-bold text-aan-navy">
+                                  {pack.therapist_name}
+                                </p>
+                              )}
+
+                              <div className="mt-3 flex flex-wrap items-center gap-3">
+                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+                                  {formatDigits(
+                                    pack.sessions_remaining,
+                                  )}
+                                  /
+                                  {formatDigits(
+                                    pack.sessions_total,
+                                  )}{" "}
+                                  {copy.packRemaining}
+                                </span>
+
+                                <span className="rounded-full border border-aan-border bg-white px-4 py-2 text-sm font-semibold text-aan-secondary">
+                                  {copy.packValidUntil}:{" "}
+                                  {formatPackValidity(
+                                    pack.valid_until,
+                                  )}
+                                </span>
+                              </div>
+
+                              <p className="mt-4 text-sm leading-6 text-aan-secondary">
+                                {language === "ar"
+                                  ? "جلساتك مدفوعة مسبقاً ضمن هذه الباقة. اختر موعداً جديداً من رصيدك المتبقي من دون دفع إضافي."
+                                  : language === "fr"
+                                    ? "Vos séances sont déjà prépayées dans ce Pack. Réservez vos prochains créneaux avec votre crédit restant, sans nouveau paiement."
+                                    : "Your sessions are prepaid in this Pack. Book your next appointments from your remaining credit with no additional payment."}
+                              </p>
+                            </div>
+
+                            <Link
+                              href={`/booking?packId=${encodeURIComponent(
+                                pack.id,
+                              )}`}
+                              className="aan-cta inline-flex shrink-0 items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                            >
+                              {copy.packBookSession}
+                            </Link>
+                          </div>
+                        </article>
+                      ),
+                    )}
+                  </div>
+                </section>
+              )}
+
             <section className="rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10">
               {actionMessage && (
                 <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 font-semibold text-emerald-800">
@@ -674,6 +975,36 @@ export default function PatientDashboard() {
                               <h3 className="aan-heading mt-3 text-3xl">
                                 {booking.therapist_name}
                               </h3>
+
+                              {isPackBooking(
+                                booking,
+                              ) && (
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex rounded-full border border-[#d8c7aa] bg-[#fffaf2] px-3 py-1.5 text-xs font-bold text-[#8f744d]">
+                                    {copy.packTitle}
+                                  </span>
+
+                                  {getPackSessionNumber(
+                                    booking,
+                                  ) && (
+                                    <span className="inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-navy">
+                                      {copy.packSession}{" "}
+                                      {formatDigits(
+                                        getPackSessionNumber(
+                                          booking,
+                                        ) as number,
+                                      )}{" "}
+                                      {copy.packOf}{" "}
+                                      {formatDigits(
+                                        getPackForBooking(
+                                          booking,
+                                        )?.sessions_total ||
+                                          4,
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <span
@@ -719,8 +1050,22 @@ export default function PatientDashboard() {
                               </p>
 
                               <p className="mt-2 font-bold text-aan-navy">
-                                {formatPrice(booking.price)}
+                                {isPackBooking(booking)
+                                  ? copy.packIncluded
+                                  : formatPrice(
+                                      booking.price,
+                                    )}
                               </p>
+
+                              {isPackBooking(
+                                booking,
+                              ) && (
+                                <p className="mt-1 text-xs leading-5 text-aan-secondary">
+                                  {
+                                    copy.packNoExtraPayment
+                                  }
+                                </p>
+                              )}
                             </div>
                           </div>
 
