@@ -535,7 +535,7 @@ export default function TherapistDashboard() {
             "رابط الجلسة غير جاهز",
 
           requestReschedule:
-            "طلب تغيير الموعد الزمني",
+            "تغيير الموعد",
 
           cancelSession:
             "إلغاء الجلسة",
@@ -735,7 +735,7 @@ export default function TherapistDashboard() {
               "Lien de séance non disponible",
 
             requestReschedule:
-              "Demander un changement de créneau",
+              "Changer de créneau",
 
             cancelSession:
               "Annuler la séance",
@@ -934,7 +934,7 @@ export default function TherapistDashboard() {
               "Session link not ready",
 
             requestReschedule:
-              "Request a time-slot change",
+              "Change time slot",
 
             cancelSession:
               "Cancel session",
@@ -5116,7 +5116,7 @@ export default function TherapistDashboard() {
                                 </span>
                               </div>
 
-                              <div className="mt-4 space-y-2">
+                              <div className="mt-4 rounded-2xl border border-aan-border bg-[#fcfaf7] p-2.5">
                                 <div
                                   className={
                                     booking.backup_host_url
@@ -5156,14 +5156,14 @@ export default function TherapistDashboard() {
                                           "noopener,noreferrer",
                                         )
                                       }
-                                      className="w-full rounded-xl border border-aan-navy bg-[#fbf8f3] px-4 py-2.5 text-sm font-bold text-aan-navy transition hover:bg-white"
+                                      className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100"
                                     >
                                       {text.startContinuation}
                                     </button>
                                   ) : null}
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                   {googleConnection.connected &&
                                   zoomConnection.connected ? (
                                     <button
@@ -5177,7 +5177,7 @@ export default function TherapistDashboard() {
                                         sessionProviderLoading !==
                                         null
                                       }
-                                      className="w-full whitespace-nowrap rounded-xl border border-aan-border bg-white px-3 py-2.5 text-xs font-bold text-aan-secondary transition hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="w-full rounded-xl border border-aan-border bg-white px-3 py-2.5 text-sm font-semibold text-aan-secondary transition hover:border-aan-gold hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       {language === "ar"
                                         ? "تغيير المنصة"
@@ -5199,7 +5199,7 @@ export default function TherapistDashboard() {
                                       bookingActionId ===
                                       booking.id
                                     }
-                                    className={`w-full whitespace-nowrap rounded-xl border border-aan-gold bg-white px-3 py-2.5 text-xs font-bold text-aan-navy disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    className={`w-full rounded-xl border border-aan-gold bg-white px-3 py-2.5 text-sm font-semibold text-aan-navy transition hover:bg-[#fffaf2] disabled:cursor-not-allowed disabled:opacity-60 ${
                                       !googleConnection.connected ||
                                       !zoomConnection.connected
                                         ? "sm:col-span-2"
@@ -5222,7 +5222,7 @@ export default function TherapistDashboard() {
                                     bookingActionId ===
                                     booking.id
                                   }
-                                  className="w-full rounded-xl border border-red-100 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="mt-2 w-full rounded-xl border border-red-100 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {text.cancelSession}
                                 </button>
