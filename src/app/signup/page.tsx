@@ -13,6 +13,7 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -30,7 +31,9 @@ export default function SignupPage() {
           emailPlaceholder: "name@example.com",
           password: "كلمة المرور",
           passwordPlaceholder: "8 أحرف على الأقل",
-          passwordHint: "استخدم 8 أحرف على الأقل.",
+          passwordHint: "8 أحرف على الأقل، مع رقم واحد ورمز خاص واحد على الأقل.",
+          confirmPassword: "تأكيد كلمة المرور",
+          confirmPasswordPlaceholder: "أعد إدخال كلمة المرور",
           submit: "إنشاء الحساب",
           submitting: "جارٍ إنشاء الحساب...",
           existingAccount: "لديك حساب بالفعل؟",
@@ -46,6 +49,9 @@ export default function SignupPage() {
           emailRequired: "يرجى إدخال بريدك الإلكتروني.",
           passwordRequired: "يرجى إدخال كلمة مرور.",
           passwordLength: "يجب أن تحتوي كلمة المرور على 8 أحرف على الأقل.",
+          passwordNumber: "يجب أن تحتوي كلمة المرور على رقم واحد على الأقل.",
+          passwordSymbol: "يجب أن تحتوي كلمة المرور على رمز خاص واحد على الأقل.",
+          passwordMismatch: "كلمتا المرور غير متطابقتين.",
           profileError:
             "تم إنشاء الحساب، ولكن تعذر حفظ ملف المريض. يرجى التواصل مع الدعم.",
           success:
@@ -64,7 +70,10 @@ export default function SignupPage() {
             emailPlaceholder: "nom@exemple.com",
             password: "Mot de passe",
             passwordPlaceholder: "8 caractères minimum",
-            passwordHint: "Utilisez au moins 8 caractères.",
+            passwordHint:
+              "8 caractères minimum, avec au moins un chiffre et un symbole.",
+            confirmPassword: "Confirmer le mot de passe",
+            confirmPasswordPlaceholder: "Saisissez à nouveau votre mot de passe",
             submit: "Créer mon compte",
             submitting: "Création du compte...",
             existingAccount: "Vous avez déjà un compte ?",
@@ -81,6 +90,12 @@ export default function SignupPage() {
             passwordRequired: "Veuillez saisir un mot de passe.",
             passwordLength:
               "Le mot de passe doit contenir au moins 8 caractères.",
+            passwordNumber:
+              "Le mot de passe doit contenir au moins un chiffre.",
+            passwordSymbol:
+              "Le mot de passe doit contenir au moins un symbole.",
+            passwordMismatch:
+              "Les deux mots de passe ne correspondent pas.",
             profileError:
               "Le compte a été créé, mais le profil patient n’a pas pu être enregistré. Veuillez contacter le support.",
             success:
@@ -99,7 +114,10 @@ export default function SignupPage() {
             emailPlaceholder: "name@example.com",
             password: "Password",
             passwordPlaceholder: "At least 8 characters",
-            passwordHint: "Use at least 8 characters.",
+            passwordHint:
+              "Use at least 8 characters, including at least one number and one symbol.",
+            confirmPassword: "Confirm password",
+            confirmPasswordPlaceholder: "Enter your password again",
             submit: "Create my account",
             submitting: "Creating account...",
             existingAccount: "Already have an account?",
@@ -115,6 +133,9 @@ export default function SignupPage() {
             emailRequired: "Please enter your email.",
             passwordRequired: "Please enter a password.",
             passwordLength: "Password must contain at least 8 characters.",
+            passwordNumber: "Password must contain at least one number.",
+            passwordSymbol: "Password must contain at least one symbol.",
+            passwordMismatch: "The passwords do not match.",
             profileError:
               "The account was created, but the patient profile could not be saved. Please contact support.",
             success:
@@ -149,6 +170,21 @@ export default function SignupPage() {
 
     if (password.length < 8) {
       setErrorMessage(copy.passwordLength);
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      setErrorMessage(copy.passwordNumber);
+      return;
+    }
+
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      setErrorMessage(copy.passwordSymbol);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage(copy.passwordMismatch);
       return;
     }
 
@@ -192,6 +228,7 @@ export default function SignupPage() {
       setFullName("");
       setEmail("");
       setPassword("");
+      setConfirmPassword("");
     } catch (error) {
       console.error("Patient signup error:", error);
       setErrorMessage(copy.genericError);
@@ -331,6 +368,26 @@ export default function SignupPage() {
                   <p className="mt-2 text-xs text-aan-secondary">
                     {copy.passwordHint}
                   </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="signup-confirm-password"
+                    className="mb-2 block text-sm font-semibold text-aan-navy"
+                  >
+                    {copy.confirmPassword}
+                  </label>
+
+                  <input
+                    id="signup-confirm-password"
+                    className="w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition placeholder:text-slate-400 focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/10"
+                    placeholder={copy.confirmPasswordPlaceholder}
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    disabled={loading}
+                  />
                 </div>
 
                 {errorMessage ? (
