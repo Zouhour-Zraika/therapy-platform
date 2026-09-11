@@ -39,6 +39,11 @@ type Booking = {
 
   meeting_url?: string | null;
   meeting_provider?: string | null;
+
+  backup_meeting_provider?: string | null;
+  backup_join_url?: string | null;
+  backup_host_url?: string | null;
+  backup_calendar_event_id?: string | null;
 };
 
 type PatientRecordSummary = {
@@ -523,11 +528,14 @@ export default function TherapistDashboard() {
           startSession:
             "بدء الجلسة",
 
+          startContinuation:
+            "بدء متابعة الجلسة",
+
           meetingNotReady:
             "رابط الجلسة غير جاهز",
 
           requestReschedule:
-            "طلب تغيير الموعد",
+            "طلب تغيير الموعد الزمني",
 
           cancelSession:
             "إلغاء الجلسة",
@@ -720,11 +728,14 @@ export default function TherapistDashboard() {
             startSession:
               "Démarrer la séance",
 
+            startContinuation:
+              "Démarrer la suite",
+
             meetingNotReady:
               "Lien de séance non disponible",
 
             requestReschedule:
-              "Demander un changement",
+              "Demander un changement de créneau",
 
             cancelSession:
               "Annuler la séance",
@@ -916,11 +927,14 @@ export default function TherapistDashboard() {
             startSession:
               "Start Session",
 
+            startContinuation:
+              "Start continuation",
+
             meetingNotReady:
               "Session link not ready",
 
             requestReschedule:
-              "Request reschedule",
+              "Request a time-slot change",
 
             cancelSession:
               "Cancel session",
@@ -5093,53 +5107,67 @@ export default function TherapistDashboard() {
                                 </span>
                               </div>
 
-                              <div className="mt-4 flex flex-wrap gap-2">
+                              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                 {canStartSession ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void handleStartSession(
-                                          booking,
-                                        )
-                                      }
-                                      disabled={
-                                        sessionProviderLoading !==
-                                        null
-                                      }
-                                      className="aan-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                      {text.startSession}
-                                    </button>
-
-                                    {googleConnection.connected &&
-                                    zoomConnection.connected ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleChangeSessionPlatform(
-                                            booking,
-                                          )
-                                        }
-                                        disabled={
-                                          sessionProviderLoading !==
-                                          null
-                                        }
-                                        className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-secondary transition hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        {language === "ar"
-                                          ? "تغيير المنصة"
-                                          : language === "fr"
-                                            ? "Changer de plateforme"
-                                            : "Change platform"}
-                                      </button>
-                                    ) : null}
-                                  </>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleStartSession(
+                                        booking,
+                                      )
+                                    }
+                                    disabled={
+                                      sessionProviderLoading !==
+                                      null
+                                    }
+                                    className="aan-button w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {text.startSession}
+                                  </button>
                                 ) : (
-                                  <span className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">
+                                  <span className="flex w-full items-center justify-center rounded-xl bg-slate-100 px-4 py-2 text-center text-sm font-semibold text-slate-500">
                                     {text.meetingNotReady}
                                   </span>
                                 )}
+
+                                {booking.backup_host_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      window.open(
+                                        booking.backup_host_url!,
+                                        "_blank",
+                                        "noopener,noreferrer",
+                                      )
+                                    }
+                                    className="w-full rounded-xl border border-aan-navy bg-white px-4 py-2 text-sm font-bold text-aan-navy transition hover:bg-[#fbf8f3]"
+                                  >
+                                    {text.startContinuation}
+                                  </button>
+                                ) : null}
+
+                                {googleConnection.connected &&
+                                zoomConnection.connected ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleChangeSessionPlatform(
+                                        booking,
+                                      )
+                                    }
+                                    disabled={
+                                      sessionProviderLoading !==
+                                      null
+                                    }
+                                    className="w-full rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-secondary transition hover:text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {language === "ar"
+                                      ? "تغيير المنصة"
+                                      : language === "fr"
+                                        ? "Changer de plateforme"
+                                        : "Change platform"}
+                                  </button>
+                                ) : null}
 
                                 <button
                                   type="button"
@@ -5153,7 +5181,7 @@ export default function TherapistDashboard() {
                                     bookingActionId ===
                                     booking.id
                                   }
-                                  className="rounded-xl border border-aan-gold bg-white px-4 py-2 text-sm font-bold text-aan-navy"
+                                  className="w-full rounded-xl border border-aan-gold bg-white px-4 py-2 text-sm font-bold text-aan-navy disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {text.requestReschedule}
                                 </button>
@@ -5170,7 +5198,7 @@ export default function TherapistDashboard() {
                                     bookingActionId ===
                                     booking.id
                                   }
-                                  className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700"
+                                  className="w-full rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
                                 >
                                   {text.cancelSession}
                                 </button>
