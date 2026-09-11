@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   createGoogleCalendarEventForBooking,
+  createGoogleMeetContinuationForBooking,
   createGoogleMeetForBooking,
   deleteGoogleCalendarEventForBooking,
 } from "@/lib/googleCalendar";
@@ -9,6 +10,10 @@ import {
 export const runtime = "nodejs";
 
 type Provider = "google" | "zoom";
+
+type MeetingProvider =
+  | "google_meet"
+  | "zoom";
 
 type SpecialistRow = {
   id: string;
@@ -27,11 +32,17 @@ type BookingRow = {
   patient_email: string | null;
   scheduled_start: string | null;
   scheduled_end: string | null;
+  service_type: string | null;
+  duration_minutes: number | null;
   meeting_url: string | null;
   meeting_provider: string | null;
   calendar_event_id: string | null;
   zoom_join_url: string | null;
   zoom_start_url: string | null;
+  backup_meeting_provider: string | null;
+  backup_join_url: string | null;
+  backup_host_url: string | null;
+  backup_calendar_event_id: string | null;
 };
 
 type ZoomConnectionRow = {
@@ -57,6 +68,40 @@ type ZoomMeetingResponse = {
   code?: number;
 };
 
+class RouteError extends Error {
+  status: number;
+
+  constructor(
+    message: string,
+    status = 500,
+  ) {
+    super(message);
+    this.name = "RouteError";
+    this.status = status;
+  }
+}
+
+const TIME_ZONE =
+  "Asia/Beirut";
+
+function googleMeetNeedsContinuation(
+  serviceType: string | null,
+) {
+  const normalized =
+    serviceType
+      ?.trim()
+      .toLowerCase() ||
+    "";
+
+  return (
+    normalized.includes("couple") ||
+    normalized.includes("family") ||
+    normalized.includes("famille") ||
+    normalized.includes("group") ||
+    normalized.includes("groupe")
+  );
+}
+
 async function refreshZoomAccessToken(
   refreshToken: string,
 ) {
@@ -66,12 +111,10 @@ async function refreshZoomAccessToken(
   const clientSecret =
     process.env.ZOOM_OAUTH_CLIENT_SECRET;
 
-  if (
-    !clientId ||
-    !clientSecret
-  ) {
-    throw new Error(
-      "Zoom OAuth configuration missing.",
+  if (!clientId || !clientSecret) {
+    throw new RouteError(
+      "Configuration OAuth Zoom manquante.",
+      500,
     );
   }
 
@@ -121,25 +164,254 @@ async function refreshZoomAccessToken(
       },
     );
 
-    throw new Error(
+    throw new RouteError(
       "Impossible de renouveler la connexion Zoom. Déconnectez puis reconnectez Zoom.",
+      409,
     );
   }
 
   return data;
 }
 
+async function getZoomAccessToken({
+  supabaseAdmin,
+  therapistId,
+}: {
+  supabaseAdmin: any;
+  therapistId: string;
+}) {
+  const {
+    data: connection,
+    error:
+      connectionError,
+  } =
+    await supabaseAdmin
+      .from(
+        "therapist_zoom_connections",
+      )
+      .select(
+        "access_token, refresh_token, token_expires_at",
+      )
+      .eq(
+        "therapist_id",
+        therapistId,
+      )
+      .maybeSingle();
+
+  const typedConnection =
+    connection as ZoomConnectionRow | null;
+
+  if (connectionError) {
+    throw connectionError;
+  }
+
+  if (
+    !typedConnection ||
+    !typedConnection.access_token
+  ) {
+    throw new RouteError(
+      "Connectez d'abord votre compte Zoom.",
+      409,
+    );
+  }
+
+  let accessToken =
+    typedConnection.access_token;
+
+  const expiresAt =
+    typedConnection.token_expires_at
+      ? new Date(
+          typedConnection.token_expires_at,
+        ).getTime()
+      : 0;
+
+  const shouldRefresh =
+    !expiresAt ||
+    expiresAt <=
+      Date.now() + 60_000;
+
+  if (!shouldRefresh) {
+    return accessToken;
+  }
+
+  if (!typedConnection.refresh_token) {
+    throw new RouteError(
+      "La connexion Zoom doit être renouvelée. Déconnectez puis reconnectez Zoom.",
+      409,
+    );
+  }
+
+  const refreshed =
+    await refreshZoomAccessToken(
+      typedConnection.refresh_token,
+    );
+
+  accessToken =
+    refreshed.access_token!;
+
+  const refreshedExpiresAt =
+    typeof refreshed.expires_in ===
+    "number"
+      ? new Date(
+          Date.now() +
+            refreshed.expires_in *
+              1000,
+        ).toISOString()
+      : null;
+
+  const {
+    error:
+      refreshUpdateError,
+  } =
+    await supabaseAdmin
+      .from(
+        "therapist_zoom_connections",
+      )
+      .update({
+        access_token:
+          accessToken,
+        refresh_token:
+          refreshed.refresh_token ||
+          typedConnection.refresh_token,
+        token_expires_at:
+          refreshedExpiresAt,
+        scope:
+          refreshed.scope ??
+          undefined,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        "therapist_id",
+        therapistId,
+      );
+
+  if (refreshUpdateError) {
+    throw refreshUpdateError;
+  }
+
+  return accessToken;
+}
+
+async function createZoomMeeting({
+  accessToken,
+  therapistName,
+  startDate,
+  endDate,
+  continuation = false,
+}: {
+  accessToken: string;
+  therapistName: string;
+  startDate: Date;
+  endDate: Date;
+  continuation?: boolean;
+}) {
+  const durationMinutes =
+    Math.max(
+      1,
+      Math.round(
+        (
+          endDate.getTime() -
+          startDate.getTime()
+        ) /
+          60_000,
+      ),
+    );
+
+  const zoomResponse =
+    await fetch(
+      "https://api.zoom.us/v2/users/me/meetings",
+      {
+        method: "POST",
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+          "Content-Type":
+            "application/json",
+        },
+        body:
+          JSON.stringify({
+            topic:
+              continuation
+                ? `AAN Psychotherapy — ${therapistName} — Continuation`
+                : `AAN Psychotherapy — ${therapistName}`,
+            type: 2,
+            start_time:
+              startDate.toISOString(),
+            duration:
+              durationMinutes,
+            timezone:
+              TIME_ZONE,
+            agenda:
+              continuation
+                ? "AAN psychotherapy session — continuation room"
+                : "AAN psychotherapy session",
+            settings: {
+              join_before_host:
+                false,
+              waiting_room:
+                true,
+              mute_upon_entry:
+                true,
+            },
+          }),
+      },
+    );
+
+  const zoomMeeting =
+    (await zoomResponse.json()) as
+      ZoomMeetingResponse;
+
+  if (
+    !zoomResponse.ok ||
+    !zoomMeeting.join_url ||
+    !zoomMeeting.start_url
+  ) {
+    console.error(
+      "Zoom meeting creation failed:",
+      {
+        status:
+          zoomResponse.status,
+        code:
+          zoomMeeting.code,
+        message:
+          zoomMeeting.message,
+        continuation,
+      },
+    );
+
+    throw new RouteError(
+      zoomMeeting.message ||
+        "Impossible de créer la réunion Zoom.",
+      502,
+    );
+  }
+
+  return {
+    joinUrl:
+      zoomMeeting.join_url,
+    startUrl:
+      zoomMeeting.start_url,
+  };
+}
 
 async function notifyPatientOfPlatformChange({
   request,
   booking,
   meetingProvider,
   meetingUrl,
+  backupMeetingProvider,
+  backupJoinUrl,
 }: {
   request: NextRequest;
   booking: BookingRow;
-  meetingProvider: "google_meet" | "zoom";
+  meetingProvider:
+    MeetingProvider;
   meetingUrl: string;
+  backupMeetingProvider:
+    MeetingProvider | null;
+  backupJoinUrl:
+    string | null;
 }) {
   if (!booking.patient_email) {
     return;
@@ -149,27 +421,35 @@ async function notifyPatientOfPlatformChange({
     process.env.NEXT_PUBLIC_SITE_URL?.replace(
       /\/$/,
       "",
-    ) || request.nextUrl.origin;
+    ) ||
+    request.nextUrl.origin;
 
   try {
-    const response = await fetch(
-      `${siteUrl}/api/send-platform-change-email`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    const response =
+      await fetch(
+        `${siteUrl}/api/send-platform-change-email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body:
+            JSON.stringify({
+              email:
+                booking.patient_email,
+              therapist:
+                booking.therapist_name ||
+                "Specialist",
+              meetingProvider,
+              meetingUrl,
+              scheduledStart:
+                booking.scheduled_start,
+              backupMeetingProvider,
+              backupJoinUrl,
+            }),
         },
-        body: JSON.stringify({
-          email: booking.patient_email,
-          therapist:
-            booking.therapist_name || "Specialist",
-          meetingProvider,
-          meetingUrl,
-          scheduledStart:
-            booking.scheduled_start,
-        }),
-      },
-    );
+      );
 
     if (!response.ok) {
       console.error(
@@ -179,7 +459,8 @@ async function notifyPatientOfPlatformChange({
       );
     }
   } catch (error) {
-    // A notification failure must never block an emergency platform switch.
+    // Une erreur d'email ne doit jamais bloquer
+    // une bascule d'urgence de plateforme.
     console.error(
       "Platform change patient email request failed:",
       error,
@@ -187,12 +468,15 @@ async function notifyPatientOfPlatformChange({
   }
 }
 
-async function removePreviousCalendarEvent({
+async function removeCalendarEvent({
   therapistId,
   calendarEventId,
+  label,
 }: {
   therapistId: string;
-  calendarEventId: string | null;
+  calendarEventId:
+    string | null;
+  label: string;
 }) {
   if (!calendarEventId) {
     return;
@@ -204,9 +488,10 @@ async function removePreviousCalendarEvent({
       calendarEventId,
     });
   } catch (error) {
-    // The video switch must still work if Calendar is temporarily unavailable.
+    // La bascule vidéo doit continuer même si Calendar
+    // est temporairement indisponible.
     console.error(
-      "Previous Google Calendar event could not be removed:",
+      `${label} could not be removed:`,
       {
         therapistId,
         calendarEventId,
@@ -214,6 +499,35 @@ async function removePreviousCalendarEvent({
       },
     );
   }
+}
+
+async function removeOldMeetingCalendarEvents({
+  therapistId,
+  booking,
+}: {
+  therapistId: string;
+  booking: BookingRow;
+}) {
+  await removeCalendarEvent({
+    therapistId,
+    calendarEventId:
+      booking.calendar_event_id,
+    label:
+      "Previous primary Google Calendar event",
+  });
+
+  /*
+   * Un backup Google Meet possède son propre événement Calendar.
+   * Il faut le supprimer avant de changer de plateforme ou de
+   * régénérer une nouvelle salle de continuité.
+   */
+  await removeCalendarEvent({
+    therapistId,
+    calendarEventId:
+      booking.backup_calendar_event_id,
+    label:
+      "Previous continuation Google Calendar event",
+  });
 }
 
 export async function POST(
@@ -374,9 +688,7 @@ export async function POST(
         )
         .maybeSingle<SpecialistRow>();
 
-    if (
-      specialistError
-    ) {
+    if (specialistError) {
       throw specialistError;
     }
 
@@ -423,11 +735,17 @@ export async function POST(
             "patient_email",
             "scheduled_start",
             "scheduled_end",
+            "service_type",
+            "duration_minutes",
             "meeting_url",
             "meeting_provider",
             "calendar_event_id",
             "zoom_join_url",
             "zoom_start_url",
+            "backup_meeting_provider",
+            "backup_join_url",
+            "backup_host_url",
+            "backup_calendar_event_id",
           ].join(","),
         )
         .eq(
@@ -436,9 +754,7 @@ export async function POST(
         )
         .maybeSingle<BookingRow>();
 
-    if (
-      bookingError
-    ) {
+    if (bookingError) {
       throw bookingError;
     }
 
@@ -526,7 +842,14 @@ export async function POST(
           )
         : new Date(
             startDate.getTime() +
-              60 * 60 * 1000,
+              (
+                booking.duration_minutes &&
+                booking.duration_minutes > 0
+                  ? booking.duration_minutes
+                  : 60
+              ) *
+                60 *
+                1000,
           );
 
     if (
@@ -549,12 +872,6 @@ export async function POST(
      * =======================================================
      * GOOGLE MEET
      * =======================================================
-     *
-     * Si un Meet existe déjà pour cette réservation,
-     * on le réutilise.
-     *
-     * Sinon, on le crée au moment où le spécialiste
-     * choisit Google Meet.
      */
     if (
       provider === "google"
@@ -563,19 +880,51 @@ export async function POST(
         booking.meeting_provider !==
         "google_meet";
 
+      const needsContinuation =
+        googleMeetNeedsContinuation(
+          booking.service_type,
+        );
+
       /*
-       * Opening an already-active Google Meet must not create
-       * a new meeting or notify the patient again.
+       * Google Meet est déjà actif.
+       *
+       * On réutilise la réunion principale, mais on vérifie aussi
+       * que la salle de continuité correspond aux règles AAN :
+       * - individuelle : aucun backup Meet
+       * - couple/famille/groupe : backup Meet automatique
        */
       if (
         !providerChanged &&
         booking.meeting_url
       ) {
+        let backupMeetingProvider:
+          MeetingProvider | null =
+          booking.backup_meeting_provider ===
+          "google_meet"
+            ? "google_meet"
+            : null;
+
+        let backupJoinUrl:
+          string | null =
+          backupMeetingProvider
+            ? booking.backup_join_url
+            : null;
+
+        let backupHostUrl:
+          string | null =
+          backupMeetingProvider
+            ? booking.backup_host_url
+            : null;
+
+        let backupCalendarEventId:
+          string | null =
+          backupMeetingProvider
+            ? booking.backup_calendar_event_id
+            : null;
+
         /*
-         * Google Meet est la plateforme active :
-         * on supprime les anciennes URLs Zoom de la réservation.
-         * Il ne doit jamais rester deux plateformes "actives"
-         * en même temps dans bookings.
+         * Les anciennes URLs Zoom ne doivent jamais rester actives
+         * lorsque Google Meet est la plateforme courante.
          */
         if (
           booking.zoom_join_url ||
@@ -588,8 +937,10 @@ export async function POST(
             await supabaseAdmin
               .from("bookings")
               .update({
-                zoom_join_url: null,
-                zoom_start_url: null,
+                zoom_join_url:
+                  null,
+                zoom_start_url:
+                  null,
               })
               .eq(
                 "id",
@@ -598,6 +949,161 @@ export async function POST(
 
           if (clearStaleZoomError) {
             throw clearStaleZoomError;
+          }
+        }
+
+        if (needsContinuation) {
+          /*
+           * Si le booking existait avant la fonctionnalité de
+           * continuité, on crée le backup ici une seule fois.
+           */
+          if (
+            !backupJoinUrl ||
+            backupMeetingProvider !==
+              "google_meet"
+          ) {
+            await removeCalendarEvent({
+              therapistId:
+                user.id,
+              calendarEventId:
+                booking.backup_calendar_event_id,
+              label:
+                "Stale continuation Calendar event",
+            });
+
+            try {
+              const continuation =
+                await createGoogleMeetContinuationForBooking({
+                  therapistId:
+                    user.id,
+                  summary:
+                    `AAN Psychotherapy — ${
+                      booking.therapist_name ||
+                      "Session"
+                    }`,
+                  description:
+                    "AAN psychotherapy session continuation room",
+                  start:
+                    startDate.toISOString(),
+                  end:
+                    endDate.toISOString(),
+                  timeZone:
+                    TIME_ZONE,
+                });
+
+              backupMeetingProvider =
+                "google_meet";
+              backupJoinUrl =
+                continuation.meetingUrl;
+              backupHostUrl =
+                continuation.meetingUrl;
+              backupCalendarEventId =
+                continuation.calendarEventId;
+
+              const {
+                error:
+                  backupUpdateError,
+              } =
+                await supabaseAdmin
+                  .from("bookings")
+                  .update({
+                    backup_meeting_provider:
+                      backupMeetingProvider,
+                    backup_join_url:
+                      backupJoinUrl,
+                    backup_host_url:
+                      backupHostUrl,
+                    backup_calendar_event_id:
+                      backupCalendarEventId,
+                  })
+                  .eq(
+                    "id",
+                    booking.id,
+                  );
+
+              if (backupUpdateError) {
+                throw backupUpdateError;
+              }
+            } catch (
+              continuationError
+            ) {
+              /*
+               * Une erreur du backup ne doit pas empêcher l'accès
+               * à la réunion principale déjà valide.
+               */
+              console.error(
+                "Google Meet continuation creation failed:",
+                {
+                  bookingId:
+                    booking.id,
+                  error:
+                    continuationError,
+                },
+              );
+
+              backupMeetingProvider =
+                null;
+              backupJoinUrl =
+                null;
+              backupHostUrl =
+                null;
+              backupCalendarEventId =
+                null;
+            }
+          }
+        } else {
+          /*
+           * Séance individuelle : un éventuel ancien backup doit
+           * être retiré.
+           */
+          if (
+            booking.backup_join_url ||
+            booking.backup_host_url ||
+            booking.backup_meeting_provider ||
+            booking.backup_calendar_event_id
+          ) {
+            await removeCalendarEvent({
+              therapistId:
+                user.id,
+              calendarEventId:
+                booking.backup_calendar_event_id,
+              label:
+                "Unneeded Google Meet continuation Calendar event",
+            });
+
+            const {
+              error:
+                clearBackupError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  backup_meeting_provider:
+                    null,
+                  backup_join_url:
+                    null,
+                  backup_host_url:
+                    null,
+                  backup_calendar_event_id:
+                    null,
+                })
+                .eq(
+                  "id",
+                  booking.id,
+                );
+
+            if (clearBackupError) {
+              throw clearBackupError;
+            }
+
+            backupMeetingProvider =
+              null;
+            backupJoinUrl =
+              null;
+            backupHostUrl =
+              null;
+            backupCalendarEventId =
+              null;
           }
         }
 
@@ -614,20 +1120,25 @@ export async function POST(
             null,
           zoomStartUrl:
             null,
-          providerChanged: false,
+          backupMeetingProvider,
+          backupJoinUrl,
+          backupHostUrl,
+          backupCalendarEventId,
+          providerChanged:
+            false,
         });
       }
 
       /*
-       * When switching from Zoom -> Meet, create a fresh Meet.
-       * We first remove the previous Calendar event so the
-       * patient does not keep two conflicting session entries.
+       * Bascule vers Google Meet :
+       * on retire l'ancien événement principal ET un éventuel
+       * événement Calendar de continuité avant de recréer l'état.
        */
       if (providerChanged) {
-        await removePreviousCalendarEvent({
-          therapistId: user.id,
-          calendarEventId:
-            booking.calendar_event_id,
+        await removeOldMeetingCalendarEvents({
+          therapistId:
+            user.id,
+          booking,
         });
       }
 
@@ -647,10 +1158,74 @@ export async function POST(
           end:
             endDate.toISOString(),
           timeZone:
-            "Asia/Beirut",
+            TIME_ZONE,
           attendeeEmail:
             booking.patient_email,
         });
+
+      let backupMeetingProvider:
+        MeetingProvider | null =
+        null;
+
+      let backupJoinUrl:
+        string | null =
+        null;
+
+      let backupHostUrl:
+        string | null =
+        null;
+
+      let backupCalendarEventId:
+        string | null =
+        null;
+
+      if (needsContinuation) {
+        try {
+          const continuation =
+            await createGoogleMeetContinuationForBooking({
+              therapistId:
+                user.id,
+              summary:
+                `AAN Psychotherapy — ${
+                  booking.therapist_name ||
+                  "Session"
+                }`,
+              description:
+                "AAN psychotherapy session continuation room",
+              start:
+                startDate.toISOString(),
+              end:
+                endDate.toISOString(),
+              timeZone:
+                TIME_ZONE,
+            });
+
+          backupMeetingProvider =
+            "google_meet";
+          backupJoinUrl =
+            continuation.meetingUrl;
+          backupHostUrl =
+            continuation.meetingUrl;
+          backupCalendarEventId =
+            continuation.calendarEventId;
+        } catch (
+          continuationError
+        ) {
+          /*
+           * La réunion principale reste valable même si la
+           * continuité n'a pas pu être préparée.
+           */
+          console.error(
+            "Google Meet continuation creation failed during platform switch:",
+            {
+              bookingId:
+                booking.id,
+              error:
+                continuationError,
+            },
+          );
+        }
+      }
 
       const {
         error:
@@ -665,34 +1240,28 @@ export async function POST(
               "google_meet",
             calendar_event_id:
               googleMeeting.calendarEventId,
-
-            /*
-             * IMPORTANT :
-             * une fois la séance basculée vers Meet, les anciennes
-             * URLs Zoom ne doivent plus rester attachées au booking.
-             * Si on rebascule ensuite vers Zoom, une nouvelle réunion
-             * Zoom sera créée proprement.
-             */
             zoom_join_url:
               null,
             zoom_start_url:
               null,
+            backup_meeting_provider:
+              backupMeetingProvider,
+            backup_join_url:
+              backupJoinUrl,
+            backup_host_url:
+              backupHostUrl,
+            backup_calendar_event_id:
+              backupCalendarEventId,
           })
           .eq(
             "id",
             booking.id,
           );
 
-      if (
-        googleUpdateError
-      ) {
+      if (googleUpdateError) {
         throw googleUpdateError;
       }
 
-      /*
-       * Vérification serveur : on confirme que Supabase a réellement
-       * enregistré Google Meet comme provider actif avant de répondre.
-       */
       const {
         data:
           persistedGoogleBooking,
@@ -702,18 +1271,41 @@ export async function POST(
         await supabaseAdmin
           .from("bookings")
           .select(
-            "meeting_provider, meeting_url, zoom_join_url, zoom_start_url, calendar_event_id",
+            [
+              "meeting_provider",
+              "meeting_url",
+              "zoom_join_url",
+              "zoom_start_url",
+              "calendar_event_id",
+              "backup_meeting_provider",
+              "backup_join_url",
+              "backup_host_url",
+              "backup_calendar_event_id",
+            ].join(","),
           )
           .eq(
             "id",
             booking.id,
           )
           .single<{
-            meeting_provider: string | null;
-            meeting_url: string | null;
-            zoom_join_url: string | null;
-            zoom_start_url: string | null;
-            calendar_event_id: string | null;
+            meeting_provider:
+              string | null;
+            meeting_url:
+              string | null;
+            zoom_join_url:
+              string | null;
+            zoom_start_url:
+              string | null;
+            calendar_event_id:
+              string | null;
+            backup_meeting_provider:
+              string | null;
+            backup_join_url:
+              string | null;
+            backup_host_url:
+              string | null;
+            backup_calendar_event_id:
+              string | null;
           }>();
 
       if (
@@ -739,23 +1331,38 @@ export async function POST(
           meetingProvider:
             "google_meet",
           meetingUrl:
-            googleMeeting.meetingUrl,
+            persistedGoogleBooking.meeting_url,
+          backupMeetingProvider:
+            persistedGoogleBooking.backup_meeting_provider ===
+            "google_meet"
+              ? "google_meet"
+              : null,
+          backupJoinUrl:
+            persistedGoogleBooking.backup_join_url,
         });
       }
 
       return NextResponse.json({
         startUrl:
-          googleMeeting.meetingUrl,
+          persistedGoogleBooking.meeting_url,
         meetingUrl:
-          googleMeeting.meetingUrl,
+          persistedGoogleBooking.meeting_url,
         meetingProvider:
           "google_meet",
         calendarEventId:
-          googleMeeting.calendarEventId,
+          persistedGoogleBooking.calendar_event_id,
         zoomJoinUrl:
           null,
         zoomStartUrl:
           null,
+        backupMeetingProvider:
+          persistedGoogleBooking.backup_meeting_provider,
+        backupJoinUrl:
+          persistedGoogleBooking.backup_join_url,
+        backupHostUrl:
+          persistedGoogleBooking.backup_host_url,
+        backupCalendarEventId:
+          persistedGoogleBooking.backup_calendar_event_id,
         providerChanged,
       });
     }
@@ -765,15 +1372,24 @@ export async function POST(
      * ZOOM
      * =======================================================
      *
-     * Si une réunion Zoom existe déjà pour cette réservation,
-     * on la réutilise.
+     * Toutes les séances AAN dépassent la limite que nous voulons
+     * sécuriser sur Zoom. Une seconde réunion Zoom de continuité
+     * est donc toujours préparée.
      */
     const zoomProviderChanged =
       booking.meeting_provider !==
       "zoom";
 
+    const accessToken =
+      await getZoomAccessToken({
+        supabaseAdmin,
+        therapistId:
+          user.id,
+      });
+
     /*
-     * If Zoom is already the active provider, simply open it.
+     * Zoom est déjà actif : on réutilise la réunion principale,
+     * mais on crée le backup s'il manque (anciens bookings).
      */
     if (
       !zoomProviderChanged &&
@@ -788,7 +1404,8 @@ export async function POST(
           await supabaseAdmin
             .from("bookings")
             .update({
-              meeting_url: null,
+              meeting_url:
+                null,
             })
             .eq(
               "id",
@@ -797,6 +1414,114 @@ export async function POST(
 
         if (clearStaleMeetError) {
           throw clearStaleMeetError;
+        }
+      }
+
+      let backupMeetingProvider:
+        MeetingProvider | null =
+        booking.backup_meeting_provider ===
+        "zoom"
+          ? "zoom"
+          : null;
+
+      let backupJoinUrl:
+        string | null =
+        backupMeetingProvider
+          ? booking.backup_join_url
+          : null;
+
+      let backupHostUrl:
+        string | null =
+        backupMeetingProvider
+          ? booking.backup_host_url
+          : null;
+
+      /*
+       * Un ancien backup Google peut encore avoir un événement
+       * Calendar. On le supprime avant de passer au backup Zoom.
+       */
+      if (
+        backupMeetingProvider !==
+          "zoom" ||
+        !backupJoinUrl ||
+        !backupHostUrl
+      ) {
+        await removeCalendarEvent({
+          therapistId:
+            user.id,
+          calendarEventId:
+            booking.backup_calendar_event_id,
+          label:
+            "Stale continuation Calendar event",
+        });
+
+        try {
+          const continuation =
+            await createZoomMeeting({
+              accessToken,
+              therapistName:
+                booking.therapist_name ||
+                "Session",
+              startDate,
+              endDate,
+              continuation:
+                true,
+            });
+
+          backupMeetingProvider =
+            "zoom";
+          backupJoinUrl =
+            continuation.joinUrl;
+          backupHostUrl =
+            continuation.startUrl;
+
+          const {
+            error:
+              backupUpdateError,
+          } =
+            await supabaseAdmin
+              .from("bookings")
+              .update({
+                backup_meeting_provider:
+                  "zoom",
+                backup_join_url:
+                  backupJoinUrl,
+                backup_host_url:
+                  backupHostUrl,
+                backup_calendar_event_id:
+                  null,
+              })
+              .eq(
+                "id",
+                booking.id,
+              );
+
+          if (backupUpdateError) {
+            throw backupUpdateError;
+          }
+        } catch (
+          continuationError
+        ) {
+          /*
+           * Ne jamais empêcher le spécialiste d'ouvrir la réunion
+           * Zoom principale déjà disponible.
+           */
+          console.error(
+            "Zoom continuation creation failed for active Zoom booking:",
+            {
+              bookingId:
+                booking.id,
+              error:
+                continuationError,
+            },
+          );
+
+          backupMeetingProvider =
+            null;
+          backupJoinUrl =
+            null;
+          backupHostUrl =
+            null;
         }
       }
 
@@ -813,333 +1538,88 @@ export async function POST(
           booking.zoom_join_url,
         zoomStartUrl:
           booking.zoom_start_url,
-        providerChanged: false,
+        backupMeetingProvider,
+        backupJoinUrl,
+        backupHostUrl,
+        backupCalendarEventId:
+          null,
+        providerChanged:
+          false,
       });
     }
 
     /*
-     * If a Zoom meeting already exists from an earlier state,
-     * reuse it for the emergency switch and rebuild Calendar.
+     * Bascule vers Zoom ou réparation d'un booking Zoom incomplet :
+     * on crée une NOUVELLE réunion principale et un NOUVEAU backup.
+     * On ne réutilise pas un ancien lien Zoom après une bascule Meet.
      */
-    if (
-      zoomProviderChanged &&
-      booking.zoom_start_url &&
-      booking.zoom_join_url
-    ) {
-      await removePreviousCalendarEvent({
+    if (zoomProviderChanged) {
+      await removeOldMeetingCalendarEvents({
+        therapistId:
+          user.id,
+        booking,
+      });
+    } else {
+      await removeCalendarEvent({
         therapistId:
           user.id,
         calendarEventId:
-          booking.calendar_event_id,
-      });
-
-      let newCalendarEventId:
-        string | null = null;
-
-      try {
-        const calendarEvent =
-          await createGoogleCalendarEventForBooking({
-            therapistId:
-              user.id,
-            summary:
-              `AAN Psychotherapy — ${
-                booking.therapist_name ||
-                "Session"
-              }`,
-            description:
-              [
-                `AAN booking ${booking.id}`,
-                "",
-                "Platform: Zoom",
-                `Join Zoom: ${booking.zoom_join_url}`,
-              ].join("\n"),
-            location:
-              booking.zoom_join_url,
-            start:
-              startDate.toISOString(),
-            end:
-              endDate.toISOString(),
-            timeZone:
-              "Asia/Beirut",
-            attendeeEmail:
-              booking.patient_email,
-          });
-
-        newCalendarEventId =
-          calendarEvent.calendarEventId;
-      } catch (calendarError) {
-        console.error(
-          "Google Calendar rebuild failed during Zoom switch:",
-          calendarError,
-        );
-      }
-
-      const {
-        error:
-          providerUpdateError,
-      } =
-        await supabaseAdmin
-          .from("bookings")
-          .update({
-            meeting_provider:
-              "zoom",
-            meeting_url:
-              null,
-            calendar_event_id:
-              newCalendarEventId,
-          })
-          .eq(
-            "id",
-            booking.id,
-          );
-
-      if (
-        providerUpdateError
-      ) {
-        throw providerUpdateError;
-      }
-
-      await notifyPatientOfPlatformChange({
-        request,
-        booking,
-        meetingProvider:
-          "zoom",
-        meetingUrl:
-          booking.zoom_join_url,
-      });
-
-      return NextResponse.json({
-        startUrl:
-          booking.zoom_start_url,
-        meetingUrl:
-          null,
-        meetingProvider:
-          "zoom",
-        calendarEventId:
-          newCalendarEventId,
-        zoomJoinUrl:
-          booking.zoom_join_url,
-        zoomStartUrl:
-          booking.zoom_start_url,
-        providerChanged: true,
+          booking.backup_calendar_event_id,
+        label:
+          "Previous continuation Calendar event",
       });
     }
-
-    const {
-      data:
-        connection,
-      error:
-        connectionError,
-    } =
-      await supabaseAdmin
-        .from(
-          "therapist_zoom_connections",
-        )
-        .select(
-          "access_token, refresh_token, token_expires_at",
-        )
-        .eq(
-          "therapist_id",
-          user.id,
-        )
-        .maybeSingle<ZoomConnectionRow>();
-
-    if (
-      connectionError
-    ) {
-      throw connectionError;
-    }
-
-    if (
-      !connection ||
-      !connection.access_token
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Connectez d'abord votre compte Zoom.",
-        },
-        {
-          status: 409,
-        },
-      );
-    }
-
-    let accessToken =
-      connection.access_token;
-
-    const expiresAt =
-      connection.token_expires_at
-        ? new Date(
-            connection.token_expires_at,
-          ).getTime()
-        : 0;
-
-    const shouldRefresh =
-      !expiresAt ||
-      expiresAt <=
-        Date.now() + 60_000;
-
-    if (shouldRefresh) {
-      if (
-        !connection.refresh_token
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "La connexion Zoom doit être renouvelée. Déconnectez puis reconnectez Zoom.",
-          },
-          {
-            status: 409,
-          },
-        );
-      }
-
-      const refreshed =
-        await refreshZoomAccessToken(
-          connection.refresh_token,
-        );
-
-      accessToken =
-        refreshed.access_token!;
-
-      const refreshedExpiresAt =
-        typeof refreshed.expires_in ===
-        "number"
-          ? new Date(
-              Date.now() +
-                refreshed.expires_in *
-                  1000,
-            ).toISOString()
-          : null;
-
-      const {
-        error:
-          refreshUpdateError,
-      } =
-        await supabaseAdmin
-          .from(
-            "therapist_zoom_connections",
-          )
-          .update({
-            access_token:
-              accessToken,
-            refresh_token:
-              refreshed.refresh_token ||
-              connection.refresh_token,
-            token_expires_at:
-              refreshedExpiresAt,
-            scope:
-              refreshed.scope ??
-              undefined,
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            "therapist_id",
-            user.id,
-          );
-
-      if (
-        refreshUpdateError
-      ) {
-        throw refreshUpdateError;
-      }
-    }
-
-    const zoomResponse =
-      await fetch(
-        "https://api.zoom.us/v2/users/me/meetings",
-        {
-          method: "POST",
-          headers: {
-            Authorization:
-              `Bearer ${accessToken}`,
-            "Content-Type":
-              "application/json",
-          },
-          body:
-            JSON.stringify({
-              topic:
-                `AAN Psychotherapy — ${
-                  booking.therapist_name ||
-                  "Session"
-                }`,
-              type: 2,
-              start_time:
-                startDate.toISOString(),
-              duration:
-                Math.max(
-                  1,
-                  Math.round(
-                    (
-                      endDate.getTime() -
-                      startDate.getTime()
-                    ) /
-                      60_000,
-                  ),
-                ),
-              timezone:
-                "Asia/Beirut",
-              agenda:
-                "AAN psychotherapy session",
-              settings: {
-                join_before_host:
-                  false,
-                waiting_room:
-                  true,
-                mute_upon_entry:
-                  true,
-              },
-            }),
-        },
-      );
 
     const zoomMeeting =
-      (await zoomResponse.json()) as
-        ZoomMeetingResponse;
-
-    if (
-      !zoomResponse.ok ||
-      !zoomMeeting.join_url ||
-      !zoomMeeting.start_url
-    ) {
-      console.error(
-        "Zoom meeting creation failed:",
-        {
-          status:
-            zoomResponse.status,
-          code:
-            zoomMeeting.code,
-          message:
-            zoomMeeting.message,
-        },
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            zoomMeeting.message ||
-            "Impossible de créer la réunion Zoom.",
-        },
-        {
-          status: 502,
-        },
-      );
-    }
-
-    if (zoomProviderChanged) {
-      await removePreviousCalendarEvent({
-        therapistId:
-          user.id,
-        calendarEventId:
-          booking.calendar_event_id,
+      await createZoomMeeting({
+        accessToken,
+        therapistName:
+          booking.therapist_name ||
+          "Session",
+        startDate,
+        endDate,
       });
+
+    let zoomContinuation:
+      {
+        joinUrl: string;
+        startUrl: string;
+      } | null =
+      null;
+
+    try {
+      zoomContinuation =
+        await createZoomMeeting({
+          accessToken,
+          therapistName:
+            booking.therapist_name ||
+            "Session",
+          startDate,
+          endDate,
+          continuation:
+            true,
+        });
+    } catch (
+      continuationError
+    ) {
+      /*
+       * Le changement vers Zoom reste utilisable même si la salle
+       * secondaire n'a pas pu être créée.
+       */
+      console.error(
+        "Zoom continuation creation failed during platform switch:",
+        {
+          bookingId:
+            booking.id,
+          error:
+            continuationError,
+        },
+      );
     }
 
     let newCalendarEventId:
       string | null =
-      booking.calendar_event_id;
+      null;
 
     try {
       const calendarEvent =
@@ -1156,16 +1636,21 @@ export async function POST(
               `AAN booking ${booking.id}`,
               "",
               "Platform: Zoom",
-              `Join Zoom: ${zoomMeeting.join_url}`,
-            ].join("\n"),
+              `Join Zoom: ${zoomMeeting.joinUrl}`,
+              zoomContinuation
+                ? `Continuation Zoom: ${zoomContinuation.joinUrl}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
           location:
-            zoomMeeting.join_url,
+            zoomMeeting.joinUrl,
           start:
             startDate.toISOString(),
           end:
             endDate.toISOString(),
           timeZone:
-            "Asia/Beirut",
+            TIME_ZONE,
           attendeeEmail:
             booking.patient_email,
         });
@@ -1177,11 +1662,6 @@ export async function POST(
         "Google Calendar event creation failed for Zoom session:",
         calendarError,
       );
-
-      if (zoomProviderChanged) {
-        newCalendarEventId =
-          null;
-      }
     }
 
     const {
@@ -1192,24 +1672,34 @@ export async function POST(
         .from("bookings")
         .update({
           zoom_join_url:
-            zoomMeeting.join_url,
+            zoomMeeting.joinUrl,
           zoom_start_url:
-            zoomMeeting.start_url,
+            zoomMeeting.startUrl,
           meeting_provider:
             "zoom",
           meeting_url:
             null,
           calendar_event_id:
             newCalendarEventId,
+          backup_meeting_provider:
+            zoomContinuation
+              ? "zoom"
+              : null,
+          backup_join_url:
+            zoomContinuation?.joinUrl ||
+            null,
+          backup_host_url:
+            zoomContinuation?.startUrl ||
+            null,
+          backup_calendar_event_id:
+            null,
         })
         .eq(
           "id",
           booking.id,
         );
 
-    if (
-      bookingUpdateError
-    ) {
+    if (bookingUpdateError) {
       throw bookingUpdateError;
     }
 
@@ -1220,13 +1710,20 @@ export async function POST(
         meetingProvider:
           "zoom",
         meetingUrl:
-          zoomMeeting.join_url,
+          zoomMeeting.joinUrl,
+        backupMeetingProvider:
+          zoomContinuation
+            ? "zoom"
+            : null,
+        backupJoinUrl:
+          zoomContinuation?.joinUrl ||
+          null,
       });
     }
 
     return NextResponse.json({
       startUrl:
-        zoomMeeting.start_url,
+        zoomMeeting.startUrl,
       meetingUrl:
         null,
       meetingProvider:
@@ -1234,9 +1731,21 @@ export async function POST(
       calendarEventId:
         newCalendarEventId,
       zoomJoinUrl:
-        zoomMeeting.join_url,
+        zoomMeeting.joinUrl,
       zoomStartUrl:
-        zoomMeeting.start_url,
+        zoomMeeting.startUrl,
+      backupMeetingProvider:
+        zoomContinuation
+          ? "zoom"
+          : null,
+      backupJoinUrl:
+        zoomContinuation?.joinUrl ||
+        null,
+      backupHostUrl:
+        zoomContinuation?.startUrl ||
+        null,
+      backupCalendarEventId:
+        null,
       providerChanged:
         zoomProviderChanged,
     });
@@ -1246,6 +1755,11 @@ export async function POST(
       error,
     );
 
+    const status =
+      error instanceof RouteError
+        ? error.status
+        : 500;
+
     return NextResponse.json(
       {
         error:
@@ -1254,7 +1768,7 @@ export async function POST(
             : "Impossible de préparer la séance.",
       },
       {
-        status: 500,
+        status,
       },
     );
   }

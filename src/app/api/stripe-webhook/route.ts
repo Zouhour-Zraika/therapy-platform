@@ -10,6 +10,7 @@ import Stripe from "stripe";
 
 import {
   createGoogleCalendarEventForBooking,
+  createGoogleMeetContinuationForBooking,
   createGoogleMeetForBooking,
 } from "@/lib/googleCalendar";
 
@@ -92,6 +93,30 @@ type BookingRecord = {
     | null;
 
   zoom_start_url:
+    | string
+    | null;
+
+  service_type:
+    | string
+    | null;
+
+  duration_minutes:
+    | number
+    | null;
+
+  backup_meeting_provider:
+    | string
+    | null;
+
+  backup_join_url:
+    | string
+    | null;
+
+  backup_host_url:
+    | string
+    | null;
+
+  backup_calendar_event_id:
     | string
     | null;
 };
@@ -412,12 +437,14 @@ async function createZoomMeetingForBooking({
   start,
   end,
   supabaseAdmin,
+  continuation = false,
 }: {
   therapistId: string;
   therapistName: string;
   start: string;
   end: string;
   supabaseAdmin: any;
+  continuation?: boolean;
 }) {
   const accessToken =
     await getZoomAccessToken({
@@ -473,7 +500,9 @@ async function createZoomMeetingForBooking({
         body:
           JSON.stringify({
             topic:
-              `AAN Psychotherapy — ${therapistName}`,
+              continuation
+                ? `AAN Psychotherapy — ${therapistName} — Continuation`
+                : `AAN Psychotherapy — ${therapistName}`,
 
             type: 2,
 
@@ -487,7 +516,9 @@ async function createZoomMeetingForBooking({
               "Asia/Beirut",
 
             agenda:
-              "AAN psychotherapy session",
+              continuation
+                ? "AAN psychotherapy session — continuation room"
+                : "AAN psychotherapy session",
 
             settings: {
               join_before_host:
@@ -1585,7 +1616,13 @@ export async function POST(
             meeting_provider,
             calendar_event_id,
             zoom_join_url,
-            zoom_start_url
+            zoom_start_url,
+            service_type,
+            duration_minutes,
+            backup_meeting_provider,
+            backup_join_url,
+            backup_host_url,
+            backup_calendar_event_id
           `,
         )
         .eq(
@@ -1998,7 +2035,13 @@ export async function POST(
             meeting_provider,
             calendar_event_id,
             zoom_join_url,
-            zoom_start_url
+            zoom_start_url,
+            service_type,
+            duration_minutes,
+            backup_meeting_provider,
+            backup_join_url,
+            backup_host_url,
+            backup_calendar_event_id
           `,
         )
         .maybeSingle<BookingRecord>();
@@ -2088,350 +2131,622 @@ export async function POST(
     /*
      * =======================================================
      * Créer automatiquement le lien de séance correspondant
-     * au provider préféré du spécialiste.
+     * au provider préféré du spécialiste + un lien de
+     * continuité lorsque nécessaire.
      *
-     * Important :
-     * - on ne recrée jamais un lien déjà existant ;
-     * - Zoom conserve join_url (patient) et start_url (host) ;
-     * - Google conserve meeting_url + calendar_event_id ;
-     * - le webhook Stripe pouvant être rejoué, les URLs déjà
-     *   présentes protègent contre les créations répétées.
+     * Règles AAN :
+     * - Zoom : toujours préparer une deuxième réunion.
+     * - Google Meet :
+     *     individuelle -> pas de lien de continuité ;
+     *     couple/famille/groupe -> lien de continuité.
+     * - Même booking, même paiement, aucune séance Pack
+     *   supplémentaire consommée.
+     * - Le webhook reste idempotent : si un lien existe déjà,
+     *   on ne le recrée pas.
      * =======================================================
      */
 
     if (
-      updatedBooking
-        .therapist_id &&
-      updatedBooking
-        .scheduled_start &&
-      updatedBooking
-        .scheduled_end
+      updatedBooking.therapist_id &&
+      updatedBooking.scheduled_start &&
+      updatedBooking.scheduled_end
     ) {
+      const normalizedServiceType =
+        updatedBooking.service_type
+          ?.trim()
+          .toLowerCase() || "";
+
+      const googleMeetNeedsContinuation =
+        normalizedServiceType === "couple" ||
+        normalizedServiceType === "family" ||
+        normalizedServiceType === "famille" ||
+        normalizedServiceType === "group" ||
+        normalizedServiceType === "groupe";
+
       if (
-        preferredMeetingProvider ===
-          "zoom" &&
-        !updatedBooking
-          .zoom_join_url &&
-        !updatedBooking
-          .zoom_start_url
+        preferredMeetingProvider === "zoom"
       ) {
-        try {
-          const zoomMeeting =
-            await createZoomMeetingForBooking({
-              therapistId:
-                updatedBooking
-                  .therapist_id,
+        /*
+         * -------------------------------------------------------
+         * ZOOM PRINCIPAL
+         * -------------------------------------------------------
+         */
+        if (
+          !updatedBooking.zoom_join_url ||
+          !updatedBooking.zoom_start_url
+        ) {
+          try {
+            const zoomMeeting =
+              await createZoomMeetingForBooking({
+                therapistId:
+                  updatedBooking.therapist_id,
 
-              therapistName:
-                updatedBooking
-                  .therapist_name ||
-                "Specialist",
+                therapistName:
+                  updatedBooking.therapist_name ||
+                  "Specialist",
 
-              start:
-                updatedBooking
-                  .scheduled_start,
+                start:
+                  updatedBooking.scheduled_start,
 
-              end:
-                updatedBooking
-                  .scheduled_end,
+                end:
+                  updatedBooking.scheduled_end,
 
-              supabaseAdmin,
-            });
+                supabaseAdmin,
+              });
 
-          let calendarEventId =
-            updatedBooking.calendar_event_id;
+            let calendarEventId =
+              updatedBooking.calendar_event_id;
 
-          if (!calendarEventId) {
-            try {
-              const calendarEvent =
-                await createGoogleCalendarEventForBooking({
-                  therapistId:
-                    updatedBooking.therapist_id,
+            if (!calendarEventId) {
+              try {
+                const calendarEvent =
+                  await createGoogleCalendarEventForBooking({
+                    therapistId:
+                      updatedBooking.therapist_id,
 
-                  summary:
-                    `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
+                    summary:
+                      `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
 
-                  description:
-                    [
-                      `AAN booking ${bookingId}`,
-                      "",
-                      "Platform: Zoom",
-                      `Join Zoom: ${zoomMeeting.joinUrl}`,
-                    ].join("\n"),
+                    description:
+                      [
+                        `AAN booking ${bookingId}`,
+                        "",
+                        "Platform: Zoom",
+                        `Join Zoom: ${zoomMeeting.joinUrl}`,
+                      ].join("\n"),
 
-                  location:
+                    location:
+                      zoomMeeting.joinUrl,
+
+                    start:
+                      updatedBooking.scheduled_start,
+
+                    end:
+                      updatedBooking.scheduled_end,
+
+                    timeZone:
+                      "Asia/Beirut",
+
+                    attendeeEmail:
+                      updatedBooking.patient_email,
+                  });
+
+                calendarEventId =
+                  calendarEvent.calendarEventId;
+              } catch (calendarError) {
+                console.error(
+                  "Google Calendar event creation failed for Zoom booking:",
+                  {
+                    bookingId,
+                    therapistId:
+                      updatedBooking.therapist_id,
+                    error:
+                      calendarError,
+                  },
+                );
+              }
+            }
+
+            const {
+              data:
+                bookingWithMeeting,
+              error:
+                meetingUpdateError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  meeting_provider:
+                    zoomMeeting.provider,
+
+                  zoom_join_url:
                     zoomMeeting.joinUrl,
 
-                  start:
-                    updatedBooking.scheduled_start,
+                  zoom_start_url:
+                    zoomMeeting.startUrl,
 
-                  end:
-                    updatedBooking.scheduled_end,
-
-                  timeZone:
-                    "Asia/Beirut",
-
-                  attendeeEmail:
-                    updatedBooking.patient_email,
-                });
-
-              calendarEventId =
-                calendarEvent.calendarEventId;
-            } catch (
-              calendarError
-            ) {
-              /*
-               * Zoom reste valide même si Google Calendar
-               * est temporairement indisponible ou non connecté.
-               */
-              console.error(
-                "Google Calendar event creation failed for Zoom booking:",
-                {
+                  calendar_event_id:
+                    calendarEventId,
+                })
+                .eq(
+                  "id",
                   bookingId,
-                  therapistId:
-                    updatedBooking.therapist_id,
-                  error:
-                    calendarError,
-                },
-              );
+                )
+                .is(
+                  "zoom_join_url",
+                  null,
+                )
+                .select(
+                  `
+                    meeting_provider,
+                    zoom_join_url,
+                    zoom_start_url,
+                    calendar_event_id
+                  `,
+                )
+                .maybeSingle();
+
+            if (
+              meetingUpdateError
+            ) {
+              throw meetingUpdateError;
             }
-          }
 
-          const {
-            data:
-              bookingWithMeeting,
-            error:
-              meetingUpdateError,
-          } =
-            await supabaseAdmin
-              .from("bookings")
-              .update({
-                meeting_provider:
-                  zoomMeeting.provider,
+            if (
+              bookingWithMeeting
+            ) {
+              updatedBooking
+                .meeting_provider =
+                bookingWithMeeting
+                  .meeting_provider;
 
-                zoom_join_url:
-                  zoomMeeting.joinUrl,
+              updatedBooking
+                .zoom_join_url =
+                bookingWithMeeting
+                  .zoom_join_url;
 
-                zoom_start_url:
-                  zoomMeeting.startUrl,
+              updatedBooking
+                .zoom_start_url =
+                bookingWithMeeting
+                  .zoom_start_url;
 
-                calendar_event_id:
-                  calendarEventId,
-              })
-              .eq(
-                "id",
+              updatedBooking
+                .calendar_event_id =
+                bookingWithMeeting
+                  .calendar_event_id;
+            }
+
+            console.log(
+              "ZOOM MEETING CREATED:",
+              {
                 bookingId,
-              )
-              .is(
-                "zoom_join_url",
-                null,
-              )
-              .select(
-                `
-                  meeting_provider,
-                  zoom_join_url,
-                  zoom_start_url,
-                  calendar_event_id
-                `,
-              )
-              .maybeSingle();
-
-          if (
-            meetingUpdateError
+                therapistId:
+                  updatedBooking
+                    .therapist_id,
+                meetingProvider:
+                  zoomMeeting.provider,
+                calendarEventId:
+                  updatedBooking
+                    .calendar_event_id,
+              },
+            );
+          } catch (
+            zoomMeetingError
           ) {
-            throw meetingUpdateError;
+            console.error(
+              "Zoom meeting creation failed after successful payment:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking
+                    .therapist_id,
+                error:
+                  zoomMeetingError,
+              },
+            );
           }
+        }
 
-          if (
-            bookingWithMeeting
-          ) {
-            updatedBooking
-              .meeting_provider =
-              bookingWithMeeting
-                .meeting_provider;
-
-            updatedBooking
-              .zoom_join_url =
-              bookingWithMeeting
-                .zoom_join_url;
-
-            updatedBooking
-              .zoom_start_url =
-              bookingWithMeeting
-                .zoom_start_url;
-
-            updatedBooking
-              .calendar_event_id =
-              bookingWithMeeting
-                .calendar_event_id;
-          }
-
-          console.log(
-            "ZOOM MEETING CREATED:",
-            {
-              bookingId,
-
-              therapistId:
-                updatedBooking
-                  .therapist_id,
-
-              meetingProvider:
-                zoomMeeting.provider,
-
-              calendarEventId:
-                updatedBooking
-                  .calendar_event_id,
-            },
-          );
-        } catch (
-          zoomMeetingError
+        /*
+         * -------------------------------------------------------
+         * ZOOM CONTINUATION
+         *
+         * Toutes les séances AAN dépassent 40 minutes. On prépare
+         * donc automatiquement une deuxième réunion Zoom.
+         * -------------------------------------------------------
+         */
+        if (
+          !updatedBooking.backup_join_url ||
+          updatedBooking.backup_meeting_provider !==
+            "zoom"
         ) {
-          console.error(
-            "Zoom meeting creation failed after successful payment:",
-            {
-              bookingId,
+          try {
+            const zoomContinuation =
+              await createZoomMeetingForBooking({
+                therapistId:
+                  updatedBooking.therapist_id,
 
-              therapistId:
-                updatedBooking
-                  .therapist_id,
+                therapistName:
+                  updatedBooking.therapist_name ||
+                  "Specialist",
 
+                start:
+                  updatedBooking.scheduled_start,
+
+                end:
+                  updatedBooking.scheduled_end,
+
+                supabaseAdmin,
+
+                continuation: true,
+              });
+
+            const {
+              data:
+                bookingWithBackup,
               error:
-                zoomMeetingError,
-            },
-          );
+                backupUpdateError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  backup_meeting_provider:
+                    "zoom",
+
+                  backup_join_url:
+                    zoomContinuation.joinUrl,
+
+                  backup_host_url:
+                    zoomContinuation.startUrl,
+
+                  backup_calendar_event_id:
+                    null,
+                })
+                .eq(
+                  "id",
+                  bookingId,
+                )
+                .is(
+                  "backup_join_url",
+                  null,
+                )
+                .select(
+                  `
+                    backup_meeting_provider,
+                    backup_join_url,
+                    backup_host_url,
+                    backup_calendar_event_id
+                  `,
+                )
+                .maybeSingle();
+
+            if (
+              backupUpdateError
+            ) {
+              throw backupUpdateError;
+            }
+
+            if (
+              bookingWithBackup
+            ) {
+              updatedBooking
+                .backup_meeting_provider =
+                bookingWithBackup
+                  .backup_meeting_provider;
+
+              updatedBooking
+                .backup_join_url =
+                bookingWithBackup
+                  .backup_join_url;
+
+              updatedBooking
+                .backup_host_url =
+                bookingWithBackup
+                  .backup_host_url;
+
+              updatedBooking
+                .backup_calendar_event_id =
+                bookingWithBackup
+                  .backup_calendar_event_id;
+            }
+
+            console.log(
+              "ZOOM CONTINUATION MEETING CREATED:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking.therapist_id,
+              },
+            );
+          } catch (
+            zoomContinuationError
+          ) {
+            /*
+             * Le paiement et la réunion principale restent valides
+             * même si la salle de continuité échoue.
+             */
+            console.error(
+              "Zoom continuation meeting creation failed:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking.therapist_id,
+                error:
+                  zoomContinuationError,
+              },
+            );
+          }
         }
       } else if (
         preferredMeetingProvider ===
-          "google_meet" &&
-        !updatedBooking
-          .meeting_url
+        "google_meet"
       ) {
-        try {
-          const googleMeeting =
-            await createGoogleMeetForBooking({
-              therapistId:
-                updatedBooking
-                  .therapist_id,
+        /*
+         * -------------------------------------------------------
+         * GOOGLE MEET PRINCIPAL
+         * -------------------------------------------------------
+         */
+        if (
+          !updatedBooking.meeting_url
+        ) {
+          try {
+            const googleMeeting =
+              await createGoogleMeetForBooking({
+                therapistId:
+                  updatedBooking.therapist_id,
 
-              summary:
-                `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
+                summary:
+                  `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
 
-              description:
-                `AAN booking ${bookingId}`,
+                description:
+                  `AAN booking ${bookingId}`,
 
-              start:
-                updatedBooking
-                  .scheduled_start,
+                start:
+                  updatedBooking.scheduled_start,
 
-              end:
-                updatedBooking
-                  .scheduled_end,
+                end:
+                  updatedBooking.scheduled_end,
 
-              timeZone:
-                "Asia/Beirut",
+                timeZone:
+                  "Asia/Beirut",
 
-              attendeeEmail:
-                updatedBooking
-                  .patient_email,
-            });
+                attendeeEmail:
+                  updatedBooking.patient_email,
+              });
 
-          const {
-            data:
-              bookingWithMeeting,
-            error:
-              meetingUpdateError,
-          } =
-            await supabaseAdmin
-              .from("bookings")
-              .update({
-                meeting_url:
-                  googleMeeting
-                    .meetingUrl,
+            const {
+              data:
+                bookingWithMeeting,
+              error:
+                meetingUpdateError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  meeting_url:
+                    googleMeeting.meetingUrl,
 
-                meeting_provider:
-                  googleMeeting
-                    .provider,
+                  meeting_provider:
+                    googleMeeting.provider,
 
-                calendar_event_id:
+                  calendar_event_id:
+                    googleMeeting.calendarEventId,
+                })
+                .eq(
+                  "id",
+                  bookingId,
+                )
+                .is(
+                  "meeting_url",
+                  null,
+                )
+                .select(
+                  `
+                    meeting_url,
+                    meeting_provider,
+                    calendar_event_id
+                  `,
+                )
+                .maybeSingle();
+
+            if (
+              meetingUpdateError
+            ) {
+              throw meetingUpdateError;
+            }
+
+            if (
+              bookingWithMeeting
+            ) {
+              updatedBooking
+                .meeting_url =
+                bookingWithMeeting
+                  .meeting_url;
+
+              updatedBooking
+                .meeting_provider =
+                bookingWithMeeting
+                  .meeting_provider;
+
+              updatedBooking
+                .calendar_event_id =
+                bookingWithMeeting
+                  .calendar_event_id;
+            }
+
+            console.log(
+              "GOOGLE MEET CREATED:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking
+                    .therapist_id,
+                meetingProvider:
+                  googleMeeting.provider,
+                calendarEventId:
                   googleMeeting
                     .calendarEventId,
-              })
-              .eq(
-                "id",
+              },
+            );
+          } catch (
+            googleMeetingError
+          ) {
+            console.error(
+              "Google Meet creation failed after successful payment:",
+              {
                 bookingId,
-              )
-              .is(
-                "meeting_url",
-                null,
-              )
-              .select(
-                `
-                  meeting_url,
-                  meeting_provider,
-                  calendar_event_id
-                `,
-              )
-              .maybeSingle();
-
-          if (
-            meetingUpdateError
-          ) {
-            throw meetingUpdateError;
+                therapistId:
+                  updatedBooking
+                    .therapist_id,
+                error:
+                  googleMeetingError,
+              },
+            );
           }
+        }
 
-          if (
-            bookingWithMeeting
-          ) {
-            updatedBooking
-              .meeting_url =
-              bookingWithMeeting
-                .meeting_url;
-
-            updatedBooking
-              .meeting_provider =
-              bookingWithMeeting
-                .meeting_provider;
-
-            updatedBooking
-              .calendar_event_id =
-              bookingWithMeeting
-                .calendar_event_id;
-          }
-
-          console.log(
-            "GOOGLE MEET CREATED:",
-            {
-              bookingId,
-
-              therapistId:
-                updatedBooking
-                  .therapist_id,
-
-              meetingProvider:
-                googleMeeting
-                  .provider,
-
-              calendarEventId:
-                googleMeeting
-                  .calendarEventId,
-            },
-          );
-        } catch (
-          googleMeetingError
+        /*
+         * -------------------------------------------------------
+         * GOOGLE MEET CONTINUATION
+         *
+         * Couple / famille / groupe : plusieurs participants sont
+         * attendus, donc on prépare une seconde salle de continuité.
+         * L'individuel reste sur un seul Meet.
+         * -------------------------------------------------------
+         */
+        if (
+          googleMeetNeedsContinuation &&
+          (
+            !updatedBooking.backup_join_url ||
+            updatedBooking.backup_meeting_provider !==
+              "google_meet"
+          )
         ) {
-          console.error(
-            "Google Meet creation failed after successful payment:",
-            {
-              bookingId,
+          try {
+            const googleContinuation =
+              await createGoogleMeetContinuationForBooking({
+                therapistId:
+                  updatedBooking.therapist_id,
 
-              therapistId:
-                updatedBooking
-                  .therapist_id,
+                summary:
+                  `AAN Psychotherapy — ${updatedBooking.therapist_name || "Specialist"}`,
 
+                description:
+                  `AAN booking ${bookingId} — continuation`,
+
+                start:
+                  updatedBooking.scheduled_start,
+
+                end:
+                  updatedBooking.scheduled_end,
+
+                timeZone:
+                  "Asia/Beirut",
+              });
+
+            const {
+              data:
+                bookingWithBackup,
               error:
-                googleMeetingError,
-            },
-          );
+                backupUpdateError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  backup_meeting_provider:
+                    "google_meet",
+
+                  backup_join_url:
+                    googleContinuation
+                      .meetingUrl,
+
+                  // Pour Google Meet, l'hôte ouvre le même lien.
+                  backup_host_url:
+                    googleContinuation
+                      .meetingUrl,
+
+                  backup_calendar_event_id:
+                    googleContinuation
+                      .calendarEventId,
+                })
+                .eq(
+                  "id",
+                  bookingId,
+                )
+                .is(
+                  "backup_join_url",
+                  null,
+                )
+                .select(
+                  `
+                    backup_meeting_provider,
+                    backup_join_url,
+                    backup_host_url,
+                    backup_calendar_event_id
+                  `,
+                )
+                .maybeSingle();
+
+            if (
+              backupUpdateError
+            ) {
+              throw backupUpdateError;
+            }
+
+            if (
+              bookingWithBackup
+            ) {
+              updatedBooking
+                .backup_meeting_provider =
+                bookingWithBackup
+                  .backup_meeting_provider;
+
+              updatedBooking
+                .backup_join_url =
+                bookingWithBackup
+                  .backup_join_url;
+
+              updatedBooking
+                .backup_host_url =
+                bookingWithBackup
+                  .backup_host_url;
+
+              updatedBooking
+                .backup_calendar_event_id =
+                bookingWithBackup
+                  .backup_calendar_event_id;
+            }
+
+            console.log(
+              "GOOGLE MEET CONTINUATION CREATED:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking.therapist_id,
+                serviceType:
+                  updatedBooking.service_type,
+              },
+            );
+          } catch (
+            googleContinuationError
+          ) {
+            /*
+             * Comme pour Zoom, l'échec du lien de continuité
+             * n'annule jamais le paiement ni le Meet principal.
+             */
+            console.error(
+              "Google Meet continuation creation failed:",
+              {
+                bookingId,
+                therapistId:
+                  updatedBooking.therapist_id,
+                serviceType:
+                  updatedBooking.service_type,
+                error:
+                  googleContinuationError,
+              },
+            );
+          }
         }
       }
     }
@@ -2936,7 +3251,7 @@ export async function POST(
       },
       {
         status: 500,
-      },
+        },
     );
   }
 }

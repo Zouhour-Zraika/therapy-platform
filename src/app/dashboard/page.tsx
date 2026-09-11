@@ -108,6 +108,8 @@ export default function PatientDashboard() {
           packSession: "جلسة",
           packOf: "من",
           packNoExtraPayment: "لا يوجد دفع إضافي لهذه الجلسة.",
+          packCompleted: "اكتملت الباقة",
+          packUsed: "جلسات مستخدمة",
           sessionPast: "جلسة سابقة",
         }
       : language === "fr"
@@ -165,6 +167,8 @@ export default function PatientDashboard() {
             packSession: "Séance",
             packOf: "sur",
             packNoExtraPayment: "Aucun paiement supplémentaire pour cette séance.",
+            packCompleted: "Pack terminé",
+            packUsed: "séances utilisées",
             sessionPast: "Séance passée",
           }
         : {
@@ -221,6 +225,8 @@ export default function PatientDashboard() {
             packSession: "Session",
             packOf: "of",
             packNoExtraPayment: "No additional payment for this session.",
+            packCompleted: "Pack completed",
+            packUsed: "sessions used",
             sessionPast: "Past session",
           };
 
@@ -366,10 +372,17 @@ export default function PatientDashboard() {
           rawPacks
             .filter((pack) => {
               if (
-                pack.status !== "active" ||
-                Number(pack.sessions_remaining) <= 0
+                pack.status !== "active" &&
+                pack.status !== "used"
               ) {
                 return false;
+              }
+
+              if (
+                pack.status === "used" ||
+                Number(pack.sessions_remaining) <= 0
+              ) {
+                return true;
               }
 
               if (!pack.valid_until) {
@@ -859,42 +872,55 @@ export default function PatientDashboard() {
                               )}
 
                               <div className="mt-3 flex flex-wrap items-center gap-3">
-                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
-                                  {formatDigits(
-                                    pack.sessions_remaining,
-                                  )}
-                                  /
-                                  {formatDigits(
-                                    pack.sessions_total,
-                                  )}{" "}
-                                  {copy.packRemaining}
-                                </span>
+                                {pack.status === "used" ||
+                                Number(pack.sessions_remaining) <= 0 ? (
+                                  <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-bold text-aan-navy">
+                                    {copy.packCompleted} ·{" "}
+                                    {formatDigits(pack.sessions_total)}/
+                                    {formatDigits(pack.sessions_total)}{" "}
+                                    {copy.packUsed}
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
+                                    {formatDigits(pack.sessions_remaining)}/
+                                    {formatDigits(pack.sessions_total)}{" "}
+                                    {copy.packRemaining}
+                                  </span>
+                                )}
 
                                 <span className="rounded-full border border-aan-border bg-white px-4 py-2 text-sm font-semibold text-aan-secondary">
                                   {copy.packValidUntil}:{" "}
-                                  {formatPackValidity(
-                                    pack.valid_until,
-                                  )}
+                                  {formatPackValidity(pack.valid_until)}
                                 </span>
                               </div>
 
                               <p className="mt-4 text-sm leading-6 text-aan-secondary">
-                                {language === "ar"
-                                  ? "جلساتك مدفوعة مسبقاً ضمن هذه الباقة. اختر موعداً جديداً من رصيدك المتبقي من دون دفع إضافي."
-                                  : language === "fr"
-                                    ? "Vos séances sont déjà prépayées dans ce Pack. Réservez vos prochains créneaux avec votre crédit restant, sans nouveau paiement."
-                                    : "Your sessions are prepaid in this Pack. Book your next appointments from your remaining credit with no additional payment."}
+                                {pack.status === "used" ||
+                                Number(pack.sessions_remaining) <= 0
+                                  ? language === "ar"
+                                    ? "تم استخدام جميع جلسات هذه الباقة."
+                                    : language === "fr"
+                                      ? "Toutes les séances de ce Pack ont été utilisées."
+                                      : "All sessions in this Pack have been used."
+                                  : language === "ar"
+                                    ? "جلساتك مدفوعة مسبقاً ضمن هذه الباقة. اختر موعداً جديداً من رصيدك المتبقي من دون دفع إضافي."
+                                    : language === "fr"
+                                      ? "Vos séances sont déjà prépayées dans ce Pack. Réservez vos prochains créneaux avec votre crédit restant, sans nouveau paiement."
+                                      : "Your sessions are prepaid in this Pack. Book your next appointments from your remaining credit with no additional payment."}
                               </p>
                             </div>
 
-                            <Link
-                              href={`/booking?packId=${encodeURIComponent(
-                                pack.id,
-                              )}`}
-                              className="aan-cta inline-flex shrink-0 items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
-                            >
-                              {copy.packBookSession}
-                            </Link>
+                            {pack.status === "active" &&
+                              Number(pack.sessions_remaining) > 0 && (
+                                <Link
+                                  href={`/booking?packId=${encodeURIComponent(
+                                    pack.id,
+                                  )}`}
+                                  className="aan-cta inline-flex shrink-0 items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                                >
+                                  {copy.packBookSession}
+                                </Link>
+                              )}
                           </div>
                         </article>
                       ),

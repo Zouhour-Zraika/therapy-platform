@@ -1,78 +1,349 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
+type Language =
+  | "en"
+  | "fr"
+  | "ar";
+
 type PlatformChangeEmailRequest = {
   email?: string;
   therapist?: string;
   meetingProvider?: "google_meet" | "zoom";
   meetingUrl?: string;
   scheduledStart?: string | null;
+  language?: Language;
+  backupMeetingProvider?:
+    | "google_meet"
+    | "zoom"
+    | string
+    | null;
+  backupJoinUrl?: string | null;
 };
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getProviderLabel(
+  provider:
+    | "google_meet"
+    | "zoom"
+    | string
+    | null
+    | undefined,
+) {
+  if (provider === "zoom") {
+    return "Zoom";
+  }
+
+  if (provider === "google_meet") {
+    return "Google Meet";
+  }
+
+  return "";
+}
 
 export async function POST(request: Request) {
   try {
-    const resendApiKey = process.env.RESEND_API_KEY;
+    const resendApiKey =
+      process.env.RESEND_API_KEY;
 
     if (!resendApiKey) {
       return NextResponse.json(
-        { success: false, error: "RESEND_API_KEY is missing." },
-        { status: 500 },
+        {
+          success: false,
+          error:
+            "RESEND_API_KEY is missing.",
+        },
+        {
+          status: 500,
+        },
       );
     }
 
     const body =
-      (await request.json()) as PlatformChangeEmailRequest;
+      (await request.json()) as
+        PlatformChangeEmailRequest;
 
-    const email = body.email?.trim();
+    const email =
+      body.email?.trim();
+
     const therapist =
-      body.therapist?.trim() || "Specialist";
+      body.therapist?.trim() ||
+      "Specialist";
+
     const meetingUrl =
-      body.meetingUrl?.trim() || "";
+      body.meetingUrl?.trim() ||
+      "";
+
+    const backupJoinUrl =
+      body.backupJoinUrl?.trim() ||
+      "";
+
+    const language:
+      Language =
+      body.language === "ar"
+        ? "ar"
+        : body.language === "fr"
+          ? "fr"
+          : "en";
 
     const providerLabel =
-      body.meetingProvider === "zoom"
-        ? "Zoom"
-        : body.meetingProvider === "google_meet"
-          ? "Google Meet"
-          : "";
+      getProviderLabel(
+        body.meetingProvider,
+      );
 
-    if (!email || !meetingUrl || !providerLabel) {
+    const backupProviderLabel =
+      getProviderLabel(
+        body.backupMeetingProvider,
+      ) ||
+      providerLabel;
+
+    if (
+      !email ||
+      !meetingUrl ||
+      !providerLabel
+    ) {
       return NextResponse.json(
         {
           success: false,
           error:
             "email, meetingProvider and meetingUrl are required.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    const scheduledLabel =
+    const scheduledDate =
       body.scheduledStart &&
       !Number.isNaN(
-        new Date(body.scheduledStart).getTime(),
+        new Date(
+          body.scheduledStart,
+        ).getTime(),
       )
-        ? new Intl.DateTimeFormat("en-GB", {
-            dateStyle: "medium",
-            timeStyle: "short",
-            timeZone: "Asia/Beirut",
-          }).format(
-            new Date(body.scheduledStart),
+        ? new Date(
+            body.scheduledStart,
+          )
+        : null;
+
+    const scheduledLabel =
+      scheduledDate
+        ? new Intl.DateTimeFormat(
+            language === "ar"
+              ? "ar-LB"
+              : language === "fr"
+                ? "fr-FR"
+                : "en-GB",
+            {
+              dateStyle: "medium",
+              timeStyle: "short",
+              timeZone:
+                "Asia/Beirut",
+            },
+          ).format(
+            scheduledDate,
           )
         : "";
 
-    const resend = new Resend(resendApiKey);
+    const safeTherapist =
+      escapeHtml(therapist);
+
+    const safeMeetingUrl =
+      escapeHtml(meetingUrl);
+
+    const safeBackupJoinUrl =
+      escapeHtml(
+        backupJoinUrl,
+      );
+
+    const subject =
+      language === "ar"
+        ? "AAN Psychotherapy — تم تغيير منصة الجلسة"
+        : language === "fr"
+          ? "AAN Psychotherapy — Changement de plateforme de séance"
+          : "AAN Psychotherapy — Session platform changed";
+
+    const title =
+      language === "ar"
+        ? "تم تغيير منصة الجلسة"
+        : language === "fr"
+          ? "La plateforme de la séance a changé"
+          : "Session platform changed";
+
+    const intro =
+      language === "ar"
+        ? `قام اختصاصيك بتغيير منصة هذه الجلسة إلى <strong>${providerLabel}</strong>. يرجى استخدام الرابط الجديد أدناه.`
+        : language === "fr"
+          ? `Votre spécialiste a changé la plateforme de cette séance vers <strong>${providerLabel}</strong>. Utilisez le nouveau lien ci-dessous.`
+          : `Your specialist has switched this session to <strong>${providerLabel}</strong>. Please use the new link below.`;
+
+    const specialistLabel =
+      language === "ar"
+        ? "الاختصاصي:"
+        : language === "fr"
+          ? "Spécialiste :"
+          : "Specialist:";
+
+    const sessionLabel =
+      language === "ar"
+        ? "الجلسة:"
+        : language === "fr"
+          ? "Séance :"
+          : "Session:";
+
+    const timeZoneLabel =
+      language === "ar"
+        ? "بتوقيت لبنان"
+        : language === "fr"
+          ? "heure du Liban"
+          : "Lebanon time";
+
+    const platformLabel =
+      language === "ar"
+        ? "المنصة الجديدة:"
+        : language === "fr"
+          ? "Nouvelle plateforme :"
+          : "New platform:";
+
+    const joinLabel =
+      language === "ar"
+        ? `الانضمام عبر ${providerLabel}`
+        : language === "fr"
+          ? `Rejoindre via ${providerLabel}`
+          : `Join with ${providerLabel}`;
+
+    const fallbackLabel =
+      language === "ar"
+        ? "إذا لم يعمل الزر، استخدم هذا الرابط:"
+        : language === "fr"
+          ? "Si le bouton ne fonctionne pas, utilisez ce lien :"
+          : "If the button does not work, use this link:";
+
+    const continuityTitle =
+      language === "ar"
+        ? "رابط متابعة الجلسة"
+        : language === "fr"
+          ? "Lien de continuité"
+          : "Continuation link";
+
+    const continuityText =
+      language === "ar"
+        ? "إذا انقطعت مكالمة الفيديو، استخدم هذا الرابط لمتابعة نفس الجلسة. لن يُطلب أي دفع إضافي ولن يتم احتساب جلسة إضافية."
+        : language === "fr"
+          ? "Si la visioconférence est interrompue, utilisez ce lien pour poursuivre la même séance. Aucun paiement supplémentaire ne sera demandé et aucune séance supplémentaire ne sera comptabilisée."
+          : "If the video call is interrupted, use this link to continue the same session. No additional payment will be required and no extra session will be counted.";
+
+    const continuityButton =
+      language === "ar"
+        ? `متابعة الجلسة عبر ${backupProviderLabel || "الرابط الاحتياطي"}`
+        : language === "fr"
+          ? `Poursuivre via ${backupProviderLabel || "le lien de continuité"}`
+          : `Continue with ${backupProviderLabel || "the continuation link"}`;
+
+    const footer =
+      language === "ar"
+        ? "مساحة آمنة للدعم والنمو"
+        : language === "fr"
+          ? "Un espace sûr pour le soutien et l’évolution"
+          : "A safe space for support and growth";
+
+    const direction =
+      language === "ar"
+        ? ' dir="rtl"'
+        : "";
+
+    const textAlign =
+      language === "ar"
+        ? "right"
+        : "left";
+
+    const continuityBlock =
+      backupJoinUrl
+        ? `
+          <div
+            style="
+              margin-top:24px;
+              padding:20px;
+              background:#f9f6f1;
+              border:1px solid #e4d8c7;
+              border-radius:16px;
+              text-align:center;
+            "
+          >
+            <div
+              style="
+                color:#24364b;
+                font-size:16px;
+                font-weight:700;
+              "
+            >
+              ${continuityTitle}
+            </div>
+
+            <p
+              style="
+                margin:10px 0 16px;
+                color:#5f6f82;
+                font-size:14px;
+                line-height:1.7;
+              "
+            >
+              ${continuityText}
+            </p>
+
+            <a
+              href="${safeBackupJoinUrl}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="
+                display:inline-block;
+                background:#24364b;
+                color:#fff;
+                text-decoration:none;
+                padding:13px 22px;
+                border-radius:12px;
+                font-weight:700;
+              "
+            >
+              ${continuityButton}
+            </a>
+
+            <p
+              style="
+                margin:14px 0 0;
+                color:#7d8794;
+                font-size:12px;
+                line-height:1.6;
+                word-break:break-all;
+              "
+            >
+              ${safeBackupJoinUrl}
+            </p>
+          </div>
+        `
+        : "";
+
+    const resend =
+      new Resend(resendApiKey);
 
     const { data, error } =
       await resend.emails.send({
         from:
+          process.env.RESEND_FROM_EMAIL ||
           "AAN Psychotherapy <onboarding@resend.dev>",
         to: [email],
-        subject:
-          "AAN Psychotherapy — Session platform changed",
+        subject,
         html: `
           <!doctype html>
-          <html>
+          <html lang="${language}"${direction}>
             <body
               style="
                 margin:0;
@@ -105,7 +376,12 @@ export async function POST(request: Request) {
                       "
                     >
                       <tr>
-                        <td style="padding:36px;">
+                        <td
+                          style="
+                            padding:36px;
+                            text-align:${textAlign};
+                          "
+                        >
                           <p
                             style="
                               margin:0;
@@ -125,7 +401,7 @@ export async function POST(request: Request) {
                               line-height:1.3;
                             "
                           >
-                            Session platform changed
+                            ${title}
                           </h1>
 
                           <p
@@ -136,9 +412,7 @@ export async function POST(request: Request) {
                               line-height:1.7;
                             "
                           >
-                            Your specialist has switched this session
-                            to <strong>${providerLabel}</strong>.
-                            Please use the new link below.
+                            ${intro}
                           </p>
 
                           <div
@@ -152,9 +426,9 @@ export async function POST(request: Request) {
                           >
                             <div>
                               <strong style="color:#24364b;">
-                                Specialist:
+                                ${specialistLabel}
                               </strong>
-                              ${therapist}
+                              ${safeTherapist}
                             </div>
 
                             ${
@@ -162,9 +436,9 @@ export async function POST(request: Request) {
                                 ? `
                                   <div style="margin-top:8px;">
                                     <strong style="color:#24364b;">
-                                      Session:
+                                      ${sessionLabel}
                                     </strong>
-                                    ${scheduledLabel} · Lebanon time
+                                    ${escapeHtml(scheduledLabel)} · ${timeZoneLabel}
                                   </div>
                                 `
                                 : ""
@@ -172,7 +446,7 @@ export async function POST(request: Request) {
 
                             <div style="margin-top:8px;">
                               <strong style="color:#24364b;">
-                                New platform:
+                                ${platformLabel}
                               </strong>
                               ${providerLabel}
                             </div>
@@ -185,7 +459,7 @@ export async function POST(request: Request) {
                             "
                           >
                             <a
-                              href="${meetingUrl}"
+                              href="${safeMeetingUrl}"
                               target="_blank"
                               rel="noopener noreferrer"
                               style="
@@ -198,7 +472,7 @@ export async function POST(request: Request) {
                                 font-weight:700;
                               "
                             >
-                              Join with ${providerLabel}
+                              ${joinLabel}
                             </a>
 
                             <p
@@ -210,12 +484,17 @@ export async function POST(request: Request) {
                                 word-break:break-all;
                               "
                             >
-                              If the button does not work, use this link:<br />
-                              <a href="${meetingUrl}" style="color:#61779d;">
-                                ${meetingUrl}
+                              ${fallbackLabel}<br />
+                              <a
+                                href="${safeMeetingUrl}"
+                                style="color:#61779d;"
+                              >
+                                ${safeMeetingUrl}
                               </a>
                             </p>
                           </div>
+
+                          ${continuityBlock}
                         </td>
                       </tr>
 
@@ -227,9 +506,12 @@ export async function POST(request: Request) {
                             color:#fff;
                             text-align:center;
                             font-size:14px;
+                            line-height:1.7;
                           "
                         >
                           AAN Psychotherapy
+                          <br />
+                          ${footer}
                         </td>
                       </tr>
                     </table>
@@ -253,13 +535,17 @@ export async function POST(request: Request) {
           error:
             "Unable to send platform change email.",
         },
-        { status: 502 },
+        {
+          status: 502,
+        },
       );
     }
 
     return NextResponse.json({
       success: true,
-      id: data?.id || null,
+      id:
+        data?.id ||
+        null,
     });
   } catch (error) {
     console.error(
@@ -275,7 +561,9 @@ export async function POST(request: Request) {
             ? error.message
             : "Unable to send platform change email.",
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     );
   }
 }

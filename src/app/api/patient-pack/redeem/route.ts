@@ -97,6 +97,10 @@ type BookingRow = {
   calendar_event_id: string | null;
   zoom_join_url: string | null;
   zoom_start_url: string | null;
+  backup_meeting_provider: string | null;
+  backup_join_url: string | null;
+  backup_host_url: string | null;
+  backup_calendar_event_id: string | null;
 };
 
 type ActiveAssignment = {
@@ -582,12 +586,14 @@ async function createZoomMeetingForBooking({
   start,
   end,
   supabaseAdmin,
+  continuation = false,
 }: {
   therapistId: string;
   therapistName: string;
   start: string;
   end: string;
   supabaseAdmin: any;
+  continuation?: boolean;
 }) {
   const accessToken =
     await getZoomAccessToken({
@@ -640,7 +646,9 @@ async function createZoomMeetingForBooking({
         body:
           JSON.stringify({
             topic:
-              `AAN Psychotherapy — ${therapistName}`,
+              continuation
+                ? `AAN Psychotherapy — ${therapistName} — Continuation`
+                : `AAN Psychotherapy — ${therapistName}`,
             type: 2,
             start_time:
               startDate.toISOString(),
@@ -649,7 +657,9 @@ async function createZoomMeetingForBooking({
             timezone:
               TIME_ZONE,
             agenda:
-              "AAN psychotherapy session",
+              continuation
+                ? "AAN psychotherapy session — continuation room"
+                : "AAN psychotherapy session",
             settings: {
               join_before_host: false,
               waiting_room: true,
@@ -1495,7 +1505,11 @@ export async function POST(
             meeting_provider,
             calendar_event_id,
             zoom_join_url,
-            zoom_start_url
+            zoom_start_url,
+            backup_meeting_provider,
+            backup_join_url,
+            backup_host_url,
+            backup_calendar_event_id
           `,
         )
         .single<BookingRow>();
@@ -1565,6 +1579,11 @@ export async function POST(
         preferredMeetingProvider ===
         "zoom"
       ) {
+        /*
+         * =====================================================
+         * ZOOM PRINCIPAL
+         * =====================================================
+         */
         try {
           const zoomMeeting =
             await createZoomMeetingForBooking({
@@ -1707,7 +1726,132 @@ export async function POST(
             },
           );
         }
+
+        /*
+         * =====================================================
+         * ZOOM CONTINUATION
+         * =====================================================
+         *
+         * Une séance Patient Pack est une séance individuelle de
+         * 50 minutes. Comme un compte Zoom Basic peut interrompre
+         * la réunion avant la fin, on prépare automatiquement une
+         * seconde réunion Zoom. Elle reste liée au même booking :
+         * aucun nouveau paiement et aucun crédit Pack en plus.
+         */
+        if (!booking.backup_join_url) {
+          try {
+            const zoomContinuation =
+              await createZoomMeetingForBooking({
+                therapistId:
+                  booking.therapist_id,
+                therapistName:
+                  booking.therapist_name ||
+                  "Specialist",
+                start:
+                  booking.scheduled_start,
+                end:
+                  booking.scheduled_end,
+                supabaseAdmin,
+                continuation: true,
+              });
+
+            const {
+              data:
+                bookingWithBackup,
+              error:
+                backupUpdateError,
+            } =
+              await supabaseAdmin
+                .from("bookings")
+                .update({
+                  backup_meeting_provider:
+                    "zoom",
+                  backup_join_url:
+                    zoomContinuation.joinUrl,
+                  backup_host_url:
+                    zoomContinuation.startUrl,
+                  backup_calendar_event_id:
+                    null,
+                })
+                .eq(
+                  "id",
+                  booking.id,
+                )
+                .is(
+                  "backup_join_url",
+                  null,
+                )
+                .select(
+                  `
+                    backup_meeting_provider,
+                    backup_join_url,
+                    backup_host_url,
+                    backup_calendar_event_id
+                  `,
+                )
+                .maybeSingle<{
+                  backup_meeting_provider:
+                    string | null;
+                  backup_join_url:
+                    string | null;
+                  backup_host_url:
+                    string | null;
+                  backup_calendar_event_id:
+                    string | null;
+                }>();
+
+            if (backupUpdateError) {
+              throw backupUpdateError;
+            }
+
+            if (bookingWithBackup) {
+              booking.backup_meeting_provider =
+                bookingWithBackup
+                  .backup_meeting_provider;
+              booking.backup_join_url =
+                bookingWithBackup
+                  .backup_join_url;
+              booking.backup_host_url =
+                bookingWithBackup
+                  .backup_host_url;
+              booking.backup_calendar_event_id =
+                bookingWithBackup
+                  .backup_calendar_event_id;
+            }
+
+            console.log(
+              "PATIENT PACK ZOOM CONTINUATION CREATED:",
+              {
+                bookingId:
+                  booking.id,
+                therapistId:
+                  booking.therapist_id,
+              },
+            );
+          } catch (
+            zoomContinuationError
+          ) {
+            /*
+             * La réservation et la réunion principale restent
+             * valides si la salle de continuité échoue.
+             */
+            console.error(
+              "Zoom continuation creation failed for Patient Pack booking:",
+              {
+                bookingId:
+                  booking.id,
+                error:
+                  zoomContinuationError,
+              },
+            );
+          }
+        }
       } else {
+        /*
+         * Patient Pack = individuelle uniquement.
+         * Google Meet individuel ne nécessite donc pas de salle
+         * de continuité dans la règle AAN actuelle.
+         */
         try {
           const googleMeeting =
             await createGoogleMeetForBooking({
@@ -1753,6 +1897,14 @@ export async function POST(
                   null,
                 zoom_start_url:
                   null,
+                backup_meeting_provider:
+                  null,
+                backup_join_url:
+                  null,
+                backup_host_url:
+                  null,
+                backup_calendar_event_id:
+                  null,
               })
               .eq(
                 "id",
@@ -1764,7 +1916,11 @@ export async function POST(
                   meeting_provider,
                   calendar_event_id,
                   zoom_join_url,
-                  zoom_start_url
+                  zoom_start_url,
+                  backup_meeting_provider,
+                  backup_join_url,
+                  backup_host_url,
+                  backup_calendar_event_id
                 `,
               )
               .maybeSingle<{
@@ -1777,6 +1933,14 @@ export async function POST(
                 zoom_join_url:
                   string | null;
                 zoom_start_url:
+                  string | null;
+                backup_meeting_provider:
+                  string | null;
+                backup_join_url:
+                  string | null;
+                backup_host_url:
+                  string | null;
+                backup_calendar_event_id:
                   string | null;
               }>();
 
@@ -1800,6 +1964,18 @@ export async function POST(
             booking.zoom_start_url =
               bookingWithMeeting
                 .zoom_start_url;
+            booking.backup_meeting_provider =
+              bookingWithMeeting
+                .backup_meeting_provider;
+            booking.backup_join_url =
+              bookingWithMeeting
+                .backup_join_url;
+            booking.backup_host_url =
+              bookingWithMeeting
+                .backup_host_url;
+            booking.backup_calendar_event_id =
+              bookingWithMeeting
+                .backup_calendar_event_id;
           }
         } catch (
           googleMeetingError
@@ -1874,6 +2050,10 @@ export async function POST(
                     "zoom"
                       ? booking.zoom_join_url
                       : booking.meeting_url,
+                  backupMeetingProvider:
+                    booking.backup_meeting_provider,
+                  backupJoinUrl:
+                    booking.backup_join_url,
                 }),
             },
           );
@@ -1915,6 +2095,10 @@ export async function POST(
         "zoom"
           ? booking.zoom_join_url
           : booking.meeting_url,
+      backupMeetingProvider:
+        booking.backup_meeting_provider,
+      backupJoinUrl:
+        booking.backup_join_url,
       booking,
     });
   } catch (error) {

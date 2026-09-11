@@ -17,6 +17,15 @@ type CreateGoogleMeetParams = {
   attendeeEmail?: string | null;
 };
 
+type CreateGoogleMeetContinuationParams = {
+  therapistId: string;
+  summary: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone?: string;
+};
+
 type CreateGoogleCalendarEventParams = {
   therapistId: string;
   summary: string;
@@ -26,6 +35,19 @@ type CreateGoogleCalendarEventParams = {
   timeZone?: string;
   attendeeEmail?: string | null;
   location?: string | null;
+};
+
+type GoogleCalendarEventResponse = {
+  id?: string;
+  htmlLink?: string;
+  hangoutLink?: string;
+  conferenceData?: {
+    entryPoints?: Array<{
+      entryPointType?: string;
+      uri?: string;
+    }>;
+  };
+  error?: unknown;
 };
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -43,7 +65,10 @@ function getSupabaseAdmin() {
   }
 
   return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
   });
 }
 
@@ -60,7 +85,9 @@ async function refreshGoogleAccessToken(
 
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
@@ -90,7 +117,9 @@ async function refreshGoogleAccessToken(
     })
     .eq("therapist_id", therapistId);
 
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
 
   return data.access_token as string;
 }
@@ -102,7 +131,9 @@ async function getGoogleAccessToken(therapistId: string) {
     .eq("therapist_id", therapistId)
     .maybeSingle<GoogleConnection>();
 
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
 
   if (!data) {
     throw new Error("The specialist has not connected a Google account.");
@@ -123,19 +154,39 @@ async function getGoogleAccessToken(therapistId: string) {
   return refreshGoogleAccessToken(therapistId, data.refresh_token);
 }
 
-export async function createGoogleMeetForBooking({
+function extractGoogleMeetUrl(event: GoogleCalendarEventResponse) {
+  return (
+    event.hangoutLink ||
+    event.conferenceData?.entryPoints?.find(
+      (entryPoint) => entryPoint.entryPointType === "video",
+    )?.uri ||
+    null
+  );
+}
+
+async function createGoogleMeetEvent({
   therapistId,
   summary,
   description,
   start,
   end,
-  timeZone = "Asia/Beirut",
+  timeZone,
   attendeeEmail,
-}: CreateGoogleMeetParams) {
+  sendUpdates,
+}: {
+  therapistId: string;
+  summary: string;
+  description?: string;
+  start: string;
+  end: string;
+  timeZone: string;
+  attendeeEmail?: string | null;
+  sendUpdates: "all" | "none";
+}) {
   const accessToken = await getGoogleAccessToken(therapistId);
 
   const response = await fetch(
-    `${GOOGLE_CALENDAR_EVENTS_URL}?conferenceDataVersion=1&sendUpdates=all`,
+    `${GOOGLE_CALENDAR_EVENTS_URL}?conferenceDataVersion=1&sendUpdates=${sendUpdates}`,
     {
       method: "POST",
       headers: {
@@ -147,33 +198,38 @@ export async function createGoogleMeetForBooking({
         description:
           description ||
           "Online appointment booked through AAN Psychotherapy.",
-        start: { dateTime: start, timeZone },
-        end: { dateTime: end, timeZone },
-        attendees: attendeeEmail ? [{ email: attendeeEmail }] : undefined,
+        start: {
+          dateTime: start,
+          timeZone,
+        },
+        end: {
+          dateTime: end,
+          timeZone,
+        },
+        attendees: attendeeEmail
+          ? [{ email: attendeeEmail }]
+          : undefined,
         conferenceData: {
           createRequest: {
             requestId: crypto.randomUUID(),
-            conferenceSolutionKey: { type: "hangoutsMeet" },
+            conferenceSolutionKey: {
+              type: "hangoutsMeet",
+            },
           },
         },
       }),
     },
   );
 
-  const event = await response.json();
+  const event =
+    (await response.json()) as GoogleCalendarEventResponse;
 
   if (!response.ok || !event.id) {
     console.error("Google Calendar event creation failed:", event);
     throw new Error("Unable to create the Google Calendar event.");
   }
 
-  const meetingUrl =
-    event.hangoutLink ||
-    event.conferenceData?.entryPoints?.find(
-      (entryPoint: { entryPointType?: string; uri?: string }) =>
-        entryPoint.entryPointType === "video",
-    )?.uri ||
-    null;
+  const meetingUrl = extractGoogleMeetUrl(event);
 
   if (!meetingUrl) {
     throw new Error("No Google Meet link was returned.");
@@ -182,9 +238,65 @@ export async function createGoogleMeetForBooking({
   return {
     provider: "google_meet" as const,
     meetingUrl,
-    calendarEventId: event.id as string,
+    calendarEventId: event.id,
     calendarEventUrl: event.htmlLink || null,
   };
+}
+
+export async function createGoogleMeetForBooking({
+  therapistId,
+  summary,
+  description,
+  start,
+  end,
+  timeZone = "Asia/Beirut",
+  attendeeEmail,
+}: CreateGoogleMeetParams) {
+  return createGoogleMeetEvent({
+    therapistId,
+    summary,
+    description,
+    start,
+    end,
+    timeZone,
+    attendeeEmail,
+    sendUpdates: "all",
+  });
+}
+
+/**
+ * Creates a second Google Meet dedicated to session continuity.
+ *
+ * Important:
+ * - This is a separate Meet URL from the main appointment.
+ * - No patient attendee is added here, so Google does not send a second
+ *   Calendar invitation automatically.
+ * - The application can expose this URL in the AAN confirmation email
+ *   and dashboards as the continuation link.
+ *
+ * Use this for services where a free Google Meet account may reach its
+ * multi-participant time limit (for AAN: couple, family and group).
+ */
+export async function createGoogleMeetContinuationForBooking({
+  therapistId,
+  summary,
+  description,
+  start,
+  end,
+  timeZone = "Asia/Beirut",
+}: CreateGoogleMeetContinuationParams) {
+  return createGoogleMeetEvent({
+    therapistId,
+    summary: `${summary} — Continuation`,
+    description:
+      description ||
+      "AAN Psychotherapy continuation room. Use only if the main Google Meet session is interrupted.",
+    start,
+    end,
+    timeZone,
+    attendeeEmail: null,
+    sendUpdates: "none",
+  });
 }
 
 export async function createGoogleCalendarEventForBooking({
@@ -213,14 +325,23 @@ export async function createGoogleCalendarEventForBooking({
           description ||
           "Online appointment booked through AAN Psychotherapy.",
         location: location || undefined,
-        start: { dateTime: start, timeZone },
-        end: { dateTime: end, timeZone },
-        attendees: attendeeEmail ? [{ email: attendeeEmail }] : undefined,
+        start: {
+          dateTime: start,
+          timeZone,
+        },
+        end: {
+          dateTime: end,
+          timeZone,
+        },
+        attendees: attendeeEmail
+          ? [{ email: attendeeEmail }]
+          : undefined,
       }),
     },
   );
 
-  const event = await response.json();
+  const event =
+    (await response.json()) as GoogleCalendarEventResponse;
 
   if (!response.ok || !event.id) {
     console.error("Google Calendar event creation failed:", event);
@@ -228,11 +349,10 @@ export async function createGoogleCalendarEventForBooking({
   }
 
   return {
-    calendarEventId: event.id as string,
+    calendarEventId: event.id,
     calendarEventUrl: event.htmlLink || null,
   };
 }
-
 
 export async function deleteGoogleCalendarEventForBooking({
   therapistId,
@@ -269,6 +389,8 @@ export async function deleteGoogleCalendarEventForBooking({
       calendarEventId,
     });
 
-    throw new Error("Unable to remove the previous Google Calendar event.");
+    throw new Error(
+      "Unable to remove the previous Google Calendar event.",
+    );
   }
 }
