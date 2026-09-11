@@ -8,6 +8,17 @@ import {
 
 import Stripe from "stripe";
 
+import {
+  createGoogleCalendarEventForBooking,
+  createGoogleMeetContinuationForBooking,
+  createGoogleMeetForBooking,
+  deleteGoogleCalendarEventForBooking,
+} from "@/lib/googleCalendar";
+
+import {
+  createZoomMeetingForBooking,
+} from "@/lib/zoom";
+
 export const runtime =
   "nodejs";
 
@@ -37,6 +48,8 @@ type BookingRow = {
   status: string | null;
   payment_provider: string | null;
   payment_transaction_id: string | null;
+  patient_pack_id?: string | null;
+  payment_source?: string | null;
   reschedule_requested_by?: string | null;
   reschedule_requested_at?: string | null;
   cancellation_initiated_by?: string | null;
@@ -48,6 +61,12 @@ type BookingRow = {
   calendar_event_id?: string | null;
   zoom_join_url?: string | null;
   zoom_start_url?: string | null;
+  service_type?: string | null;
+  duration_minutes?: number | null;
+  backup_meeting_provider?: string | null;
+  backup_join_url?: string | null;
+  backup_host_url?: string | null;
+  backup_calendar_event_id?: string | null;
 };
 
 const CHANGE_DEADLINE_MS =
@@ -170,6 +189,7 @@ function getErrorMessage(
     | "missingNewSlot"
     | "slotNotAvailable"
     | "wrongTherapist"
+    | "packCancellationNotAllowed"
     | "generic",
 ) {
   const messages = {
@@ -242,6 +262,11 @@ function getErrorMessage(
       ar: "يمكن تغيير الموعد فقط مع نفس المختص.",
       fr: "Le changement de créneau doit rester avec le même spécialiste.",
       en: "The appointment can only be rescheduled with the same specialist.",
+    },
+    packCancellationNotAllowed: {
+      ar: "لا يمكن إلغاء جلسة من باقة المريض أو استرداد قيمتها. يمكنك تغيير الموعد فقط قبل أكثر من 24 ساعة.",
+      fr: "Une séance du Pack Patient ne peut pas être annulée ni remboursée. Vous pouvez uniquement changer le créneau à plus de 24 h de la séance.",
+      en: "A Patient Pack session cannot be cancelled or refunded. You can only change the appointment more than 24 hours before the session.",
     },
     generic: {
       ar: "تعذر تنفيذ هذا الإجراء.",
@@ -520,6 +545,8 @@ export async function POST(
           status,
           payment_provider,
           payment_transaction_id,
+          patient_pack_id,
+          payment_source,
           reschedule_requested_by,
           reschedule_requested_at,
           cancellation_initiated_by,
@@ -530,7 +557,13 @@ export async function POST(
           meeting_provider,
           calendar_event_id,
           zoom_join_url,
-          zoom_start_url
+          zoom_start_url,
+          service_type,
+          duration_minutes,
+          backup_meeting_provider,
+          backup_join_url,
+          backup_host_url,
+          backup_calendar_event_id
         `,
       )
       .eq("id", bookingId)
@@ -700,81 +733,711 @@ export async function POST(
 
     if (action === "reschedule") {
       const newSlotId = String(body.newSlotId || "").trim();
+
       if (!newSlotId) {
-        return NextResponse.json({ error: getErrorMessage(language, "missingNewSlot") }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: getErrorMessage(
+              language,
+              "missingNewSlot",
+            ),
+          },
+          {
+            status: 400,
+          },
+        );
       }
 
-      const { data: newSlot, error: newSlotError } = await supabaseAdmin
+      const {
+        data: newSlot,
+        error: newSlotError,
+      } = await supabaseAdmin
         .from("availability_slots")
-        .select("id, therapist_id, slot_date, day, time, starts_at, ends_at, is_booked")
+        .select(
+          "id, therapist_id, slot_date, day, time, starts_at, ends_at, is_booked",
+        )
         .eq("id", newSlotId)
         .maybeSingle<AvailabilitySlotRow>();
 
-      if (newSlotError) throw newSlotError;
-      if (!newSlot || newSlot.is_booked === true) {
-        return NextResponse.json({ error: getErrorMessage(language, "slotNotAvailable"), code: "SLOT_NOT_AVAILABLE" }, { status: 409 });
-      }
-      if (newSlot.therapist_id !== booking.therapist_id) {
-        return NextResponse.json({ error: getErrorMessage(language, "wrongTherapist"), code: "WRONG_THERAPIST" }, { status: 409 });
+      if (newSlotError) {
+        throw newSlotError;
       }
 
-      const newStart = getSlotScheduledStart(newSlot);
-      if (!newStart || newStart.getTime() <= Date.now()) {
-        return NextResponse.json({ error: getErrorMessage(language, "slotNotAvailable"), code: "SLOT_NOT_AVAILABLE" }, { status: 409 });
+      if (
+        !newSlot ||
+        newSlot.is_booked === true
+      ) {
+        return NextResponse.json(
+          {
+            error: getErrorMessage(
+              language,
+              "slotNotAvailable",
+            ),
+            code: "SLOT_NOT_AVAILABLE",
+          },
+          {
+            status: 409,
+          },
+        );
       }
 
-      const newEndCandidate = newSlot.ends_at ? new Date(newSlot.ends_at) : null;
-      const newEnd = newEndCandidate && !Number.isNaN(newEndCandidate.getTime())
-        ? newEndCandidate
-        : new Date(newStart.getTime() + 2 * 60 * 60 * 1000);
+      if (
+        newSlot.therapist_id !==
+        booking.therapist_id
+      ) {
+        return NextResponse.json(
+          {
+            error: getErrorMessage(
+              language,
+              "wrongTherapist",
+            ),
+            code: "WRONG_THERAPIST",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
 
-      const { data: claimedSlot, error: claimError } = await supabaseAdmin
+      const newStart =
+        getSlotScheduledStart(newSlot);
+
+      if (
+        !newStart ||
+        newStart.getTime() <= Date.now()
+      ) {
+        return NextResponse.json(
+          {
+            error: getErrorMessage(
+              language,
+              "slotNotAvailable",
+            ),
+            code: "SLOT_NOT_AVAILABLE",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      /*
+       * Conserver la durée réelle de la séance.
+       *
+       * Priorité :
+       * 1. ends_at du nouveau créneau ;
+       * 2. duration_minutes snapshoté dans le booking ;
+       * 3. durée historique du booking ;
+       * 4. fallback de sécurité à 60 minutes.
+       */
+      const newEndCandidate =
+        newSlot.ends_at
+          ? new Date(newSlot.ends_at)
+          : null;
+
+      const historicalDurationMs =
+        booking.scheduled_start &&
+        booking.scheduled_end
+          ? new Date(
+              booking.scheduled_end,
+            ).getTime() -
+            new Date(
+              booking.scheduled_start,
+            ).getTime()
+          : NaN;
+
+      const fallbackDurationMinutes =
+        Number.isFinite(
+          Number(booking.duration_minutes),
+        ) &&
+        Number(booking.duration_minutes) > 0
+          ? Number(
+              booking.duration_minutes,
+            )
+          : Number.isFinite(
+                historicalDurationMs,
+              ) &&
+              historicalDurationMs > 0
+            ? Math.round(
+                historicalDurationMs /
+                  60_000,
+              )
+            : 60;
+
+      const newEnd =
+        newEndCandidate &&
+        !Number.isNaN(
+          newEndCandidate.getTime(),
+        ) &&
+        newEndCandidate.getTime() >
+          newStart.getTime()
+          ? newEndCandidate
+          : new Date(
+              newStart.getTime() +
+                fallbackDurationMinutes *
+                  60_000,
+            );
+
+      /*
+       * On réserve d'abord atomiquement le nouveau créneau.
+       */
+      const {
+        data: claimedSlot,
+        error: claimError,
+      } = await supabaseAdmin
         .from("availability_slots")
-        .update({ is_booked: true })
+        .update({
+          is_booked: true,
+        })
         .eq("id", newSlot.id)
-        .eq("therapist_id", booking.therapist_id)
+        .eq(
+          "therapist_id",
+          booking.therapist_id,
+        )
         .eq("is_booked", false)
         .select("id")
         .maybeSingle<{ id: string }>();
 
-      if (claimError) throw claimError;
-      if (!claimedSlot) {
-        return NextResponse.json({ error: getErrorMessage(language, "slotNotAvailable"), code: "SLOT_NOT_AVAILABLE" }, { status: 409 });
+      if (claimError) {
+        throw claimError;
       }
 
-      const oldSlotId = booking.slot_id;
-      const { error: bookingUpdateError } = await supabaseAdmin
+      if (!claimedSlot) {
+        return NextResponse.json(
+          {
+            error: getErrorMessage(
+              language,
+              "slotNotAvailable",
+            ),
+            code: "SLOT_NOT_AVAILABLE",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      const oldSlotId =
+        booking.slot_id;
+
+      const oldCalendarEventId =
+        booking.calendar_event_id || null;
+
+      const oldBackupCalendarEventId =
+        booking.backup_calendar_event_id ||
+        null;
+
+      /*
+       * Conserver la plateforme actuellement attachée au booking.
+       * Cela respecte notamment un éventuel changement manuel
+       * Google Meet <-> Zoom effectué avant la replanification.
+       *
+       * Si l'ancien booking n'a pas encore de provider, on utilise
+       * la préférence actuelle du spécialiste.
+       */
+      let meetingProvider =
+        booking.meeting_provider === "zoom"
+          ? "zoom"
+          : booking.meeting_provider ===
+              "google_meet"
+            ? "google_meet"
+            : null;
+
+      if (
+        !meetingProvider &&
+        booking.therapist_id
+      ) {
+        const {
+          data: therapistInfo,
+          error: therapistInfoError,
+        } = await supabaseAdmin
+          .from("therapists")
+          .select(
+            "preferred_meeting_provider",
+          )
+          .eq(
+            "id",
+            booking.therapist_id,
+          )
+          .maybeSingle<{
+            preferred_meeting_provider:
+              | string
+              | null;
+          }>();
+
+        if (therapistInfoError) {
+          await supabaseAdmin
+            .from("availability_slots")
+            .update({
+              is_booked: false,
+            })
+            .eq("id", newSlot.id);
+
+          throw therapistInfoError;
+        }
+
+        meetingProvider =
+          therapistInfo
+            ?.preferred_meeting_provider ===
+          "zoom"
+            ? "zoom"
+            : "google_meet";
+      }
+
+      /*
+       * Supprimer les anciens événements Google Calendar avant
+       * de créer les nouveaux. Cela concerne :
+       * - Google Meet principal ;
+       * - événement Calendar associé à une séance Zoom ;
+       * - éventuelle salle Google Meet de continuité.
+       *
+       * Un échec de suppression ne doit pas bloquer le changement
+       * de créneau : on logue et on continue.
+       */
+      if (
+        booking.therapist_id &&
+        oldCalendarEventId
+      ) {
+        try {
+          await deleteGoogleCalendarEventForBooking(
+            {
+              therapistId:
+                booking.therapist_id,
+              calendarEventId:
+                oldCalendarEventId,
+            },
+          );
+        } catch (calendarDeleteError) {
+          console.error(
+            "Old Calendar event deletion warning during reschedule:",
+            {
+              bookingId: booking.id,
+              calendarEventId:
+                oldCalendarEventId,
+              error:
+                calendarDeleteError,
+            },
+          );
+        }
+      }
+
+      if (
+        booking.therapist_id &&
+        oldBackupCalendarEventId &&
+        oldBackupCalendarEventId !==
+          oldCalendarEventId
+      ) {
+        try {
+          await deleteGoogleCalendarEventForBooking(
+            {
+              therapistId:
+                booking.therapist_id,
+              calendarEventId:
+                oldBackupCalendarEventId,
+            },
+          );
+        } catch (
+          backupCalendarDeleteError
+        ) {
+          console.error(
+            "Old backup Calendar event deletion warning during reschedule:",
+            {
+              bookingId: booking.id,
+              calendarEventId:
+                oldBackupCalendarEventId,
+              error:
+                backupCalendarDeleteError,
+            },
+          );
+        }
+      }
+
+      /*
+       * Mettre à jour le booking SANS toucher :
+       * - au paiement ;
+       * - au patient_pack_id ;
+       * - au payment_source ;
+       * - au nombre de crédits du Pack.
+       *
+       * Les anciens liens sont nettoyés avant création des nouveaux.
+       */
+      const {
+        error: bookingUpdateError,
+      } = await supabaseAdmin
         .from("bookings")
         .update({
           slot_id: newSlot.id,
-          slot_day: newSlot.day || booking.slot_day,
+          slot_day:
+            newSlot.day ||
+            booking.slot_day,
           slot_time: newSlot.time,
-          scheduled_start: newStart.toISOString(),
-          scheduled_end: newEnd.toISOString(),
-          reschedule_requested_by: null,
-          reschedule_requested_at: null,
+          scheduled_start:
+            newStart.toISOString(),
+          scheduled_end:
+            newEnd.toISOString(),
+          reschedule_requested_by:
+            null,
+          reschedule_requested_at:
+            null,
           meeting_url: null,
-          meeting_provider: null,
+          meeting_provider:
+            meetingProvider,
           calendar_event_id: null,
           zoom_join_url: null,
           zoom_start_url: null,
+          backup_meeting_provider:
+            null,
+          backup_join_url: null,
+          backup_host_url: null,
+          backup_calendar_event_id:
+            null,
         })
         .eq("id", booking.id)
-        .eq("patient_id", patientUser.id)
+        .eq(
+          "patient_id",
+          patientUser.id,
+        )
         .eq("status", "paid");
 
       if (bookingUpdateError) {
-        await supabaseAdmin.from("availability_slots").update({ is_booked: false }).eq("id", newSlot.id);
+        await supabaseAdmin
+          .from("availability_slots")
+          .update({
+            is_booked: false,
+          })
+          .eq("id", newSlot.id);
+
         throw bookingUpdateError;
       }
 
-      if (oldSlotId && oldSlotId !== newSlot.id) {
-        const { error: oldSlotReleaseError } = await supabaseAdmin
+      /*
+       * L'ancien créneau n'est libéré qu'après la mise à jour
+       * réussie du booking.
+       */
+      if (
+        oldSlotId &&
+        oldSlotId !== newSlot.id
+      ) {
+        const {
+          error: oldSlotReleaseError,
+        } = await supabaseAdmin
           .from("availability_slots")
-          .update({ is_booked: false })
+          .update({
+            is_booked: false,
+          })
           .eq("id", oldSlotId)
-          .eq("therapist_id", booking.therapist_id);
-        if (oldSlotReleaseError) console.error("Old slot release warning after reschedule:", oldSlotReleaseError);
+          .eq(
+            "therapist_id",
+            booking.therapist_id,
+          );
+
+        if (oldSlotReleaseError) {
+          console.error(
+            "Old slot release warning after reschedule:",
+            oldSlotReleaseError,
+          );
+        }
+      }
+
+      /*
+       * Recréer la visioconférence pour le NOUVEL horaire.
+       *
+       * Règles identiques au webhook Stripe :
+       * - Zoom : principal + continuité ;
+       * - Google Meet individuel : principal uniquement ;
+       * - Google Meet couple/famille/groupe :
+       *   principal + continuité.
+       */
+      let newMeetingUrl:
+        | string
+        | null = null;
+
+      let newZoomJoinUrl:
+        | string
+        | null = null;
+
+      let newZoomStartUrl:
+        | string
+        | null = null;
+
+      let newCalendarEventId:
+        | string
+        | null = null;
+
+      let newBackupMeetingProvider:
+        | string
+        | null = null;
+
+      let newBackupJoinUrl:
+        | string
+        | null = null;
+
+      let newBackupHostUrl:
+        | string
+        | null = null;
+
+      let newBackupCalendarEventId:
+        | string
+        | null = null;
+
+      let meetingRecreated = false;
+
+      const normalizedServiceType =
+        booking.service_type
+          ?.trim()
+          .toLowerCase() || "";
+
+      const googleMeetNeedsContinuation =
+        normalizedServiceType ===
+          "couple" ||
+        normalizedServiceType ===
+          "couples" ||
+        normalizedServiceType ===
+          "family" ||
+        normalizedServiceType ===
+          "famille" ||
+        normalizedServiceType ===
+          "group" ||
+        normalizedServiceType ===
+          "groupe";
+
+      if (
+        booking.therapist_id &&
+        meetingProvider === "zoom"
+      ) {
+        try {
+          const zoomMeeting =
+            await createZoomMeetingForBooking(
+              {
+                therapistId:
+                  booking.therapist_id,
+                therapistName:
+                  booking.therapist_name ||
+                  "Specialist",
+                start:
+                  newStart.toISOString(),
+                end:
+                  newEnd.toISOString(),
+                supabaseAdmin,
+              },
+            );
+
+          newZoomJoinUrl =
+            zoomMeeting.joinUrl;
+
+          newZoomStartUrl =
+            zoomMeeting.startUrl;
+
+          /*
+           * Une séance Zoom garde aussi un événement dans le
+           * Google Calendar du spécialiste lorsque Google est connecté.
+           */
+          try {
+            const calendarEvent =
+              await createGoogleCalendarEventForBooking(
+                {
+                  therapistId:
+                    booking.therapist_id,
+                  summary:
+                    `AAN Psychotherapy — ${booking.therapist_name || "Specialist"}`,
+                  description:
+                    [
+                      `AAN booking ${booking.id}`,
+                      "",
+                      "Platform: Zoom",
+                      `Join Zoom: ${zoomMeeting.joinUrl}`,
+                    ].join("\n"),
+                  location:
+                    zoomMeeting.joinUrl,
+                  start:
+                    newStart.toISOString(),
+                  end:
+                    newEnd.toISOString(),
+                  timeZone:
+                    "Asia/Beirut",
+                  attendeeEmail:
+                    booking.patient_email,
+                },
+              );
+
+            newCalendarEventId =
+              calendarEvent.calendarEventId;
+          } catch (
+            calendarCreateError
+          ) {
+            console.error(
+              "Google Calendar event creation warning for rescheduled Zoom booking:",
+              {
+                bookingId:
+                  booking.id,
+                therapistId:
+                  booking.therapist_id,
+                error:
+                  calendarCreateError,
+              },
+            );
+          }
+
+          const zoomContinuation =
+            await createZoomMeetingForBooking(
+              {
+                therapistId:
+                  booking.therapist_id,
+                therapistName:
+                  booking.therapist_name ||
+                  "Specialist",
+                start:
+                  newStart.toISOString(),
+                end:
+                  newEnd.toISOString(),
+                supabaseAdmin,
+                continuation: true,
+              },
+            );
+
+          newBackupMeetingProvider =
+            "zoom";
+
+          newBackupJoinUrl =
+            zoomContinuation.joinUrl;
+
+          newBackupHostUrl =
+            zoomContinuation.startUrl;
+
+          meetingRecreated = true;
+        } catch (
+          zoomMeetingError
+        ) {
+          console.error(
+            "Zoom recreation failed after reschedule:",
+            {
+              bookingId: booking.id,
+              therapistId:
+                booking.therapist_id,
+              error:
+                zoomMeetingError,
+            },
+          );
+        }
+      } else if (
+        booking.therapist_id &&
+        meetingProvider ===
+          "google_meet"
+      ) {
+        try {
+          const googleMeeting =
+            await createGoogleMeetForBooking(
+              {
+                therapistId:
+                  booking.therapist_id,
+                summary:
+                  `AAN Psychotherapy — ${booking.therapist_name || "Specialist"}`,
+                description:
+                  `AAN booking ${booking.id}`,
+                start:
+                  newStart.toISOString(),
+                end:
+                  newEnd.toISOString(),
+                timeZone:
+                  "Asia/Beirut",
+                attendeeEmail:
+                  booking.patient_email,
+              },
+            );
+
+          newMeetingUrl =
+            googleMeeting.meetingUrl;
+
+          newCalendarEventId =
+            googleMeeting.calendarEventId;
+
+          if (
+            googleMeetNeedsContinuation
+          ) {
+            const googleContinuation =
+              await createGoogleMeetContinuationForBooking(
+                {
+                  therapistId:
+                    booking.therapist_id,
+                  summary:
+                    `AAN Psychotherapy — ${booking.therapist_name || "Specialist"}`,
+                  description:
+                    `AAN booking ${booking.id} — continuation`,
+                  start:
+                    newStart.toISOString(),
+                  end:
+                    newEnd.toISOString(),
+                  timeZone:
+                    "Asia/Beirut",
+                },
+              );
+
+            newBackupMeetingProvider =
+              "google_meet";
+
+            newBackupJoinUrl =
+              googleContinuation.meetingUrl;
+
+            newBackupCalendarEventId =
+              googleContinuation.calendarEventId;
+          }
+
+          meetingRecreated = true;
+        } catch (
+          googleMeetingError
+        ) {
+          console.error(
+            "Google Meet recreation failed after reschedule:",
+            {
+              bookingId: booking.id,
+              therapistId:
+                booking.therapist_id,
+              error:
+                googleMeetingError,
+            },
+          );
+        }
+      }
+
+      /*
+       * Enregistrer les nouveaux liens.
+       * Si la création de la visioconférence échoue, le changement
+       * de créneau reste valide et l'incident est explicitement
+       * signalé dans la réponse serveur.
+       */
+      const {
+        error:
+          meetingPersistenceError,
+      } = await supabaseAdmin
+        .from("bookings")
+        .update({
+          meeting_url:
+            newMeetingUrl,
+          meeting_provider:
+            meetingProvider,
+          calendar_event_id:
+            newCalendarEventId,
+          zoom_join_url:
+            newZoomJoinUrl,
+          zoom_start_url:
+            newZoomStartUrl,
+          backup_meeting_provider:
+            newBackupMeetingProvider,
+          backup_join_url:
+            newBackupJoinUrl,
+          backup_host_url:
+            newBackupHostUrl,
+          backup_calendar_event_id:
+            newBackupCalendarEventId,
+        })
+        .eq("id", booking.id)
+        .eq(
+          "patient_id",
+          patientUser.id,
+        )
+        .eq("status", "paid");
+
+      if (meetingPersistenceError) {
+        throw meetingPersistenceError;
       }
 
       return NextResponse.json({
@@ -783,9 +1446,39 @@ export async function POST(
         bookingId: booking.id,
         oldSlotId,
         newSlotId: newSlot.id,
-        scheduledStart: newStart.toISOString(),
+        scheduledStart:
+          newStart.toISOString(),
+        scheduledEnd:
+          newEnd.toISOString(),
         paymentPreserved: true,
+        packCreditPreserved: true,
+        meetingProvider,
+        meetingRecreated,
       });
+    }
+
+    if (
+      action === "cancel_and_refund" &&
+      (
+        Boolean(booking.patient_pack_id) ||
+        (booking.payment_source || "").trim().toLowerCase() ===
+          "patient_pack" ||
+        (booking.payment_provider || "").trim().toLowerCase() ===
+          "patient_pack"
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: getErrorMessage(
+            language,
+            "packCancellationNotAllowed",
+          ),
+          code: "PACK_CANCELLATION_NOT_ALLOWED",
+        },
+        {
+          status: 409,
+        },
+      );
     }
 
     if (
