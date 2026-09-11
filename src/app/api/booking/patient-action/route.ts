@@ -19,6 +19,7 @@ type Language =
 type PatientAction =
   | "request_reschedule"
   | "reschedule"
+  | "cancel_pending"
   | "cancel_and_refund";
 
 type BookingRow = {
@@ -482,6 +483,7 @@ export async function POST(
     if (
       action !== "request_reschedule" &&
       action !== "reschedule" &&
+      action !== "cancel_pending" &&
       action !== "cancel_and_refund"
     ) {
       return NextResponse.json(
@@ -566,6 +568,56 @@ export async function POST(
           status: 403,
         },
       );
+    }
+
+    if (action === "cancel_pending") {
+      if (booking.status !== "pending") {
+        return NextResponse.json(
+          {
+            error:
+              language === "ar"
+                ? "يمكن إلغاء الحجوزات غير المدفوعة فقط بهذه الطريقة."
+                : language === "fr"
+                  ? "Seules les réservations en attente de paiement peuvent être supprimées de cette manière."
+                  : "Only pending unpaid bookings can be removed this way.",
+            code: "PENDING_BOOKING_REQUIRED",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+
+      if (booking.slot_id) {
+        const { error: slotReleaseError } = await supabaseAdmin
+          .from("availability_slots")
+          .update({
+            is_booked: false,
+          })
+          .eq("id", booking.slot_id)
+          .eq("therapist_id", booking.therapist_id);
+
+        if (slotReleaseError) {
+          throw slotReleaseError;
+        }
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from("bookings")
+        .delete()
+        .eq("id", booking.id)
+        .eq("patient_id", patientUser.id)
+        .eq("status", "pending");
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      return NextResponse.json({
+        success: true,
+        action: "cancel_pending",
+        bookingId: booking.id,
+      });
     }
 
     if (
