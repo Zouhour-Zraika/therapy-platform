@@ -52,8 +52,6 @@ export default function SignupPage() {
           passwordNumber: "يجب أن تحتوي كلمة المرور على رقم واحد على الأقل.",
           passwordSymbol: "يجب أن تحتوي كلمة المرور على رمز خاص واحد على الأقل.",
           passwordMismatch: "كلمتا المرور غير متطابقتين.",
-          profileError:
-            "تم إنشاء الحساب، ولكن تعذر حفظ ملف المريض. يرجى التواصل مع الدعم.",
           success:
             "تم إنشاء حسابك بنجاح. يرجى التحقق من بريدك الإلكتروني لتأكيد الحساب.",
           genericError: "تعذر إنشاء الحساب. يرجى المحاولة مرة أخرى.",
@@ -96,8 +94,6 @@ export default function SignupPage() {
               "Le mot de passe doit contenir au moins un symbole.",
             passwordMismatch:
               "Les deux mots de passe ne correspondent pas.",
-            profileError:
-              "Le compte a été créé, mais le profil patient n’a pas pu être enregistré. Veuillez contacter le support.",
             success:
               "Votre compte a été créé. Consultez votre e-mail pour confirmer votre inscription.",
             genericError:
@@ -136,8 +132,6 @@ export default function SignupPage() {
             passwordNumber: "Password must contain at least one number.",
             passwordSymbol: "Password must contain at least one symbol.",
             passwordMismatch: "The passwords do not match.",
-            profileError:
-              "The account was created, but the patient profile could not be saved. Please contact support.",
             success:
               "Your account was created. Please check your email to confirm your registration.",
             genericError:
@@ -205,23 +199,6 @@ export default function SignupPage() {
       if (error) {
         setErrorMessage(error.message);
         return;
-      }
-
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .upsert({
-            id: data.user.id,
-            email: cleanEmail,
-            full_name: cleanName,
-            role: "patient",
-          });
-
-        if (profileError) {
-          console.error("Patient profile save error:", profileError);
-          setErrorMessage(copy.profileError);
-          return;
-        }
       }
 
       setSuccessMessage(copy.success);
