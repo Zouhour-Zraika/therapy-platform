@@ -85,6 +85,10 @@ export default function PatientDashboard() {
           joinZoom: "الانضمام إلى جلسة Zoom",
           zoomNotReady: "رابط Zoom غير جاهز",
           completePayment: "إكمال الدفع",
+          cancelPending: "إلغاء هذا الحجز",
+          cancelPendingConfirm: "هل تريد إلغاء هذا الحجز غير المدفوع؟ سيصبح الموعد متاحاً من جديد فوراً.",
+          cancellingPending: "جارٍ إلغاء الحجز...",
+          cancelPendingSuccess: "تم إلغاء الحجز وأصبح الموعد متاحاً من جديد.",
           sessionDetails: "تفاصيل الجلسة",
           unableToLoad: "تعذر تحميل المواعيد. يرجى المحاولة مرة أخرى.",
           changeSlot: "تغيير الموعد",
@@ -134,6 +138,12 @@ export default function PatientDashboard() {
             joinZoom: "Rejoindre la séance Zoom",
             zoomNotReady: "Lien Zoom pas encore disponible",
             completePayment: "Finaliser le paiement",
+            cancelPending: "Annuler cette réservation",
+            cancelPendingConfirm:
+              "Voulez-vous annuler cette réservation non payée ? Le créneau redeviendra immédiatement disponible.",
+            cancellingPending: "Annulation de la réservation...",
+            cancelPendingSuccess:
+              "La réservation a été annulée et le créneau est de nouveau disponible.",
             sessionDetails: "Détails de la séance",
             unableToLoad:
               "Impossible de charger les rendez-vous. Veuillez réessayer.",
@@ -192,6 +202,12 @@ export default function PatientDashboard() {
             joinZoom: "Join Zoom Session",
             zoomNotReady: "Zoom link not ready",
             completePayment: "Complete Payment",
+            cancelPending: "Cancel this booking",
+            cancelPendingConfirm:
+              "Do you want to cancel this unpaid booking? The time slot will become available again immediately.",
+            cancellingPending: "Cancelling booking...",
+            cancelPendingSuccess:
+              "The booking was cancelled and the time slot is available again.",
             sessionDetails: "Session details",
             unableToLoad:
               "Unable to load appointments. Please try again.",
@@ -778,6 +794,64 @@ export default function PatientDashboard() {
     }
   };
 
+  const cancelPendingBooking = async (booking: Booking) => {
+    setActionMessage("");
+
+    const confirmed = window.confirm(copy.cancelPendingConfirm);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBookingActionId(booking.id);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const response = await fetch(
+        "/api/booking/patient-action",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            bookingId: booking.id,
+            action: "cancel_pending",
+            language,
+          }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result.error || copy.actionError);
+        return;
+      }
+
+      setActionMessage(copy.cancelPendingSuccess);
+      await getBookings();
+    } catch (error) {
+      console.error(
+        "Pending booking cancellation error:",
+        error,
+      );
+      alert(copy.actionError);
+    } finally {
+      setBookingActionId(null);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     if (status === "paid") {
       return copy.paid;
@@ -1186,16 +1260,33 @@ export default function PatientDashboard() {
                               {copy.cancelled}
                             </span>
                           ) : (
-                            <Link
-                              href={`/payment?bookingId=${booking.id}&therapist=${encodeURIComponent(
-                                booking.therapist_name,
-                              )}&price=${booking.price}&slot=${encodeURIComponent(
-                                `${booking.slot_day} ${booking.slot_time}`,
-                              )}`}
-                              className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
-                            >
-                              {copy.completePayment}
-                            </Link>
+                            <div className="space-y-3">
+                              <Link
+                                href={`/payment?bookingId=${booking.id}&therapist=${encodeURIComponent(
+                                  booking.therapist_name,
+                                )}&price=${booking.price}&slot=${encodeURIComponent(
+                                  `${booking.slot_day} ${booking.slot_time}`,
+                                )}`}
+                                className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                              >
+                                {copy.completePayment}
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void cancelPendingBooking(booking)
+                                }
+                                disabled={
+                                  bookingActionId === booking.id
+                                }
+                                className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {bookingActionId === booking.id
+                                  ? copy.cancellingPending
+                                  : copy.cancelPending}
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
