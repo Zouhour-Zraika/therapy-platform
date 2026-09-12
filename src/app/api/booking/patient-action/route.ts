@@ -7,6 +7,7 @@ import {
 } from "next/server";
 
 import Stripe from "stripe";
+import { Resend } from "resend";
 
 import {
   createGoogleCalendarEventForBooking,
@@ -1897,6 +1898,347 @@ export async function POST(
         }
       }
 
+      /*
+       * Envoyer un e-mail AAN de confirmation d'annulation /
+       * remboursement. Un échec d'e-mail ne doit jamais remettre
+       * en cause l'annulation ni le remboursement déjà créés.
+       */
+      let refundEmailSent = false;
+
+      if (
+        booking.patient_email &&
+        process.env.RESEND_API_KEY
+      ) {
+        try {
+          const resend = new Resend(
+            process.env.RESEND_API_KEY,
+          );
+
+          const locale =
+            language === "fr"
+              ? "fr-FR"
+              : language === "ar"
+                ? "ar-LB"
+                : "en-US";
+
+          const formattedAppointment =
+            booking.scheduled_start
+              ? new Intl.DateTimeFormat(
+                  locale,
+                  {
+                    timeZone:
+                      "Asia/Beirut",
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  },
+                ).format(
+                  new Date(
+                    booking.scheduled_start,
+                  ),
+                )
+              : "";
+
+          const refundedAmount =
+            Number(
+              booking.price || 0,
+            ).toFixed(2);
+
+          const subject =
+            language === "ar"
+              ? "AAN Psychotherapy — تأكيد إلغاء الجلسة والاسترداد"
+              : language === "fr"
+                ? "AAN Psychotherapy — Confirmation d’annulation et de remboursement"
+                : "AAN Psychotherapy — Cancellation and refund confirmation";
+
+          const title =
+            language === "ar"
+              ? "تم إلغاء الجلسة"
+              : language === "fr"
+                ? "Séance annulée"
+                : "Session cancelled";
+
+          const intro =
+            language === "ar"
+              ? "تم إلغاء جلستك وبدء إجراء الاسترداد إلى وسيلة الدفع الأصلية."
+              : language === "fr"
+                ? "Votre séance a été annulée et la procédure de remboursement vers votre moyen de paiement d’origine a été lancée."
+                : "Your session has been cancelled and the refund process to your original payment method has been initiated.";
+
+          const refundStatusText =
+            refund.status === "succeeded"
+              ? language === "ar"
+                ? "تم إصدار الاسترداد من Stripe. قد يستغرق ظهوره بعض الوقت حسب البنك أو جهة إصدار البطاقة."
+                : language === "fr"
+                  ? "Le remboursement a été émis par Stripe. Son apparition sur votre compte peut prendre un certain temps selon votre banque ou l’émetteur de votre carte."
+                  : "The refund has been issued by Stripe. It may take some time to appear depending on your bank or card issuer."
+              : language === "ar"
+                ? "طلب الاسترداد قيد المعالجة لدى Stripe."
+                : language === "fr"
+                  ? "La demande de remboursement est en cours de traitement par Stripe."
+                  : "The refund request is being processed by Stripe.";
+
+          const therapistLabel =
+            language === "ar"
+              ? "المختص"
+              : language === "fr"
+                ? "Spécialiste"
+                : "Specialist";
+
+          const appointmentLabel =
+            language === "ar"
+              ? "الموعد الملغى"
+              : language === "fr"
+                ? "Rendez-vous annulé"
+                : "Cancelled appointment";
+
+          const amountLabel =
+            language === "ar"
+              ? "المبلغ"
+              : language === "fr"
+                ? "Montant"
+                : "Amount";
+
+          const refundRefLabel =
+            language === "ar"
+              ? "مرجع الاسترداد"
+              : language === "fr"
+                ? "Référence du remboursement"
+                : "Refund reference";
+
+          const footer =
+            language === "ar"
+              ? "مساحة آمنة للدعم والنمو"
+              : language === "fr"
+                ? "Un espace sûr pour le soutien et l’évolution"
+                : "A safe space for support and growth";
+
+          const htmlLang =
+            language === "ar"
+              ? "ar"
+              : language === "fr"
+                ? "fr"
+                : "en";
+
+          const htmlDir =
+            language === "ar"
+              ? ' dir="rtl"'
+              : "";
+
+          const html = `
+            <!DOCTYPE html>
+            <html lang="${htmlLang}"${htmlDir}>
+              <head>
+                <meta charset="UTF-8" />
+                <meta
+                  name="viewport"
+                  content="width=device-width, initial-scale=1.0"
+                />
+                <title>${subject}</title>
+              </head>
+              <body
+                style="
+                  margin:0;
+                  padding:0;
+                  background:#f6f2ec;
+                  font-family:Arial,sans-serif;
+                  color:#24364b;
+                "
+              >
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellspacing="0"
+                  cellpadding="0"
+                  border="0"
+                  style="padding:32px 16px;background:#f6f2ec;"
+                >
+                  <tr>
+                    <td align="center">
+                      <table
+                        role="presentation"
+                        width="100%"
+                        cellspacing="0"
+                        cellpadding="0"
+                        border="0"
+                        style="
+                          max-width:620px;
+                          background:#ffffff;
+                          border:1px solid #e4d8c7;
+                          border-radius:24px;
+                          overflow:hidden;
+                        "
+                      >
+                        <tr>
+                          <td style="padding:36px 36px 24px;">
+                            <p
+                              style="
+                                margin:0;
+                                color:#b5965c;
+                                font-size:13px;
+                                font-weight:700;
+                                letter-spacing:3px;
+                              "
+                            >
+                              AAN PSYCHOTHERAPY
+                            </p>
+
+                            <h1
+                              style="
+                                margin:18px 0 0;
+                                color:#24364b;
+                                font-size:34px;
+                                line-height:1.3;
+                              "
+                            >
+                              ${title}
+                            </h1>
+
+                            <p
+                              style="
+                                margin:18px 0 0;
+                                color:#5f6f82;
+                                font-size:17px;
+                                line-height:1.9;
+                              "
+                            >
+                              ${intro}
+                            </p>
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:0 36px 26px;">
+                            <table
+                              role="presentation"
+                              width="100%"
+                              cellspacing="0"
+                              cellpadding="0"
+                              border="0"
+                              style="
+                                background:#f9f6f1;
+                                border-radius:18px;
+                                padding:22px;
+                              "
+                            >
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${therapistLabel} :</strong>
+                                  ${booking.therapist_name || "Specialist"}
+                                </td>
+                              </tr>
+
+                              ${
+                                formattedAppointment
+                                  ? `
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${appointmentLabel} :</strong>
+                                  ${formattedAppointment}
+                                </td>
+                              </tr>`
+                                  : ""
+                              }
+
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${amountLabel} :</strong>
+                                  $${refundedAmount}
+                                </td>
+                              </tr>
+
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${refundRefLabel} :</strong>
+                                  ${refund.id}
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td style="padding:0 36px 32px;">
+                            <p
+                              style="
+                                margin:0;
+                                color:#5f6f82;
+                                font-size:15px;
+                                line-height:1.8;
+                              "
+                            >
+                              ${refundStatusText}
+                            </p>
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td
+                            style="
+                              padding:22px 36px;
+                              background:#24364b;
+                              text-align:center;
+                            "
+                          >
+                            <p
+                              style="
+                                margin:0;
+                                color:#ffffff;
+                                font-size:14px;
+                                line-height:1.8;
+                              "
+                            >
+                              AAN Psychotherapy
+                              <br />
+                              ${footer}
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </body>
+            </html>
+          `;
+
+          const {
+            error: emailError,
+          } = await resend.emails.send({
+            from:
+              process.env
+                .RESEND_FROM_EMAIL ||
+              "AAN Psychotherapy <onboarding@resend.dev>",
+            to:
+              booking.patient_email,
+            subject,
+            html,
+          });
+
+          if (emailError) {
+            console.error(
+              "Cancellation refund email warning:",
+              emailError,
+            );
+          } else {
+            refundEmailSent = true;
+          }
+        } catch (refundEmailError) {
+          console.error(
+            "Cancellation refund email request failed:",
+            {
+              bookingId: booking.id,
+              error:
+                refundEmailError,
+            },
+          );
+        }
+      }
+
       return NextResponse.json({
         success: true,
         action: "cancel_and_refund",
@@ -1906,6 +2248,7 @@ export async function POST(
           id: refund.id,
           status: refund.status,
         },
+        refundEmailSent,
       });
     }
 

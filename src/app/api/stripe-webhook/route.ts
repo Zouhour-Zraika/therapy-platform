@@ -64,6 +64,10 @@ type BookingRecord = {
     | string
     | null;
 
+  hold_expires_at:
+    | string
+    | null;
+
   payment_provider:
     | string
     | null;
@@ -228,6 +232,43 @@ function roundMoney(value: number) {
   return Math.round(
     (value + Number.EPSILON) * 100,
   ) / 100;
+}
+
+async function refundExpiredCheckoutPayment({
+  stripe,
+  session,
+  bookingId,
+}: {
+  stripe: Stripe;
+  session: Stripe.Checkout.Session;
+  bookingId: string;
+}) {
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id;
+
+  if (!paymentIntentId) {
+    throw new Error(
+      "Late Stripe payment cannot be refunded because PaymentIntent is missing.",
+    );
+  }
+
+  return stripe.refunds.create(
+    {
+      payment_intent: paymentIntentId,
+      reason: "requested_by_customer",
+      metadata: {
+        bookingId,
+        reason: "booking_hold_expired",
+        initiatedBy: "system",
+      },
+    },
+    {
+      idempotencyKey:
+        `booking-${bookingId}-expired-hold-refund`,
+    },
+  );
 }
 
 async function refreshZoomAccessToken({
@@ -1609,6 +1650,7 @@ export async function POST(
             slot_time,
             scheduled_start,
             scheduled_end,
+            hold_expires_at,
             payment_provider,
             payment_method,
             payment_transaction_id,
@@ -1638,20 +1680,265 @@ export async function POST(
     }
 
     if (!existingBooking) {
+      /*
+       * Le booking peut avoir été supprimé après expiration du hold
+       * (ou annulé par le patient) alors qu'une ancienne page Stripe
+       * est restée ouverte. Le paiement ne doit jamais ressusciter
+       * une réservation inexistante.
+       *
+       * Puisque Stripe nous indique ici que le paiement est déjà
+       * encaissé, on le rembourse immédiatement et on répond 200
+       * pour éviter les retries du webhook.
+       */
       console.error(
-        "Booking not found:",
-        bookingId,
+        "Paid Stripe Checkout received for missing booking:",
+        {
+          bookingId,
+          sessionId: session.id,
+        },
       );
 
-      return NextResponse.json(
+      try {
+        const lateRefund =
+          await refundExpiredCheckoutPayment({
+            stripe,
+            session,
+            bookingId,
+          });
+
+        return NextResponse.json({
+          received: true,
+          ignored: true,
+          reason:
+            "Booking no longer exists. Payment was automatically refunded.",
+          bookingId,
+          refundId: lateRefund.id,
+          refundStatus: lateRefund.status,
+        });
+      } catch (lateRefundError) {
+        console.error(
+          "CRITICAL: paid Stripe Checkout references a missing booking and automatic refund failed:",
+          {
+            bookingId,
+            sessionId: session.id,
+            error: lateRefundError,
+          },
+        );
+
+        /*
+         * 500 est volontaire ici : Stripe réessaiera le webhook.
+         * On préfère un retry plutôt que de laisser un paiement
+         * encaissé sans réservation ni remboursement.
+         */
+        throw lateRefundError;
+      }
+    }
+
+    /*
+     * =======================================================
+     * Protection du hold de 10 minutes.
+     *
+     * On compare l'heure réelle de l'événement Stripe
+     * (event.created) au hold_expires_at stocké dans Supabase.
+     * Ainsi, un simple retard de livraison du webhook ne provoque
+     * pas un faux remboursement.
+     *
+     * IMPORTANT :
+     * - un booking déjà "paid" est un replay idempotent normal ;
+     * - seul un booking encore "pending" et payé après expiration
+     *   est considéré comme un paiement tardif.
+     * =======================================================
+     */
+    if (
+      existingBooking.status === "pending" &&
+      existingBooking.hold_expires_at
+    ) {
+      const holdExpiresAtMs =
+        new Date(
+          existingBooking.hold_expires_at,
+        ).getTime();
+
+      const stripeCompletedAtMs =
+        event.created * 1000;
+
+      if (
+        Number.isFinite(holdExpiresAtMs) &&
+        stripeCompletedAtMs >
+          holdExpiresAtMs
+      ) {
+        console.warn(
+          "Late Stripe payment received after booking hold expired:",
+          {
+            bookingId,
+            sessionId: session.id,
+            holdExpiresAt:
+              existingBooking.hold_expires_at,
+            stripeCompletedAt:
+              new Date(
+                stripeCompletedAtMs,
+              ).toISOString(),
+          },
+        );
+
+        const lateRefund =
+          await refundExpiredCheckoutPayment({
+            stripe,
+            session,
+            bookingId,
+          });
+
+        /*
+         * Marquer le booking comme annulé afin qu'il ne puisse
+         * jamais être transformé en réservation payée par un replay.
+         * On conserve la référence du paiement et du remboursement
+         * pour l'audit.
+         */
+        const {
+          error: expiredBookingUpdateError,
+        } = await supabaseAdmin
+          .from("bookings")
+          .update({
+            status: "cancelled",
+            payment_provider: "stripe",
+            payment_method: "card",
+            payment_transaction_id:
+              typeof session.payment_intent ===
+              "string"
+                ? session.payment_intent
+                : session.payment_intent?.id ||
+                  session.id,
+            refund_id: lateRefund.id,
+            refunded_at:
+              lateRefund.status ===
+              "succeeded"
+                ? new Date().toISOString()
+                : null,
+          })
+          .eq("id", bookingId)
+          .eq("status", "pending");
+
+        if (expiredBookingUpdateError) {
+          console.error(
+            "Late payment was refunded but expired booking update failed:",
+            {
+              bookingId,
+              refundId: lateRefund.id,
+              error:
+                expiredBookingUpdateError,
+            },
+          );
+        }
+
+        /*
+         * Ne jamais libérer aveuglément le slot : il peut avoir été
+         * repris par un autre patient après les 10 minutes.
+         * On ne le remet disponible que s'il n'existe aucune autre
+         * réservation active pour ce slot.
+         */
+        if (existingBooking.slot_id) {
+          const {
+            data: competingBookings,
+            error: competingBookingError,
+          } = await supabaseAdmin
+            .from("bookings")
+            .select("id")
+            .eq(
+              "slot_id",
+              existingBooking.slot_id,
+            )
+            .neq("id", bookingId)
+            .in("status", [
+              "pending",
+              "paid",
+            ])
+            .limit(1);
+
+          if (competingBookingError) {
+            console.error(
+              "Unable to verify slot ownership after late payment refund:",
+              {
+                bookingId,
+                slotId:
+                  existingBooking.slot_id,
+                error:
+                  competingBookingError,
+              },
+            );
+          } else if (
+            !competingBookings ||
+            competingBookings.length === 0
+          ) {
+            const {
+              error: slotReleaseError,
+            } = await supabaseAdmin
+              .from("availability_slots")
+              .update({
+                is_booked: false,
+              })
+              .eq(
+                "id",
+                existingBooking.slot_id,
+              )
+              .eq(
+                "therapist_id",
+                existingBooking.therapist_id,
+              );
+
+            if (slotReleaseError) {
+              console.error(
+                "Expired slot release warning after late Stripe payment refund:",
+                {
+                  bookingId,
+                  slotId:
+                    existingBooking.slot_id,
+                  error:
+                    slotReleaseError,
+                },
+              );
+            }
+          }
+        }
+
+        return NextResponse.json({
+          received: true,
+          ignored: true,
+          reason:
+            "Booking hold expired before payment. Payment was automatically refunded.",
+          bookingId,
+          refundId: lateRefund.id,
+          refundStatus: lateRefund.status,
+        });
+      }
+    }
+
+    /*
+     * Une réservation qui n'est plus pending ne doit jamais être
+     * ressuscitée par un ancien événement Checkout. Les bookings
+     * déjà paid continuent normalement pour l'idempotence.
+     */
+    if (
+      existingBooking.status !== "pending" &&
+      existingBooking.status !== "paid"
+    ) {
+      console.warn(
+        "Stripe payment ignored because booking is no longer payable:",
         {
-          error:
-            "Booking not found.",
-        },
-        {
-          status: 404,
+          bookingId,
+          bookingStatus:
+            existingBooking.status,
+          sessionId: session.id,
         },
       );
+
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+        reason:
+          "Booking is no longer payable.",
+        bookingId,
+        bookingStatus:
+          existingBooking.status,
+      });
     }
 
     /*
@@ -2028,6 +2315,7 @@ export async function POST(
             slot_time,
             scheduled_start,
             scheduled_end,
+            hold_expires_at,
             payment_provider,
             payment_method,
             payment_transaction_id,
@@ -3005,14 +3293,14 @@ export async function POST(
         .therapist_name ||
       "Specialist";
 
-    const slotParts: string[] =
+    const fallbackSlotParts: string[] =
       [];
 
     if (
       updatedBooking
         .slot_day
     ) {
-      slotParts.push(
+      fallbackSlotParts.push(
         updatedBooking
           .slot_day,
       );
@@ -3022,16 +3310,65 @@ export async function POST(
       updatedBooking
         .slot_time
     ) {
-      slotParts.push(
+      fallbackSlotParts.push(
         updatedBooking
           .slot_time,
       );
     }
 
-    const slotDescription =
-      slotParts
+    const fallbackSlotDescription =
+      fallbackSlotParts
         .join(" ")
         .trim();
+
+    /*
+     * L'e-mail AAN doit afficher une vraie date complète,
+     * pas seulement "Monday 10:27".
+     */
+    let slotDescription =
+      fallbackSlotDescription;
+
+    if (
+      updatedBooking
+        .scheduled_start
+    ) {
+      const scheduledDate =
+        new Date(
+          updatedBooking
+            .scheduled_start,
+        );
+
+      if (
+        !Number.isNaN(
+          scheduledDate.getTime(),
+        )
+      ) {
+        const locale =
+          language === "fr"
+            ? "fr-FR"
+            : language === "ar"
+              ? "ar-LB"
+              : "en-US";
+
+        slotDescription =
+          new Intl.DateTimeFormat(
+            locale,
+            {
+              timeZone:
+                "Asia/Beirut",
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            },
+          ).format(
+            scheduledDate,
+          );
+      }
+    }
 
     /*
      * L'e-mail enregistré dans bookings
