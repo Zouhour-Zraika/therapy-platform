@@ -1737,6 +1737,72 @@ export async function POST(
       const now =
         new Date().toISOString();
 
+      /*
+       * Nettoyer les anciens événements Google Calendar avant
+       * d'effacer leurs identifiants dans le booking.
+       *
+       * Cela couvre :
+       * - Google Meet principal ;
+       * - événement Calendar associé à une séance Zoom ;
+       * - éventuel Google Meet de continuité.
+       *
+       * Un échec de suppression Calendar ne doit jamais annuler
+       * un remboursement Stripe déjà créé.
+       */
+      if (
+        booking.therapist_id &&
+        booking.calendar_event_id
+      ) {
+        try {
+          await deleteGoogleCalendarEventForBooking({
+            therapistId:
+              booking.therapist_id,
+            calendarEventId:
+              booking.calendar_event_id,
+          });
+        } catch (calendarDeleteError) {
+          console.error(
+            "Calendar event deletion warning after patient cancellation:",
+            {
+              bookingId: booking.id,
+              calendarEventId:
+                booking.calendar_event_id,
+              error:
+                calendarDeleteError,
+            },
+          );
+        }
+      }
+
+      if (
+        booking.therapist_id &&
+        booking.backup_calendar_event_id &&
+        booking.backup_calendar_event_id !==
+          booking.calendar_event_id
+      ) {
+        try {
+          await deleteGoogleCalendarEventForBooking({
+            therapistId:
+              booking.therapist_id,
+            calendarEventId:
+              booking.backup_calendar_event_id,
+          });
+        } catch (
+          backupCalendarDeleteError
+        ) {
+          console.error(
+            "Backup Calendar event deletion warning after patient cancellation:",
+            {
+              bookingId: booking.id,
+              calendarEventId:
+                booking.backup_calendar_event_id,
+              error:
+                backupCalendarDeleteError,
+            },
+          );
+        }
+      }
+
       const {
         error: cancellationError,
       } = await supabaseAdmin
@@ -1760,6 +1826,10 @@ export async function POST(
           calendar_event_id: null,
           zoom_join_url: null,
           zoom_start_url: null,
+          backup_meeting_provider: null,
+          backup_join_url: null,
+          backup_host_url: null,
+          backup_calendar_event_id: null,
         })
         .eq("id", booking.id)
         .eq("patient_id", patientUser.id)
