@@ -1440,6 +1440,130 @@ export async function POST(
         throw meetingPersistenceError;
       }
 
+      /*
+       * Envoyer au patient un nouvel e-mail AAN après changement
+       * de créneau avec :
+       * - la date complète du nouveau rendez-vous ;
+       * - le nouveau lien principal ;
+       * - le lien de continuité lorsqu'il existe.
+       *
+       * Un échec d'e-mail ne doit jamais annuler la replanification.
+       */
+      let rescheduleEmailSent = false;
+
+      if (booking.patient_email) {
+        const locale =
+          language === "fr"
+            ? "fr-FR"
+            : language === "ar"
+              ? "ar-LB"
+              : "en-US";
+
+        const formattedAppointment =
+          new Intl.DateTimeFormat(locale, {
+            timeZone: "Asia/Beirut",
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(newStart);
+
+        const siteUrl =
+          process.env.NEXT_PUBLIC_SITE_URL
+            ?.replace(/\/$/, "") ||
+          new URL(request.url).origin;
+
+        const isPackBooking =
+          Boolean(booking.patient_pack_id) ||
+          (booking.payment_source || "")
+            .trim()
+            .toLowerCase() ===
+            "patient_pack" ||
+          (booking.payment_provider || "")
+            .trim()
+            .toLowerCase() ===
+            "patient_pack";
+
+        try {
+          const emailResponse =
+            await fetch(
+              `${siteUrl}/api/send-booking-email`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body: JSON.stringify({
+                  email:
+                    booking.patient_email,
+                  therapist:
+                    booking.therapist_name ||
+                    "Specialist",
+                  slot:
+                    formattedAppointment,
+                  price:
+                    isPackBooking
+                      ? 0
+                      : Number(
+                          booking.price || 0,
+                        ),
+                  language,
+                  bookingId:
+                    booking.id,
+                  paymentProvider:
+                    isPackBooking
+                      ? "patient_pack"
+                      : booking.payment_provider ||
+                        "stripe",
+                  transactionId:
+                    booking.payment_transaction_id ||
+                    undefined,
+                  meetingProvider:
+                    meetingProvider ||
+                    undefined,
+                  meetingUrl:
+                    meetingProvider === "zoom"
+                      ? newZoomJoinUrl ||
+                        undefined
+                      : newMeetingUrl ||
+                        undefined,
+                  backupMeetingProvider:
+                    newBackupMeetingProvider,
+                  backupJoinUrl:
+                    newBackupJoinUrl,
+                }),
+              },
+            );
+
+          if (!emailResponse.ok) {
+            console.error(
+              "Reschedule confirmation email failed:",
+              {
+                bookingId: booking.id,
+                status:
+                  emailResponse.status,
+                body:
+                  await emailResponse.text(),
+              },
+            );
+          } else {
+            rescheduleEmailSent = true;
+          }
+        } catch (emailError) {
+          console.error(
+            "Reschedule confirmation email request failed:",
+            {
+              bookingId: booking.id,
+              error: emailError,
+            },
+          );
+        }
+      }
+
       return NextResponse.json({
         success: true,
         action: "reschedule",
@@ -1454,6 +1578,7 @@ export async function POST(
         packCreditPreserved: true,
         meetingProvider,
         meetingRecreated,
+        rescheduleEmailSent,
       });
     }
 

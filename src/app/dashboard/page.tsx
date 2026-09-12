@@ -104,6 +104,7 @@ export default function PatientDashboard() {
           actionError: "تعذر تنفيذ هذا الإجراء. يرجى المحاولة مرة أخرى.",
           refundProviderPending: "الاسترداد التلقائي لهذا المزود غير مفعّل بعد. يرجى التواصل مع AAN.",
           manageUntil: "التغيير والإلغاء متاحان حتى 24 ساعة قبل الجلسة.",
+          packManageUntil: "يمكن تغيير موعد جلسة الباقة حتى 24 ساعة قبل الجلسة. لا يمكن إلغاء جلسة الباقة أو استرداد قيمتها.",
           packTitle: "باقة المريض",
           packRemaining: "جلسات متبقية",
           packValidUntil: "صالحة حتى",
@@ -169,6 +170,8 @@ export default function PatientDashboard() {
               "Le remboursement automatique pour ce prestataire n’est pas encore activé. Veuillez contacter AAN.",
             manageUntil:
               "Changement et annulation possibles jusqu’à 24 h avant la séance.",
+            packManageUntil:
+              "Pour une séance du Pack, le changement de créneau est possible jusqu’à 24 h avant la séance. L’annulation et le remboursement ne sont pas disponibles.",
             packTitle: "Mon Pack Patient",
             packRemaining: "séances restantes",
             packValidUntil: "Valable jusqu’au",
@@ -233,6 +236,8 @@ export default function PatientDashboard() {
               "Automatic refunds for this payment provider are not active yet. Please contact AAN.",
             manageUntil:
               "Changes and cancellations are available until 24 hours before the session.",
+            packManageUntil:
+              "For a Pack session, you can change the time until 24 hours before the session. Cancellation and refunds are not available.",
             packTitle: "My Patient Pack",
             packRemaining: "sessions remaining",
             packValidUntil: "Valid until",
@@ -1224,26 +1229,30 @@ export default function PatientDashboard() {
                                         : copy.changeSlot}
                                     </button>
 
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void runPatientBookingAction(
-                                          booking,
-                                          "cancel_and_refund",
-                                        )
-                                      }
-                                      disabled={
-                                        bookingActionId === booking.id
-                                      }
-                                      className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                      {bookingActionId === booking.id
-                                        ? copy.cancelling
-                                        : copy.cancelAndRefund}
-                                    </button>
+                                    {!isPackBooking(booking) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void runPatientBookingAction(
+                                            booking,
+                                            "cancel_and_refund",
+                                          )
+                                        }
+                                        disabled={
+                                          bookingActionId === booking.id
+                                        }
+                                        className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {bookingActionId === booking.id
+                                          ? copy.cancelling
+                                          : copy.cancelAndRefund}
+                                      </button>
+                                    )}
 
                                     <p className="text-center text-xs leading-5 text-aan-secondary">
-                                      {copy.manageUntil}
+                                      {isPackBooking(booking)
+                                        ? copy.packManageUntil
+                                        : copy.manageUntil}
                                     </p>
                                   </>
                                 ) : (
