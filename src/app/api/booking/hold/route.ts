@@ -1,4 +1,3 @@
-
 import {
   createClient,
 } from "@supabase/supabase-js";
@@ -6,6 +5,8 @@ import {
 import {
   NextResponse,
 } from "next/server";
+
+import Stripe from "stripe";
 
 export const runtime =
   "nodejs";
@@ -475,6 +476,7 @@ async function cleanupExpiredHolds(
     ReturnType<
       typeof createSupabaseAdmin
     >,
+  stripe: Stripe | null,
 ) {
   const nowIso =
     new Date().toISOString();
@@ -487,7 +489,7 @@ async function cleanupExpiredHolds(
   } = await supabaseAdmin
     .from("bookings")
     .select(
-      "id, slot_id",
+      "id, slot_id, payment_transaction_id",
     )
     .eq(
       "status",
@@ -521,7 +523,103 @@ async function cleanupExpiredHolds(
     of expiredBookings || []
   ) {
     /*
-     * On supprime d'abord le pending expiré.
+     * Fermer d'abord la Checkout Session Stripe associée au hold.
+     *
+     * payment_transaction_id contient temporairement "cs_..."
+     * pendant que le booking est pending. Le webhook le remplace
+     * ensuite par "pi_..." après paiement réussi.
+     *
+     * Si Stripe indique que la session est déjà payée/terminée,
+     * on ne supprime PAS le booking ici : le webhook reste la source
+     * de vérité et gère le paiement tardif.
+     */
+    const checkoutSessionId =
+      typeof expiredBooking
+        .payment_transaction_id ===
+        "string" &&
+      expiredBooking
+        .payment_transaction_id
+        .startsWith("cs_")
+        ? expiredBooking
+            .payment_transaction_id
+        : null;
+
+    if (
+      checkoutSessionId &&
+      stripe
+    ) {
+      try {
+        const checkoutSession =
+          await stripe.checkout.sessions.retrieve(
+            checkoutSessionId,
+          );
+
+        if (
+          checkoutSession.status ===
+          "open"
+        ) {
+          await stripe.checkout.sessions.expire(
+            checkoutSessionId,
+          );
+
+          console.log(
+            "Expired Stripe Checkout Session for booking hold:",
+            {
+              bookingId:
+                expiredBooking.id,
+              sessionId:
+                checkoutSessionId,
+            },
+          );
+        } else if (
+          checkoutSession.payment_status ===
+            "paid" ||
+          checkoutSession.status ===
+            "complete"
+        ) {
+          console.warn(
+            "Expired hold already has a completed Stripe Checkout; leaving booking for webhook reconciliation:",
+            {
+              bookingId:
+                expiredBooking.id,
+              sessionId:
+                checkoutSessionId,
+              checkoutStatus:
+                checkoutSession.status,
+              paymentStatus:
+                checkoutSession.payment_status,
+            },
+          );
+
+          continue;
+        }
+      } catch (
+        checkoutExpireError
+      ) {
+        /*
+         * Ne jamais supprimer le booking si on n'a pas pu vérifier /
+         * fermer sa page Stripe. Sinon une ancienne page pourrait
+         * rester encaissable sans booking correspondant.
+         */
+        console.error(
+          "Expired hold Stripe Checkout expiration error:",
+          {
+            bookingId:
+              expiredBooking.id,
+            sessionId:
+              checkoutSessionId,
+            error:
+              checkoutExpireError,
+          },
+        );
+
+        continue;
+      }
+    }
+
+    /*
+     * La page Stripe est maintenant expirée (ou aucune session
+     * Stripe n'était encore attachée). On peut supprimer le pending.
      */
     const {
       data:
@@ -636,6 +734,22 @@ export async function POST(
   const supabaseAdmin =
     createSupabaseAdmin();
 
+  const stripeSecretKey =
+    process.env.STRIPE_SECRET_KEY;
+
+  const stripe =
+    stripeSecretKey
+      ? new Stripe(
+          stripeSecretKey,
+        )
+      : null;
+
+  if (!stripeSecretKey) {
+    console.error(
+      "STRIPE_SECRET_KEY is missing; expired Checkout Sessions cannot be closed.",
+    );
+  }
+
   let claimedSlotId:
     | string
     | null = null;
@@ -708,6 +822,7 @@ export async function POST(
      */
     await cleanupExpiredHolds(
       supabaseAdmin,
+      stripe,
     );
 
     /*

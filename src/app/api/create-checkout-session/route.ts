@@ -1499,6 +1499,57 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+     * Conserver temporairement l'identifiant de la Checkout Session
+     * Stripe sur le booking pending.
+     *
+     * Stripe Checkout n'accepte pas une expiration native à 10 minutes.
+     * Le nettoyage des holds utilisera donc cet identifiant "cs_..."
+     * pour fermer explicitement la page Stripe après expiration.
+     *
+     * Après paiement réussi, le webhook remplacera cette valeur
+     * par le PaymentIntent "pi_...".
+     */
+    const {
+      error:
+        checkoutSessionPersistenceError,
+    } = await supabaseAdmin
+      .from("bookings")
+      .update({
+        payment_provider:
+          "stripe",
+        payment_transaction_id:
+          session.id,
+      })
+      .eq("id", bookingId)
+      .eq("patient_id", user.id)
+      .eq("status", "pending");
+
+    if (
+      checkoutSessionPersistenceError
+    ) {
+      try {
+        await stripe.checkout.sessions.expire(
+          session.id,
+        );
+      } catch (
+        checkoutExpirationError
+      ) {
+        console.error(
+          "Stripe Checkout rollback expiration warning:",
+          {
+            bookingId,
+            sessionId:
+              session.id,
+            error:
+              checkoutExpirationError,
+          },
+        );
+      }
+
+      throw checkoutSessionPersistenceError;
+    }
+
     return NextResponse.json({
       provider:
         "stripe",

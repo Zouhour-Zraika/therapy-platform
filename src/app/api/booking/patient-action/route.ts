@@ -1899,6 +1899,244 @@ export async function POST(
       }
 
       /*
+       * =======================================================
+       * Reçu AAN de remboursement
+       *
+       * - le reçu de paiement original reste intact ;
+       * - un nouveau reçu "refund" est créé et relié à l'original ;
+       * - refund_id empêche tout doublon ;
+       * - si le remboursement Stripe est encore "pending", on attend
+       *   son succès avant d'émettre un reçu marqué "refunded".
+       * =======================================================
+       */
+      let refundReceiptNumber:
+        string | null = null;
+
+      let originalReceiptNumber:
+        string | null = null;
+
+      if (
+        refund.status === "succeeded"
+      ) {
+        try {
+          const {
+            data:
+              originalReceipt,
+            error:
+              originalReceiptError,
+          } = await supabaseAdmin
+            .from(
+              "payment_receipts",
+            )
+            .select(
+              "id, receipt_number, currency",
+            )
+            .eq(
+              "receipt_type",
+              "payment",
+            )
+            .eq(
+              "payment_transaction_id",
+              paymentIntentId,
+            )
+            .maybeSingle<{
+              id: string;
+              receipt_number:
+                string;
+              currency:
+                string;
+            }>();
+
+          if (
+            originalReceiptError
+          ) {
+            throw originalReceiptError;
+          }
+
+          originalReceiptNumber =
+            originalReceipt
+              ?.receipt_number ||
+            null;
+
+          const {
+            data:
+              existingRefundReceipt,
+            error:
+              existingRefundReceiptError,
+          } = await supabaseAdmin
+            .from(
+              "payment_receipts",
+            )
+            .select(
+              "id, receipt_number",
+            )
+            .eq(
+              "refund_id",
+              refund.id,
+            )
+            .maybeSingle<{
+              id: string;
+              receipt_number:
+                string;
+            }>();
+
+          if (
+            existingRefundReceiptError
+          ) {
+            throw existingRefundReceiptError;
+          }
+
+          if (
+            existingRefundReceipt
+          ) {
+            refundReceiptNumber =
+              existingRefundReceipt
+                .receipt_number;
+          } else {
+            const {
+              data:
+                insertedRefundReceipt,
+              error:
+                refundReceiptInsertError,
+            } = await supabaseAdmin
+              .from(
+                "payment_receipts",
+              )
+              .insert({
+                receipt_type:
+                  "refund",
+                source_type:
+                  "booking",
+                booking_id:
+                  booking.id,
+                patient_pack_id:
+                  null,
+                original_receipt_id:
+                  originalReceipt
+                    ?.id ||
+                  null,
+                patient_id:
+                  booking.patient_id,
+                patient_email:
+                  booking.patient_email,
+                therapist_id:
+                  booking.therapist_id,
+                therapist_name:
+                  booking.therapist_name,
+                service_type:
+                  booking.service_type ||
+                  null,
+                amount:
+                  Number(
+                    booking.price ||
+                    0,
+                  ),
+                currency:
+                  originalReceipt
+                    ?.currency ||
+                  "USD",
+                payment_provider:
+                  "stripe",
+                payment_method:
+                  "card",
+                payment_transaction_id:
+                  paymentIntentId,
+                refund_id:
+                  refund.id,
+                status:
+                  "refunded",
+                metadata: {
+                  cancellation_initiated_by:
+                    "patient",
+                  cancelled_at:
+                    now,
+                  scheduled_start:
+                    booking
+                      .scheduled_start,
+                },
+              })
+              .select(
+                "id, receipt_number",
+              )
+              .single<{
+                id: string;
+                receipt_number:
+                  string;
+              }>();
+
+            if (
+              refundReceiptInsertError
+            ) {
+              if (
+                refundReceiptInsertError
+                  .code ===
+                "23505"
+              ) {
+                const {
+                  data:
+                    receiptAfterConflict,
+                  error:
+                    receiptAfterConflictError,
+                } = await supabaseAdmin
+                  .from(
+                    "payment_receipts",
+                  )
+                  .select(
+                    "id, receipt_number",
+                  )
+                  .eq(
+                    "refund_id",
+                    refund.id,
+                  )
+                  .maybeSingle<{
+                    id: string;
+                    receipt_number:
+                      string;
+                  }>();
+
+                if (
+                  receiptAfterConflictError
+                ) {
+                  throw receiptAfterConflictError;
+                }
+
+                refundReceiptNumber =
+                  receiptAfterConflict
+                    ?.receipt_number ||
+                  null;
+              } else {
+                throw refundReceiptInsertError;
+              }
+            } else {
+              refundReceiptNumber =
+                insertedRefundReceipt
+                  ?.receipt_number ||
+                null;
+            }
+          }
+        } catch (
+          refundReceiptError
+        ) {
+          /*
+           * Le remboursement Stripe est déjà effectué :
+           * un problème d'archivage du reçu ne doit jamais provoquer
+           * un deuxième remboursement ni annuler l'annulation.
+           */
+          console.error(
+            "Refund receipt creation warning:",
+            {
+              bookingId:
+                booking.id,
+              refundId:
+                refund.id,
+              error:
+                refundReceiptError,
+            },
+          );
+        }
+      }
+
+      /*
        * Envoyer un e-mail AAN de confirmation d'annulation /
        * remboursement. Un échec d'e-mail ne doit jamais remettre
        * en cause l'annulation ni le remboursement déjà créés.
@@ -2009,6 +2247,20 @@ export async function POST(
               : language === "fr"
                 ? "Référence du remboursement"
                 : "Refund reference";
+
+          const refundReceiptLabel =
+            language === "ar"
+              ? "رقم إيصال الاسترداد"
+              : language === "fr"
+                ? "N° du reçu de remboursement"
+                : "Refund receipt no.";
+
+          const originalReceiptLabel =
+            language === "ar"
+              ? "إيصال الدفع الأصلي"
+              : language === "fr"
+                ? "Reçu de paiement original"
+                : "Original payment receipt";
 
           const footer =
             language === "ar"
@@ -2157,6 +2409,30 @@ export async function POST(
                                   ${refund.id}
                                 </td>
                               </tr>
+
+                              ${
+                                refundReceiptNumber
+                                  ? `
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${refundReceiptLabel} :</strong>
+                                  ${refundReceiptNumber}
+                                </td>
+                              </tr>`
+                                  : ""
+                              }
+
+                              ${
+                                originalReceiptNumber
+                                  ? `
+                              <tr>
+                                <td style="padding:8px 0;">
+                                  <strong>${originalReceiptLabel} :</strong>
+                                  ${originalReceiptNumber}
+                                </td>
+                              </tr>`
+                                  : ""
+                              }
                             </table>
                           </td>
                         </tr>
@@ -2248,6 +2524,8 @@ export async function POST(
           id: refund.id,
           status: refund.status,
         },
+        refundReceiptNumber,
+        originalReceiptNumber,
         refundEmailSent,
       });
     }

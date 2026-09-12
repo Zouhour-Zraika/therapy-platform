@@ -8,6 +8,8 @@ import {
 
 import Stripe from "stripe";
 
+import { Resend } from "resend";
+
 import {
   createGoogleCalendarEventForBooking,
   createGoogleMeetContinuationForBooking,
@@ -226,12 +228,642 @@ type PatientPackRecord = {
 type PatientPackTherapistInfo = {
   id: string;
   care_domain: string | null;
+  full_name: string | null;
 };
 
 function roundMoney(value: number) {
   return Math.round(
     (value + Number.EPSILON) * 100,
   ) / 100;
+}
+
+function escapeReceiptHtml(
+  value:
+    | string
+    | number
+    | null
+    | undefined,
+) {
+  return String(
+    value ?? "",
+  )
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatReceiptDate(
+  value:
+    | string
+    | Date
+    | null
+    | undefined,
+  language: Language,
+) {
+  const date =
+    value instanceof Date
+      ? value
+      : value
+        ? new Date(value)
+        : new Date();
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "";
+  }
+
+  const locale =
+    language === "fr"
+      ? "fr-FR"
+      : language === "ar"
+        ? "ar-LB"
+        : "en-US";
+
+  return new Intl.DateTimeFormat(
+    locale,
+    {
+      timeZone:
+        "Asia/Beirut",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    },
+  ).format(date);
+}
+
+async function createPaymentReceipt({
+  supabaseAdmin,
+  sourceType,
+  bookingId,
+  patientPackId,
+  patientId,
+  patientEmail,
+  therapistId,
+  therapistName,
+  serviceType,
+  amount,
+  currency,
+  transactionId,
+  metadata,
+}: {
+  supabaseAdmin: any;
+  sourceType:
+    | "booking"
+    | "patient_pack";
+  bookingId?: string | null;
+  patientPackId?: string | null;
+  patientId?: string | null;
+  patientEmail?: string | null;
+  therapistId?: string | null;
+  therapistName?: string | null;
+  serviceType?: string | null;
+  amount: number;
+  currency: string;
+  transactionId: string;
+  metadata?: Record<
+    string,
+    unknown
+  >;
+}) {
+  const {
+    data:
+      existingReceipt,
+    error:
+      existingReceiptError,
+  } = await supabaseAdmin
+    .from(
+      "payment_receipts",
+    )
+    .select(
+      "id, receipt_number, issued_at",
+    )
+    .eq(
+      "payment_transaction_id",
+      transactionId,
+    )
+    .eq(
+      "receipt_type",
+      "payment",
+    )
+    .maybeSingle();
+
+  if (
+    existingReceiptError
+  ) {
+    throw existingReceiptError;
+  }
+
+  if (existingReceipt) {
+    return {
+      receipt:
+        existingReceipt,
+      created:
+        false,
+    };
+  }
+
+  const receiptPayload = {
+    receipt_type:
+      "payment",
+    source_type:
+      sourceType,
+    booking_id:
+      bookingId || null,
+    patient_pack_id:
+      patientPackId || null,
+    patient_id:
+      patientId || null,
+    patient_email:
+      patientEmail || null,
+    therapist_id:
+      therapistId || null,
+    therapist_name:
+      therapistName || null,
+    service_type:
+      serviceType || null,
+    amount:
+      roundMoney(amount),
+    currency:
+      currency.toUpperCase(),
+    payment_provider:
+      "stripe",
+    payment_method:
+      "card",
+    payment_transaction_id:
+      transactionId,
+    refund_id:
+      null,
+    status:
+      "paid",
+    metadata:
+      metadata || {},
+  };
+
+  const {
+    data:
+      insertedReceipt,
+    error:
+      insertReceiptError,
+  } = await supabaseAdmin
+    .from(
+      "payment_receipts",
+    )
+    .insert(
+      receiptPayload,
+    )
+    .select(
+      "id, receipt_number, issued_at",
+    )
+    .single();
+
+  if (
+    insertReceiptError
+  ) {
+    /*
+     * Un replay Stripe concurrent peut rencontrer l'index unique.
+     * Dans ce cas, on relit simplement le reçu déjà créé.
+     */
+    if (
+      insertReceiptError.code ===
+      "23505"
+    ) {
+      const {
+        data:
+          concurrentReceipt,
+        error:
+          concurrentReceiptError,
+      } = await supabaseAdmin
+        .from(
+          "payment_receipts",
+        )
+        .select(
+          "id, receipt_number, issued_at",
+        )
+        .eq(
+          "payment_transaction_id",
+          transactionId,
+        )
+        .eq(
+          "receipt_type",
+          "payment",
+        )
+        .maybeSingle();
+
+      if (
+        concurrentReceiptError
+      ) {
+        throw concurrentReceiptError;
+      }
+
+      if (
+        concurrentReceipt
+      ) {
+        return {
+          receipt:
+            concurrentReceipt,
+          created:
+            false,
+        };
+      }
+    }
+
+    throw insertReceiptError;
+  }
+
+  return {
+    receipt:
+      insertedReceipt,
+    created:
+      true,
+  };
+}
+
+async function sendPaymentReceiptEmail({
+  to,
+  language,
+  receiptNumber,
+  issuedAt,
+  sourceType,
+  amount,
+  currency,
+  therapistName,
+  serviceType,
+  transactionId,
+  bookingId,
+  patientPackId,
+  scheduledStart,
+  sessionsTotal,
+  validUntil,
+}: {
+  to: string;
+  language: Language;
+  receiptNumber: string;
+  issuedAt:
+    | string
+    | null;
+  sourceType:
+    | "booking"
+    | "patient_pack";
+  amount: number;
+  currency: string;
+  therapistName?: string | null;
+  serviceType?: string | null;
+  transactionId: string;
+  bookingId?: string | null;
+  patientPackId?: string | null;
+  scheduledStart?: string | null;
+  sessionsTotal?: number | null;
+  validUntil?: string | null;
+}) {
+  const resendApiKey =
+    process.env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    throw new Error(
+      "RESEND_API_KEY is missing.",
+    );
+  }
+
+  const resend =
+    new Resend(
+      resendApiKey,
+    );
+
+  const isArabic =
+    language === "ar";
+
+  const labels =
+    language === "fr"
+      ? {
+          subject:
+            `AAN Psychotherapy — Reçu de paiement ${receiptNumber}`,
+          eyebrow:
+            "REÇU DE PAIEMENT",
+          title:
+            "Paiement reçu",
+          intro:
+            "Nous confirmons la réception de votre paiement.",
+          receipt:
+            "N° de reçu",
+          status:
+            "Statut",
+          paid:
+            "Payé",
+          issued:
+            "Émis le",
+          amount:
+            "Montant payé",
+          specialist:
+            "Spécialiste",
+          service:
+            "Service",
+          appointment:
+            "Séance",
+          pack:
+            "Patient Pack",
+          sessions:
+            "Séances incluses",
+          validUntil:
+            "Valable jusqu’au",
+          transaction:
+            "Référence Stripe",
+          booking:
+            "Référence réservation",
+          packReference:
+            "Référence Pack",
+          footer:
+            "Ce reçu est conservé dans les archives de paiement AAN.",
+        }
+      : language === "ar"
+        ? {
+            subject:
+              `AAN Psychotherapy — إيصال الدفع ${receiptNumber}`,
+            eyebrow:
+              "إيصال الدفع",
+            title:
+              "تم استلام الدفعة",
+            intro:
+              "نؤكد استلام دفعتك بنجاح.",
+            receipt:
+              "رقم الإيصال",
+            status:
+              "الحالة",
+            paid:
+              "مدفوع",
+            issued:
+              "تاريخ الإصدار",
+            amount:
+              "المبلغ المدفوع",
+            specialist:
+              "المختص",
+            service:
+              "الخدمة",
+            appointment:
+              "الجلسة",
+            pack:
+              "باقة المريض",
+            sessions:
+              "عدد الجلسات",
+            validUntil:
+              "صالحة حتى",
+            transaction:
+              "مرجع Stripe",
+            booking:
+              "مرجع الحجز",
+            packReference:
+              "مرجع الباقة",
+            footer:
+              "يتم الاحتفاظ بهذا الإيصال ضمن سجلات الدفع لدى AAN.",
+          }
+        : {
+            subject:
+              `AAN Psychotherapy — Payment receipt ${receiptNumber}`,
+            eyebrow:
+              "PAYMENT RECEIPT",
+            title:
+              "Payment received",
+            intro:
+              "We confirm that your payment has been received.",
+            receipt:
+              "Receipt no.",
+            status:
+              "Status",
+            paid:
+              "Paid",
+            issued:
+              "Issued on",
+            amount:
+              "Amount paid",
+            specialist:
+              "Specialist",
+            service:
+              "Service",
+            appointment:
+              "Session",
+            pack:
+              "Patient Pack",
+            sessions:
+              "Sessions included",
+            validUntil:
+              "Valid until",
+            transaction:
+              "Stripe reference",
+            booking:
+              "Booking reference",
+            packReference:
+              "Pack reference",
+            footer:
+              "This receipt is retained in AAN's payment records.",
+          };
+
+  const safeReceiptNumber =
+    escapeReceiptHtml(
+      receiptNumber,
+    );
+
+  const safeAmount =
+    escapeReceiptHtml(
+      `${currency.toUpperCase()} ${roundMoney(amount).toFixed(2)}`,
+    );
+
+  const safeTherapist =
+    escapeReceiptHtml(
+      therapistName ||
+        "—",
+    );
+
+  const safeService =
+    escapeReceiptHtml(
+      sourceType ===
+      "patient_pack"
+        ? labels.pack
+        : serviceType ||
+            "Session",
+    );
+
+  const safeTransaction =
+    escapeReceiptHtml(
+      transactionId,
+    );
+
+  const safeIssuedAt =
+    escapeReceiptHtml(
+      formatReceiptDate(
+        issuedAt,
+        language,
+      ),
+    );
+
+  const safeScheduledStart =
+    scheduledStart
+      ? escapeReceiptHtml(
+          formatReceiptDate(
+            scheduledStart,
+            language,
+          ),
+        )
+      : "";
+
+  const safeValidUntil =
+    validUntil
+      ? escapeReceiptHtml(
+          formatReceiptDate(
+            validUntil,
+            language,
+          ),
+        )
+      : "";
+
+  const sourceReference =
+    sourceType ===
+    "patient_pack"
+      ? patientPackId
+      : bookingId;
+
+  const sourceReferenceLabel =
+    sourceType ===
+    "patient_pack"
+      ? labels.packReference
+      : labels.booking;
+
+  const optionalRows = [
+    safeScheduledStart
+      ? `
+        <tr>
+          <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.appointment)}</td>
+          <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeScheduledStart}</td>
+        </tr>
+      `
+      : "",
+    sourceType ===
+        "patient_pack" &&
+      typeof sessionsTotal ===
+        "number"
+      ? `
+        <tr>
+          <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.sessions)}</td>
+          <td style="padding:8px 0;text-align:right;color:#5f6f82;">${escapeReceiptHtml(sessionsTotal)}</td>
+        </tr>
+      `
+      : "",
+    safeValidUntil
+      ? `
+        <tr>
+          <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.validUntil)}</td>
+          <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeValidUntil}</td>
+        </tr>
+      `
+      : "",
+  ].join("");
+
+  const html = `
+    <!doctype html>
+    <html lang="${language}" dir="${isArabic ? "rtl" : "ltr"}">
+      <body style="margin:0;padding:0;background:#f3efe9;font-family:Arial,Helvetica,sans-serif;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border-radius:22px;overflow:hidden;">
+                <tr>
+                  <td style="padding:34px 36px 20px;">
+                    <p style="margin:0;color:#b5965c;font-size:12px;font-weight:700;letter-spacing:2.5px;">
+                      AAN PSYCHOTHERAPY · ${escapeReceiptHtml(labels.eyebrow)}
+                    </p>
+                    <h1 style="margin:14px 0 0;color:#24364b;font-size:30px;line-height:1.25;">
+                      ${escapeReceiptHtml(labels.title)}
+                    </h1>
+                    <p style="margin:14px 0 0;color:#5f6f82;font-size:16px;line-height:1.7;">
+                      ${escapeReceiptHtml(labels.intro)}
+                    </p>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:0 36px 30px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f9f6f1;border-radius:18px;padding:20px;">
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.receipt)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#24364b;font-weight:700;">${safeReceiptNumber}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.status)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#2d6a4f;font-weight:700;">${escapeReceiptHtml(labels.paid)}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.issued)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeIssuedAt}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.amount)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#24364b;font-weight:700;">${safeAmount}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.specialist)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeTherapist}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.service)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeService}</td>
+                      </tr>
+                      ${optionalRows}
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(sourceReferenceLabel)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;word-break:break-all;">${escapeReceiptHtml(sourceReference || "—")}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.transaction)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;word-break:break-all;">${safeTransaction}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:20px 36px;background:#24364b;text-align:center;">
+                    <p style="margin:0;color:#ffffff;font-size:13px;line-height:1.7;">
+                      AAN Psychotherapy<br />
+                      ${escapeReceiptHtml(labels.footer)}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const {
+    data,
+    error,
+  } = await resend.emails.send({
+    from:
+      process.env.RESEND_FROM_EMAIL ||
+      "AAN Psychotherapy <onboarding@resend.dev>",
+    to,
+    subject:
+      labels.subject,
+    html,
+  });
+
+  if (error) {
+    throw new Error(
+      error.message ||
+        "Unable to send payment receipt email.",
+    );
+  }
+
+  return data;
 }
 
 async function refundExpiredCheckoutPayment({
@@ -1313,7 +1945,7 @@ export async function POST(
             "therapists",
           )
           .select(
-            "id, care_domain",
+            "id, care_domain, full_name",
           )
           .eq(
             "id",
@@ -1481,6 +2113,153 @@ export async function POST(
         }
       }
 
+      /*
+       * =======================================================
+       * Reçu AAN — Patient Pack
+       *
+       * - créé une seule fois grâce à la référence Stripe ;
+       * - conservé dans payment_receipts pour la clinique ;
+       * - envoyé au patient par e-mail ;
+       * - un échec d'e-mail ne remet jamais en cause le paiement.
+       * =======================================================
+       */
+      const packCustomerEmail =
+        session
+          .customer_details
+          ?.email
+          ?.trim() ||
+        session
+          .customer_email
+          ?.trim() ||
+        session.metadata
+          ?.email
+          ?.trim() ||
+        "";
+
+      let packReceiptNumber:
+        string | null =
+        null;
+
+      try {
+        const {
+          receipt:
+            packReceipt,
+          created:
+            packReceiptCreated,
+        } = await createPaymentReceipt({
+          supabaseAdmin,
+          sourceType:
+            "patient_pack",
+          patientPackId:
+            packId,
+          patientId:
+            updatedPack.patient_id,
+          patientEmail:
+            packCustomerEmail ||
+            null,
+          therapistId:
+            updatedPack.therapist_id,
+          therapistName:
+            packTherapist
+              ?.full_name ||
+            session.metadata
+              ?.therapistName ||
+            null,
+          serviceType:
+            "patient_pack",
+          amount,
+          currency,
+          transactionId,
+          metadata: {
+            sessions_total:
+              updatedPack.sessions_total,
+            sessions_remaining:
+              updatedPack.sessions_remaining,
+            valid_until:
+              updatedPack.valid_until,
+            therapist_service_id:
+              updatedPack
+                .therapist_service_id,
+          },
+        });
+
+        packReceiptNumber =
+          packReceipt
+            .receipt_number;
+
+        if (
+          packReceiptCreated &&
+          packCustomerEmail
+        ) {
+          try {
+            await sendPaymentReceiptEmail({
+              to:
+                packCustomerEmail,
+              language,
+              receiptNumber:
+                packReceipt
+                  .receipt_number,
+              issuedAt:
+                packReceipt
+                  .issued_at,
+              sourceType:
+                "patient_pack",
+              amount,
+              currency,
+              therapistName:
+                packTherapist
+                  ?.full_name ||
+                session.metadata
+                  ?.therapistName ||
+                null,
+              serviceType:
+                "patient_pack",
+              transactionId,
+              patientPackId:
+                packId,
+              sessionsTotal:
+                updatedPack
+                  .sessions_total,
+              validUntil:
+                updatedPack
+                  .valid_until,
+            });
+          } catch (
+            packReceiptEmailError
+          ) {
+            console.error(
+              "Patient Pack payment receipt email failed:",
+              {
+                packId,
+                receiptNumber:
+                  packReceipt
+                    .receipt_number,
+                email:
+                  packCustomerEmail,
+                error:
+                  packReceiptEmailError,
+              },
+            );
+          }
+        }
+      } catch (
+        packReceiptError
+      ) {
+        /*
+         * Le paiement Stripe est déjà confirmé.
+         * On journalise l'échec du reçu sans annuler le Pack.
+         */
+        console.error(
+          "Patient Pack payment receipt creation failed:",
+          {
+            packId,
+            transactionId,
+            error:
+              packReceiptError,
+          },
+        );
+      }
+
       console.log(
         "STRIPE PATIENT PACK PAYMENT CONFIRMED:",
         {
@@ -1545,6 +2324,9 @@ export async function POST(
           "card",
 
         transactionId,
+
+        receiptNumber:
+          packReceiptNumber,
 
         amount,
 
@@ -3390,6 +4172,129 @@ export async function POST(
 
     /*
      * =======================================================
+     * Reçu AAN — séance individuelle/couple/famille/etc.
+     *
+     * Le reçu est un snapshot financier indépendant du booking.
+     * Il reste donc archivé pour la clinique même si la séance
+     * est ensuite déplacée ou remboursée.
+     * =======================================================
+     */
+    let paymentReceiptNumber:
+      string | null =
+      null;
+
+    try {
+      const {
+        receipt:
+          paymentReceipt,
+        created:
+          paymentReceiptCreated,
+      } = await createPaymentReceipt({
+        supabaseAdmin,
+        sourceType:
+          "booking",
+        bookingId,
+        patientId:
+          updatedBooking
+            .patient_id,
+        patientEmail:
+          customerEmail ||
+          null,
+        therapistId:
+          updatedBooking
+            .therapist_id,
+        therapistName:
+          therapistName,
+        serviceType:
+          updatedBooking
+            .service_type,
+        amount,
+        currency,
+        transactionId,
+        metadata: {
+          scheduled_start:
+            updatedBooking
+              .scheduled_start,
+          scheduled_end:
+            updatedBooking
+              .scheduled_end,
+          duration_minutes:
+            updatedBooking
+              .duration_minutes,
+        },
+      });
+
+      paymentReceiptNumber =
+        paymentReceipt
+          .receipt_number;
+
+      if (
+        paymentReceiptCreated &&
+        customerEmail
+      ) {
+        try {
+          await sendPaymentReceiptEmail({
+            to:
+              customerEmail,
+            language,
+            receiptNumber:
+              paymentReceipt
+                .receipt_number,
+            issuedAt:
+              paymentReceipt
+                .issued_at,
+            sourceType:
+              "booking",
+            amount,
+            currency,
+            therapistName,
+            serviceType:
+              updatedBooking
+                .service_type,
+            transactionId,
+            bookingId,
+            scheduledStart:
+              updatedBooking
+                .scheduled_start,
+          });
+        } catch (
+          paymentReceiptEmailError
+        ) {
+          console.error(
+            "Booking payment receipt email failed:",
+            {
+              bookingId,
+              receiptNumber:
+                paymentReceipt
+                  .receipt_number,
+              email:
+                customerEmail,
+              error:
+                paymentReceiptEmailError,
+            },
+          );
+        }
+      }
+    } catch (
+      paymentReceiptError
+    ) {
+      /*
+       * Le paiement est déjà confirmé et le booking est déjà paid.
+       * Un problème de reçu ne doit donc jamais invalider la séance.
+       */
+      console.error(
+        "Booking payment receipt creation failed:",
+        {
+          bookingId,
+          transactionId,
+          error:
+            paymentReceiptError,
+        },
+      );
+    }
+
+    /*
+     * =======================================================
      * Envoyer l'e-mail une seule fois
      * =======================================================
      */
@@ -3551,6 +4456,9 @@ export async function POST(
         "card",
 
       transactionId,
+
+      receiptNumber:
+        paymentReceiptNumber,
 
       amount,
 
