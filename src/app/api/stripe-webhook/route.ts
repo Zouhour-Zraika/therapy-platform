@@ -866,6 +866,221 @@ async function sendPaymentReceiptEmail({
   return data;
 }
 
+
+async function sendPatientPackConfirmationEmail({
+  to,
+  language,
+  therapistName,
+  sessionsTotal,
+  amount,
+  currency,
+  purchasedAt,
+  validUntil,
+}: {
+  to: string;
+  language: Language;
+  therapistName?: string | null;
+  sessionsTotal: number;
+  amount: number;
+  currency: string;
+  purchasedAt?: string | null;
+  validUntil?: string | null;
+}) {
+  const resendApiKey =
+    process.env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    throw new Error(
+      "RESEND_API_KEY is missing.",
+    );
+  }
+
+  const resend =
+    new Resend(resendApiKey);
+
+  const isArabic =
+    language === "ar";
+
+  const labels =
+    language === "fr"
+      ? {
+          subject:
+            "AAN Psychotherapy — Votre Patient Pack est confirmé",
+          eyebrow:
+            "PATIENT PACK",
+          title:
+            "Votre Patient Pack est actif",
+          intro:
+            "Votre achat a bien été confirmé. Vous pouvez maintenant utiliser vos séances avec votre spécialiste.",
+          specialist: "Spécialiste",
+          sessions: "Séances incluses",
+          amount: "Montant payé",
+          purchased: "Date d’achat",
+          validUntil: "Date d’expiration",
+          validity:
+            "Votre Patient Pack comprend des séances individuelles et reste utilisable jusqu’à la date d’expiration indiquée ci-dessous.",
+          footer:
+            "Merci d’avoir choisi AAN Psychotherapy.",
+        }
+      : language === "ar"
+        ? {
+            subject:
+              "AAN Psychotherapy — تم تأكيد باقة المريض الخاصة بك",
+            eyebrow:
+              "باقة المريض",
+            title:
+              "باقة المريض الخاصة بك أصبحت فعّالة",
+            intro:
+              "تم تأكيد عملية الشراء بنجاح. يمكنك الآن استخدام جلساتك مع المختص.",
+            specialist: "المختص",
+            sessions: "عدد الجلسات",
+            amount: "المبلغ المدفوع",
+            purchased: "تاريخ الشراء",
+            validUntil: "تاريخ الانتهاء",
+            validity:
+              "تتضمن باقة المريض جلسات فردية ويمكن استخدامها حتى تاريخ الانتهاء الموضح أدناه.",
+            footer:
+              "شكرًا لاختيارك AAN Psychotherapy.",
+          }
+        : {
+            subject:
+              "AAN Psychotherapy — Your Patient Pack is confirmed",
+            eyebrow:
+              "PATIENT PACK",
+            title:
+              "Your Patient Pack is active",
+            intro:
+              "Your purchase has been confirmed. You can now use your sessions with your specialist.",
+            specialist: "Specialist",
+            sessions: "Sessions included",
+            amount: "Amount paid",
+            purchased: "Purchase date",
+            validUntil: "Expiration date",
+            validity:
+              "Your Patient Pack includes individual sessions and can be used until the expiration date shown below.",
+            footer:
+              "Thank you for choosing AAN Psychotherapy.",
+          };
+
+  const safeTherapist =
+    escapeReceiptHtml(
+      therapistName || "—",
+    );
+
+  const safeSessions =
+    escapeReceiptHtml(sessionsTotal);
+
+  const safeAmount =
+    escapeReceiptHtml(
+      `${currency.toUpperCase()} ${roundMoney(amount).toFixed(2)}`,
+    );
+
+  const safePurchasedAt =
+    escapeReceiptHtml(
+      formatReceiptDate(
+        purchasedAt,
+        language,
+      ),
+    );
+
+  const safeValidUntil =
+    escapeReceiptHtml(
+      formatReceiptDate(
+        validUntil,
+        language,
+      ),
+    );
+
+  const html = `
+    <!doctype html>
+    <html lang="${language}" dir="${isArabic ? "rtl" : "ltr"}">
+      <body style="margin:0;padding:0;background:#f3efe9;font-family:Arial,Helvetica,sans-serif;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border-radius:22px;overflow:hidden;">
+                <tr>
+                  <td style="padding:34px 36px 20px;">
+                    <p style="margin:0;color:#b5965c;font-size:12px;font-weight:700;letter-spacing:2.5px;">
+                      AAN PSYCHOTHERAPY · ${escapeReceiptHtml(labels.eyebrow)}
+                    </p>
+                    <h1 style="margin:14px 0 0;color:#24364b;font-size:30px;line-height:1.25;">
+                      ${escapeReceiptHtml(labels.title)}
+                    </h1>
+                    <p style="margin:14px 0 0;color:#5f6f82;font-size:16px;line-height:1.7;">
+                      ${escapeReceiptHtml(labels.intro)}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 36px 18px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f9f6f1;border-radius:18px;padding:20px;">
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.sessions)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#24364b;font-weight:700;">${safeSessions}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.specialist)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeTherapist}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.amount)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#24364b;font-weight:700;">${safeAmount}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.purchased)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safePurchasedAt}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;color:#24364b;">${escapeReceiptHtml(labels.validUntil)}</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeValidUntil}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 36px 30px;">
+                    <p style="margin:0;color:#5f6f82;font-size:14px;line-height:1.7;">
+                      ${escapeReceiptHtml(labels.validity)}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:20px 36px;background:#24364b;text-align:center;">
+                    <p style="margin:0;color:#ffffff;font-size:13px;line-height:1.7;">
+                      AAN Psychotherapy<br />
+                      ${escapeReceiptHtml(labels.footer)}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const { data, error } =
+    await resend.emails.send({
+      from:
+        process.env.RESEND_FROM_EMAIL ||
+        "AAN Psychotherapy <onboarding@resend.dev>",
+      to,
+      subject: labels.subject,
+      html,
+    });
+
+  if (error) {
+    throw new Error(
+      error.message ||
+        "Unable to send Patient Pack confirmation email.",
+    );
+  }
+
+  return data;
+}
+
 async function refundExpiredCheckoutPayment({
   stripe,
   session,
@@ -2238,6 +2453,40 @@ export async function POST(
                   packCustomerEmail,
                 error:
                   packReceiptEmailError,
+              },
+            );
+          }
+
+          try {
+            await sendPatientPackConfirmationEmail({
+              to: packCustomerEmail,
+              language,
+              therapistName:
+                packTherapist
+                  ?.full_name ||
+                session.metadata
+                  ?.therapistName ||
+                null,
+              sessionsTotal:
+                updatedPack.sessions_total,
+              amount,
+              currency,
+              purchasedAt:
+                updatedPack.purchased_at,
+              validUntil:
+                updatedPack.valid_until,
+            });
+          } catch (
+            packConfirmationEmailError
+          ) {
+            console.error(
+              "Patient Pack confirmation email failed:",
+              {
+                packId,
+                email:
+                  packCustomerEmail,
+                error:
+                  packConfirmationEmailError,
               },
             );
           }
