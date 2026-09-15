@@ -53,16 +53,16 @@ type Booking = {
   specialist_amount?: number | null;
 };
 
-type PatientPackFinancial = {
+type PaymentReceiptFinancial = {
   id: string;
-  therapist_id: string;
-  total_price: number;
+  receipt_number: string;
+  source_type: string;
+  service_type: string | null;
+  amount: number;
+  currency: string;
   status: string;
-  purchased_at: string | null;
-  aan_commission_rate: number | null;
-  aan_commission_amount: number | null;
-  specialist_rate: number | null;
-  specialist_amount: number | null;
+  issued_at: string | null;
+  created_at: string;
 };
 
 type PatientRecordSummary = {
@@ -220,9 +220,9 @@ export default function TherapistDashboard() {
     useState<Booking[]>([]);
 
   const [
-    patientPackFinancials,
-    setPatientPackFinancials,
-  ] = useState<PatientPackFinancial[]>([]);
+    paymentReceipts,
+    setPaymentReceipts,
+  ] = useState<PaymentReceiptFinancial[]>([]);
 
   const [
     patientRecords,
@@ -387,6 +387,18 @@ export default function TherapistDashboard() {
   ] = useState<DashboardView>(
     "dashboard",
   );
+
+  const selectDashboardView =
+    (view: DashboardView) => {
+      setActiveView(view);
+
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(
+          "aan-therapist-dashboard-view",
+          view,
+        );
+      }
+    };
 
   const text =
     language === "ar"
@@ -989,6 +1001,28 @@ export default function TherapistDashboard() {
               "Lebanon time · Asia/Beirut",
           };
 
+  useEffect(() => {
+    const savedView =
+      window.sessionStorage.getItem(
+        "aan-therapist-dashboard-view",
+      ) as DashboardView | null;
+
+    if (
+      savedView &&
+      [
+        "dashboard",
+        "profile",
+        "availability",
+        "sessions",
+        "patients",
+        "services",
+        "earnings",
+      ].includes(savedView)
+    ) {
+      setActiveView(savedView);
+    }
+  }, []);
+
   /*
    * Chargement initial des disponibilités
    * et des réservations.
@@ -1000,7 +1034,7 @@ export default function TherapistDashboard() {
     void getGoogleConnection();
     void getZoomConnection();
     void getPatientRecords();
-    void getPatientPackFinancials();
+    void getPaymentReceipts();
   }, []);
 
   useEffect(() => {
@@ -2438,50 +2472,52 @@ export default function TherapistDashboard() {
     };
 
 
-  const getPatientPackFinancials =
+  const getPaymentReceipts =
     async () => {
       const user =
         await getCurrentUser();
 
       if (!user) {
-        setPatientPackFinancials([]);
+        setPaymentReceipts([]);
         return;
       }
 
       const { data, error } =
         await supabase
-          .from("patient_packs")
+          .from("payment_receipts")
           .select(
-            "id, therapist_id, total_price, status, purchased_at, aan_commission_rate, aan_commission_amount, specialist_rate, specialist_amount",
+            "id, receipt_number, source_type, service_type, amount, currency, status, issued_at, created_at",
           )
           .eq(
             "therapist_id",
             user.id,
           )
-          .not(
-            "purchased_at",
-            "is",
-            null,
+          .eq(
+            "receipt_type",
+            "payment",
+          )
+          .eq(
+            "status",
+            "paid",
           )
           .order(
-            "purchased_at",
+            "created_at",
             { ascending: false },
           );
 
       if (error) {
         console.error(
-          "Patient Pack financials error:",
+          "Payment receipts error:",
           error,
         );
-        setPatientPackFinancials([]);
+        setPaymentReceipts([]);
         return;
       }
 
-      setPatientPackFinancials(
-        (data as PatientPackFinancial[]) || [],
+      setPaymentReceipts(
+        (data as PaymentReceiptFinancial[]) || [],
       );
     };
-
 
 
   const getPatientRecords =
@@ -4026,75 +4062,40 @@ export default function TherapistDashboard() {
 
   const financialTransactions =
     useMemo(() => {
-      const bookingTransactions =
-        bookings
-          .filter(
-            (booking) =>
-              booking.payment_source !==
-                "patient_pack" &&
-              typeof booking.specialist_amount ===
-                "number",
-          )
-          .map((booking) => ({
-            id: booking.id,
-            date:
-              booking.created_at,
-            serviceType:
-              booking.service_type ||
-              "individual",
-            amount:
-              Number(booking.price || 0),
-            aanCommission:
-              Number(booking.aan_commission_amount || 0),
-            specialistAmount:
-              Number(booking.specialist_amount || 0),
-            aanRate:
-              Number(booking.aan_commission_rate || 30),
-            specialistRate:
-              Number(booking.specialist_rate || 70),
-            status:
-              booking.status,
-          }));
+      return paymentReceipts
+        .map((receipt) => {
+          const amount =
+            Number(receipt.amount || 0);
 
-      const packTransactions =
-        patientPackFinancials
-          .filter(
-            (pack) =>
-              typeof pack.specialist_amount ===
-              "number",
-          )
-          .map((pack) => ({
-            id: pack.id,
+          return {
+            id: receipt.id,
+            receiptNumber:
+              receipt.receipt_number,
             date:
-              pack.purchased_at || "",
+              receipt.issued_at ||
+              receipt.created_at,
             serviceType:
-              "patient_pack",
-            amount:
-              Number(pack.total_price || 0),
+              receipt.source_type ===
+              "patient_pack"
+                ? "patient_pack"
+                : receipt.service_type ||
+                  "individual",
+            amount,
             aanCommission:
-              Number(pack.aan_commission_amount || 0),
+              Math.round(amount * 30) / 100,
             specialistAmount:
-              Number(pack.specialist_amount || 0),
-            aanRate:
-              Number(pack.aan_commission_rate || 30),
-            specialistRate:
-              Number(pack.specialist_rate || 70),
-            status:
-              pack.status,
-          }));
-
-      return [
-        ...bookingTransactions,
-        ...packTransactions,
-      ].sort(
-        (a, b) =>
-          new Date(b.date).getTime() -
-          new Date(a.date).getTime(),
-      );
-    }, [
-      bookings,
-      patientPackFinancials,
-    ]);
+              Math.round(amount * 70) / 100,
+            aanRate: 30,
+            specialistRate: 70,
+            status: receipt.status,
+          };
+        })
+        .sort(
+          (a, b) =>
+            new Date(b.date).getTime() -
+            new Date(a.date).getTime(),
+        );
+    }, [paymentReceipts]);
 
   const totalGrossRevenue =
     financialTransactions.reduce(
@@ -4200,7 +4201,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "dashboard",
                     )
                   }
@@ -4224,7 +4225,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveView(
+                    selectDashboardView(
                       "profile",
                     );
                     setShowProfileEditor(
@@ -4249,7 +4250,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "availability",
                     )
                   }
@@ -4267,7 +4268,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "sessions",
                     )
                   }
@@ -4285,7 +4286,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "patients",
                     )
                   }
@@ -4307,7 +4308,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "services",
                     )
                   }
@@ -4329,7 +4330,7 @@ export default function TherapistDashboard() {
                 <button
                   type="button"
                   onClick={() =>
-                    setActiveView(
+                    selectDashboardView(
                       "earnings",
                     )
                   }
@@ -4808,7 +4809,7 @@ export default function TherapistDashboard() {
                     <button
                       type="button"
                       onClick={() => {
-                        setActiveView(
+                        selectDashboardView(
                           "availability",
                         );
                         setShowAvailabilityEditor(
@@ -4982,7 +4983,7 @@ export default function TherapistDashboard() {
                       <button
                         type="button"
                         onClick={() => {
-                          setActiveView(
+                          selectDashboardView(
                             "availability",
                           );
                           setShowAvailabilityEditor(
@@ -6728,7 +6729,7 @@ export default function TherapistDashboard() {
                     setAvailabilityModalOpen(
                       false,
                     );
-                    setActiveView(
+                    selectDashboardView(
                       "availability",
                     );
                   }}
