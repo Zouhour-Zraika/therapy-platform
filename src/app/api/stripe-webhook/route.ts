@@ -681,13 +681,25 @@ async function sendPaymentReceiptEmail({
         "—",
     );
 
+  const localizedService =
+    sourceType === "patient_pack"
+      ? labels.pack
+      : serviceType === "individual"
+        ? language === "fr"
+          ? "Séance individuelle"
+          : language === "ar"
+            ? "جلسة فردية"
+            : "Individual session"
+        : serviceType ||
+          (language === "fr"
+            ? "Séance"
+            : language === "ar"
+              ? "جلسة"
+              : "Session");
+
   const safeService =
     escapeReceiptHtml(
-      sourceType ===
-      "patient_pack"
-        ? labels.pack
-        : serviceType ||
-            "Session",
+      localizedService,
     );
 
   const safeTransaction =
