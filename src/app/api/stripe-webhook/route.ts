@@ -2457,39 +2457,6 @@ export async function POST(
             );
           }
 
-          try {
-            await sendPatientPackConfirmationEmail({
-              to: packCustomerEmail,
-              language,
-              therapistName:
-                packTherapist
-                  ?.full_name ||
-                session.metadata
-                  ?.therapistName ||
-                null,
-              sessionsTotal:
-                updatedPack.sessions_total,
-              amount,
-              currency,
-              purchasedAt:
-                updatedPack.purchased_at,
-              validUntil:
-                updatedPack.valid_until,
-            });
-          } catch (
-            packConfirmationEmailError
-          ) {
-            console.error(
-              "Patient Pack confirmation email failed:",
-              {
-                packId,
-                email:
-                  packCustomerEmail,
-                error:
-                  packConfirmationEmailError,
-              },
-            );
-          }
         }
       } catch (
         packReceiptError
@@ -2507,6 +2474,51 @@ export async function POST(
               packReceiptError,
           },
         );
+      }
+
+      /*
+       * E-mail métier Patient Pack :
+       * indépendant de la création du reçu afin qu'un problème/replay
+       * du reçu ne bloque jamais la confirmation d'achat du Pack.
+       * On l'envoie uniquement lors de la première activation du Pack.
+       */
+      if (
+        !packWasAlreadyActive &&
+        packCustomerEmail
+      ) {
+        try {
+          await sendPatientPackConfirmationEmail({
+            to: packCustomerEmail,
+            language,
+            therapistName:
+              packTherapist
+                ?.full_name ||
+              session.metadata
+                ?.therapistName ||
+              null,
+            sessionsTotal:
+              updatedPack.sessions_total,
+            amount,
+            currency,
+            purchasedAt:
+              updatedPack.purchased_at,
+            validUntil:
+              updatedPack.valid_until,
+          });
+        } catch (
+          packConfirmationEmailError
+        ) {
+          console.error(
+            "Patient Pack confirmation email failed:",
+            {
+              packId,
+              email:
+                packCustomerEmail,
+              error:
+                packConfirmationEmailError,
+            },
+          );
+        }
       }
 
       console.log(
