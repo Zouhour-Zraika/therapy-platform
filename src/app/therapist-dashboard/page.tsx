@@ -44,6 +44,25 @@ type Booking = {
   backup_join_url?: string | null;
   backup_host_url?: string | null;
   backup_calendar_event_id?: string | null;
+
+  service_type?: string | null;
+  payment_source?: string | null;
+  aan_commission_rate?: number | null;
+  aan_commission_amount?: number | null;
+  specialist_rate?: number | null;
+  specialist_amount?: number | null;
+};
+
+type PatientPackFinancial = {
+  id: string;
+  therapist_id: string;
+  total_price: number;
+  status: string;
+  purchased_at: string | null;
+  aan_commission_rate: number | null;
+  aan_commission_amount: number | null;
+  specialist_rate: number | null;
+  specialist_amount: number | null;
 };
 
 type PatientRecordSummary = {
@@ -201,6 +220,11 @@ export default function TherapistDashboard() {
     useState<Booking[]>([]);
 
   const [
+    patientPackFinancials,
+    setPatientPackFinancials,
+  ] = useState<PatientPackFinancial[]>([]);
+
+  const [
     patientRecords,
     setPatientRecords,
   ] = useState<PatientRecordSummary[]>(
@@ -354,7 +378,8 @@ export default function TherapistDashboard() {
     | "availability"
     | "sessions"
     | "patients"
-    | "services";
+    | "services"
+    | "earnings";
 
   const [
     activeView,
@@ -975,6 +1000,7 @@ export default function TherapistDashboard() {
     void getGoogleConnection();
     void getZoomConnection();
     void getPatientRecords();
+    void getPatientPackFinancials();
   }, []);
 
   useEffect(() => {
@@ -2408,6 +2434,51 @@ export default function TherapistDashboard() {
       setBookings(
         (data as Booking[]) ||
           [],
+      );
+    };
+
+
+  const getPatientPackFinancials =
+    async () => {
+      const user =
+        await getCurrentUser();
+
+      if (!user) {
+        setPatientPackFinancials([]);
+        return;
+      }
+
+      const { data, error } =
+        await supabase
+          .from("patient_packs")
+          .select(
+            "id, therapist_id, total_price, status, purchased_at, aan_commission_rate, aan_commission_amount, specialist_rate, specialist_amount",
+          )
+          .eq(
+            "therapist_id",
+            user.id,
+          )
+          .not(
+            "purchased_at",
+            "is",
+            null,
+          )
+          .order(
+            "purchased_at",
+            { ascending: false },
+          );
+
+      if (error) {
+        console.error(
+          "Patient Pack financials error:",
+          error,
+        );
+        setPatientPackFinancials([]);
+        return;
+      }
+
+      setPatientPackFinancials(
+        (data as PatientPackFinancial[]) || [],
       );
     };
 
@@ -3953,6 +4024,153 @@ export default function TherapistDashboard() {
     ).format(date);
   };
 
+  const financialTransactions =
+    useMemo(() => {
+      const bookingTransactions =
+        bookings
+          .filter(
+            (booking) =>
+              booking.payment_source !==
+                "patient_pack" &&
+              typeof booking.specialist_amount ===
+                "number",
+          )
+          .map((booking) => ({
+            id: booking.id,
+            date:
+              booking.created_at,
+            serviceType:
+              booking.service_type ||
+              "individual",
+            amount:
+              Number(booking.price || 0),
+            aanCommission:
+              Number(booking.aan_commission_amount || 0),
+            specialistAmount:
+              Number(booking.specialist_amount || 0),
+            aanRate:
+              Number(booking.aan_commission_rate || 30),
+            specialistRate:
+              Number(booking.specialist_rate || 70),
+            status:
+              booking.status,
+          }));
+
+      const packTransactions =
+        patientPackFinancials
+          .filter(
+            (pack) =>
+              typeof pack.specialist_amount ===
+              "number",
+          )
+          .map((pack) => ({
+            id: pack.id,
+            date:
+              pack.purchased_at || "",
+            serviceType:
+              "patient_pack",
+            amount:
+              Number(pack.total_price || 0),
+            aanCommission:
+              Number(pack.aan_commission_amount || 0),
+            specialistAmount:
+              Number(pack.specialist_amount || 0),
+            aanRate:
+              Number(pack.aan_commission_rate || 30),
+            specialistRate:
+              Number(pack.specialist_rate || 70),
+            status:
+              pack.status,
+          }));
+
+      return [
+        ...bookingTransactions,
+        ...packTransactions,
+      ].sort(
+        (a, b) =>
+          new Date(b.date).getTime() -
+          new Date(a.date).getTime(),
+      );
+    }, [
+      bookings,
+      patientPackFinancials,
+    ]);
+
+  const totalGrossRevenue =
+    financialTransactions.reduce(
+      (sum, item) => sum + item.amount,
+      0,
+    );
+
+  const totalAanCommission =
+    financialTransactions.reduce(
+      (sum, item) =>
+        sum + item.aanCommission,
+      0,
+    );
+
+  const totalSpecialistRevenue =
+    financialTransactions.reduce(
+      (sum, item) =>
+        sum + item.specialistAmount,
+      0,
+    );
+
+  const formatFinancialAmount =
+    (value: number) =>
+      new Intl.NumberFormat(
+        language === "ar"
+          ? "ar-LB"
+          : language === "fr"
+            ? "fr-FR"
+            : "en-US",
+        {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        },
+      ).format(value);
+
+  const getFinancialServiceLabel =
+    (serviceType: string) => {
+      if (serviceType === "patient_pack") {
+        return language === "ar"
+          ? "باقة المريض"
+          : "Patient Pack";
+      }
+
+      if (serviceType === "couples") {
+        return language === "ar"
+          ? "جلسة زوجية"
+          : language === "fr"
+            ? "Séance de couple"
+            : "Couples session";
+      }
+
+      if (serviceType === "family") {
+        return language === "ar"
+          ? "جلسة عائلية"
+          : language === "fr"
+            ? "Séance familiale"
+            : "Family session";
+      }
+
+      if (serviceType === "group") {
+        return language === "ar"
+          ? "جلسة جماعية"
+          : language === "fr"
+            ? "Séance de groupe"
+            : "Group session";
+      }
+
+      return language === "ar"
+        ? "جلسة فردية"
+        : language === "fr"
+          ? "Séance individuelle"
+          : "Individual session";
+    };
+
   const displayedPhoto =
     photoPreview ||
     photoUrl;
@@ -4106,6 +4324,28 @@ export default function TherapistDashboard() {
                     : language === "fr"
                       ? "Services & tarifs"
                       : "Services & prices"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveView(
+                      "earnings",
+                    )
+                  }
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left font-semibold transition ${
+                    activeView ===
+                    "earnings"
+                      ? "border border-aan-border bg-[#fbf8f3] text-aan-navy"
+                      : "text-aan-secondary hover:bg-white hover:text-aan-navy"
+                  }`}
+                >
+                  <span>＄</span>
+                  {language === "ar"
+                    ? "المدفوعات والإيرادات"
+                    : language === "fr"
+                      ? "Paiements & revenus"
+                      : "Payments & earnings"}
                 </button>
               </div>
 
@@ -4465,11 +4705,18 @@ export default function TherapistDashboard() {
                                 : language === "fr"
                                   ? "Mes patients"
                                   : "My patients"
-                              : language === "ar"
-                                ? "الخدمات والأسعار"
-                                : language === "fr"
-                                  ? "Services & tarifs"
-                                  : "Services & prices"}
+                              : activeView ===
+                                  "earnings"
+                                ? language === "ar"
+                                  ? "المدفوعات والإيرادات"
+                                  : language === "fr"
+                                    ? "Paiements & revenus"
+                                    : "Payments & earnings"
+                                : language === "ar"
+                                  ? "الخدمات والأسعار"
+                                  : language === "fr"
+                                    ? "Services & tarifs"
+                                    : "Services & prices"}
                   </h1>
 
                   <p className="mt-2 text-aan-secondary">
@@ -4508,11 +4755,18 @@ export default function TherapistDashboard() {
                                 : language === "fr"
                                   ? "Vous accédez uniquement aux patients liés à vos propres séances."
                                   : "You can only access patients linked to your own sessions."
-                              : language === "ar"
-                                ? "راجع الخدمات والأسعار المفعّلة لحسابك."
-                                : language === "fr"
-                                  ? "Consultez les services et tarifs actifs de votre compte."
-                                  : "Review the active services and prices on your account."}
+                              : activeView ===
+                                  "earnings"
+                                ? language === "ar"
+                                  ? "راجع المدفوعات المرتبطة بك وحصة AAN وصافي إيراداتك."
+                                  : language === "fr"
+                                    ? "Consultez les paiements qui vous concernent, la commission AAN et votre part spécialiste."
+                                    : "Review your payments, AAN commission and your specialist share."
+                                : language === "ar"
+                                  ? "راجع الخدمات والأسعار المفعّلة لحسابك."
+                                  : language === "fr"
+                                    ? "Consultez les services et tarifs actifs de votre compte."
+                                    : "Review the active services and prices on your account."}
                   </p>
                 </div>
 
@@ -5634,6 +5888,128 @@ export default function TherapistDashboard() {
                     )}
                   </div>
                 </section>
+                ) : null}
+
+                {activeView === "earnings" ? (
+                  <section
+                    id="earnings"
+                    className="aan-card p-6 sm:p-7"
+                  >
+                    <div>
+                      <h2 className="text-xl font-bold text-aan-navy">
+                        {language === "ar"
+                          ? "ملخص المدفوعات"
+                          : language === "fr"
+                            ? "Résumé des paiements"
+                            : "Payment summary"}
+                      </h2>
+                      <p className="mt-1 text-sm text-aan-secondary">
+                        {language === "ar"
+                          ? "تُعرض فقط المعاملات المرتبطة بحسابك كاختصاصي."
+                          : language === "fr"
+                            ? "Seules les transactions liées à votre compte spécialiste sont affichées."
+                            : "Only transactions linked to your specialist account are shown."}
+                      </p>
+                    </div>
+
+                    <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                        <p className="text-xs font-bold uppercase tracking-[0.12em] text-aan-gold">
+                          {language === "ar"
+                            ? "إجمالي مدفوعات المرضى"
+                            : language === "fr"
+                              ? "Total payé par les patients"
+                              : "Total paid by patients"}
+                        </p>
+                        <p className="mt-2 text-2xl font-bold text-aan-navy">
+                          {formatFinancialAmount(totalGrossRevenue)}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                        <p className="text-xs font-bold uppercase tracking-[0.12em] text-aan-gold">
+                          {language === "ar"
+                            ? "عمولة AAN"
+                            : language === "fr"
+                              ? "Commission AAN"
+                              : "AAN commission"}
+                        </p>
+                        <p className="mt-2 text-2xl font-bold text-aan-navy">
+                          {formatFinancialAmount(totalAanCommission)}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-aan-border bg-[#fbf8f3] p-5">
+                        <p className="text-xs font-bold uppercase tracking-[0.12em] text-aan-gold">
+                          {language === "ar"
+                            ? "حصتك كاختصاصي"
+                            : language === "fr"
+                              ? "Votre part spécialiste"
+                              : "Your specialist share"}
+                        </p>
+                        <p className="mt-2 text-2xl font-bold text-aan-navy">
+                          {formatFinancialAmount(totalSpecialistRevenue)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 overflow-x-auto rounded-2xl border border-aan-border bg-white">
+                      {financialTransactions.length === 0 ? (
+                        <p className="p-6 text-aan-secondary">
+                          {language === "ar"
+                            ? "لا توجد معاملات مالية متاحة حتى الآن."
+                            : language === "fr"
+                              ? "Aucune transaction financière disponible pour le moment."
+                              : "No financial transactions are available yet."}
+                        </p>
+                      ) : (
+                        <table className="w-full min-w-[820px] text-sm">
+                          <thead className="bg-[#fbf8f3] text-aan-navy">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-bold">
+                                {language === "ar" ? "التاريخ" : language === "fr" ? "Date" : "Date"}
+                              </th>
+                              <th className="px-4 py-3 text-left font-bold">
+                                {language === "ar" ? "الخدمة" : language === "fr" ? "Service" : "Service"}
+                              </th>
+                              <th className="px-4 py-3 text-right font-bold">
+                                {language === "ar" ? "المبلغ" : language === "fr" ? "Montant" : "Amount"}
+                              </th>
+                              <th className="px-4 py-3 text-right font-bold">
+                                {language === "ar" ? "عمولة AAN" : language === "fr" ? "Commission AAN" : "AAN commission"}
+                              </th>
+                              <th className="px-4 py-3 text-right font-bold">
+                                {language === "ar" ? "حصتك" : language === "fr" ? "Votre part" : "Your share"}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-aan-border">
+                            {financialTransactions.map(
+                              (transaction) => (
+                                <tr key={`${transaction.serviceType}-${transaction.id}`}>
+                                  <td className="px-4 py-4 text-aan-secondary">
+                                    {formatPatientLastSession(transaction.date)}
+                                  </td>
+                                  <td className="px-4 py-4 font-semibold text-aan-navy">
+                                    {getFinancialServiceLabel(transaction.serviceType)}
+                                  </td>
+                                  <td className="px-4 py-4 text-right text-aan-navy">
+                                    {formatFinancialAmount(transaction.amount)}
+                                  </td>
+                                  <td className="px-4 py-4 text-right text-aan-secondary">
+                                    {formatFinancialAmount(transaction.aanCommission)} ({transaction.aanRate}%)
+                                  </td>
+                                  <td className="px-4 py-4 text-right font-bold text-aan-navy">
+                                    {formatFinancialAmount(transaction.specialistAmount)} ({transaction.specialistRate}%)
+                                  </td>
+                                </tr>
+                              ),
+                            )}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </section>
                 ) : null}
 
               </div>
