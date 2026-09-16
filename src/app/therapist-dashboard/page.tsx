@@ -5378,13 +5378,22 @@ export default function TherapistDashboard() {
                                   </p>
                                 </div>
 
-                                <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                                  {language === "ar"
-                                    ? "مؤكدة"
-                                    : language === "fr"
-                                      ? "Confirmée"
-                                      : "Confirmed"}
-                                </span>
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  {booking.payment_source ===
+                                  "patient_pack" ? (
+                                    <span className="rounded-full border border-aan-gold bg-[#fffaf2] px-3 py-1 text-xs font-bold text-aan-navy">
+                                      Patient Pack
+                                    </span>
+                                  ) : null}
+
+                                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                                    {language === "ar"
+                                      ? "مؤكدة"
+                                      : language === "fr"
+                                        ? "Confirmée"
+                                        : "Confirmed"}
+                                  </span>
+                                </div>
                               </div>
 
                               <div className="mt-4 rounded-2xl border border-aan-border bg-[#fcfaf7] p-2.5">
