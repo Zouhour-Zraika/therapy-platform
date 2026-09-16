@@ -3639,6 +3639,22 @@ export default function TherapistDashboard() {
         | "request_reschedule"
         | "cancel_and_refund",
     ) => {
+      if (
+        action ===
+          "cancel_and_refund" &&
+        booking.payment_source ===
+          "patient_pack"
+      ) {
+        alert(
+          language === "ar"
+            ? "لا يمكن إلغاء جلسة مدفوعة من باقة المريض. يمكن فقط طلب تغيير الموعد."
+            : language === "fr"
+              ? "Une séance payée avec un Patient Pack ne peut pas être annulée. Vous pouvez uniquement demander un changement de créneau."
+              : "A session paid with a Patient Pack cannot be cancelled. You can only request a time-slot change.",
+        );
+        return;
+      }
+
       const confirmation =
         window.confirm(
           action ===
@@ -5465,22 +5481,25 @@ export default function TherapistDashboard() {
                                   </button>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void runBookingAction(
-                                      booking,
-                                      "cancel_and_refund",
-                                    )
-                                  }
-                                  disabled={
-                                    bookingActionId ===
-                                    booking.id
-                                  }
-                                  className="mt-2 w-full rounded-xl border border-red-100 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {text.cancelSession}
-                                </button>
+                                {booking.payment_source !==
+                                "patient_pack" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void runBookingAction(
+                                        booking,
+                                        "cancel_and_refund",
+                                      )
+                                    }
+                                    disabled={
+                                      bookingActionId ===
+                                      booking.id
+                                    }
+                                    className="mt-2 w-full rounded-xl border border-red-100 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {text.cancelSession}
+                                  </button>
+                                ) : null}
                               </div>
                             </article>
                           );
