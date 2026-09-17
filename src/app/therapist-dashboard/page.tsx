@@ -46,7 +46,9 @@ type Booking = {
   backup_calendar_event_id?: string | null;
 
   service_type?: string | null;
+  patient_pack_id?: string | null;
   payment_source?: string | null;
+  payment_provider?: string | null;
   aan_commission_rate?: number | null;
   aan_commission_amount?: number | null;
   specialist_rate?: number | null;
@@ -3632,6 +3634,19 @@ export default function TherapistDashboard() {
     };
 
 
+
+  const isPatientPackBooking = (
+    booking: Booking,
+  ) =>
+    Boolean(booking.patient_pack_id) ||
+    (booking.payment_source || "")
+      .trim()
+      .toLowerCase() === "patient_pack" ||
+    (booking.payment_provider || "")
+      .trim()
+      .toLowerCase() === "patient_pack";
+
+
   const runBookingAction =
     async (
       booking: Booking,
@@ -3642,8 +3657,7 @@ export default function TherapistDashboard() {
       if (
         action ===
           "cancel_and_refund" &&
-        booking.payment_source ===
-          "patient_pack"
+        isPatientPackBooking(booking)
       ) {
         alert(
           language === "ar"
@@ -5379,8 +5393,7 @@ export default function TherapistDashboard() {
                                 </div>
 
                                 <div className="flex shrink-0 flex-wrap items-center gap-2">
-                                  {booking.payment_source ===
-                                  "patient_pack" ? (
+                                  {isPatientPackBooking(booking) ? (
                                     <span className="rounded-full border border-aan-gold bg-[#fffaf2] px-3 py-1 text-xs font-bold text-aan-navy">
                                       Patient Pack
                                     </span>
@@ -5490,8 +5503,7 @@ export default function TherapistDashboard() {
                                   </button>
                                 </div>
 
-                                {booking.payment_source !==
-                                "patient_pack" ? (
+                                {!isPatientPackBooking(booking) ? (
                                   <button
                                     type="button"
                                     onClick={() =>

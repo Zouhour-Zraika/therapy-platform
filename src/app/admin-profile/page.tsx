@@ -115,6 +115,9 @@ type Booking = {
   zoom_start_url: string | null;
   meeting_url?: string | null;
   meeting_provider?: string | null;
+  patient_pack_id?: string | null;
+  payment_source?: string | null;
+  payment_provider?: string | null;
 };
 
 type PatientRecordSummary = {
@@ -1699,6 +1702,17 @@ export default function AdminProfilePage() {
 
     return value < nowMs;
   };
+
+  const isPatientPackBooking = (
+    booking: Booking,
+  ) =>
+    Boolean(booking.patient_pack_id) ||
+    (booking.payment_source || "")
+      .trim()
+      .toLowerCase() === "patient_pack" ||
+    (booking.payment_provider || "")
+      .trim()
+      .toLowerCase() === "patient_pack";
 
   const runBookingAction =
     async (
@@ -3900,24 +3914,28 @@ export default function AdminProfilePage() {
                                           }
                                         </button>
 
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void runBookingAction(
-                                              booking,
-                                              "cancel_and_refund",
-                                            )
-                                          }
-                                          disabled={
-                                            bookingActionId ===
-                                            booking.id
-                                          }
-                                          className="rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-700"
-                                        >
-                                          {
-                                            text.cancelSession
-                                          }
-                                        </button>
+                                        {!isPatientPackBooking(
+                                          booking,
+                                        ) ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void runBookingAction(
+                                                booking,
+                                                "cancel_and_refund",
+                                              )
+                                            }
+                                            disabled={
+                                              bookingActionId ===
+                                              booking.id
+                                            }
+                                            className="rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-700"
+                                          >
+                                            {
+                                              text.cancelSession
+                                            }
+                                          </button>
+                                        ) : null}
 
                                         {sessionUrl ? (
                                           <a

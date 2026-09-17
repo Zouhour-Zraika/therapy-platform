@@ -35,6 +35,8 @@ type BookingRow = {
 
   payment_provider: string | null;
   payment_transaction_id: string | null;
+  patient_pack_id?: string | null;
+  payment_source?: string | null;
 
   reschedule_requested_by?: string | null;
   reschedule_requested_at?: string | null;
@@ -664,6 +666,8 @@ export async function POST(
           status,
           payment_provider,
           payment_transaction_id,
+          patient_pack_id,
+          payment_source,
           reschedule_requested_by,
           reschedule_requested_at,
           cancellation_initiated_by,
@@ -762,6 +766,47 @@ export async function POST(
       "AAN specialist";
 
     /*
+     * Patient Pack :
+     *
+     * Une séance financée par un Patient Pack
+     * ne peut jamais être annulée/remboursée.
+     * Elle peut uniquement être reprogrammée.
+     *
+     * On conserve les trois indicateurs utilisés
+     * côté patient afin d'appliquer exactement
+     * la même règle métier côté spécialiste.
+     */
+    const isPatientPackBooking =
+      Boolean(booking.patient_pack_id) ||
+      (booking.payment_source || "")
+        .trim()
+        .toLowerCase() === "patient_pack" ||
+      (booking.payment_provider || "")
+        .trim()
+        .toLowerCase() === "patient_pack";
+
+    if (
+      action === "cancel_and_refund" &&
+      isPatientPackBooking
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            language === "ar"
+              ? "لا يمكن إلغاء جلسة من باقة المريض أو استرداد قيمتها. يمكن فقط تغيير موعد الجلسة."
+              : language === "fr"
+                ? "Une séance du Pack Patient ne peut pas être annulée ni remboursée. Seul le changement de rendez-vous est autorisé."
+                : "A Patient Pack session cannot be cancelled or refunded. Only rescheduling is allowed.",
+          code:
+            "PACK_CANCELLATION_NOT_ALLOWED",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+    /*
      * ACTION 1 :
      *
      * Le spécialiste demande au patient
@@ -814,7 +859,7 @@ export async function POST(
         );
 
       const dashboardUrl =
-        `${siteUrl}/dashboard?reschedule=${encodeURIComponent(
+        `${siteUrl}/booking?reschedule=${encodeURIComponent(
           booking.id,
         )}`;
 
