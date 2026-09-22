@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type ChangeEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import PatientSidebar from "../components/PatientSidebar";
 import Navbar from "../components/Navbar";
 import ProtectedRoute from "../components/ProtectedRoute";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +40,18 @@ type PatientPack = {
   therapist_name: string;
 };
 
+type PatientProfile = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  photo_url: string | null;
+  role: string | null;
+  phone_number: string | null;
+  date_of_birth: string | null;
+  occupation: string | null;
+  education_level: string | null;
+};
+
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 const PATIENT_CHANGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
@@ -51,7 +65,7 @@ const DAYS_AR: Record<string, string> = {
   Sunday: "الأحد",
 };
 
-export default function PatientDashboard() {
+function PatientDashboardContent() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [patientPacks, setPatientPacks] = useState<PatientPack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,8 +73,37 @@ export default function PatientDashboard() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState("");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [patientProfile, setPatientProfile] = useState<PatientProfile | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileDateOfBirth, setProfileDateOfBirth] = useState("");
+  const [profileOccupation, setProfileOccupation] = useState("");
+  const [profileEducationLevel, setProfileEducationLevel] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profileError, setProfileError] = useState("");
 
   const { language, isArabic } = useLanguage();
+  const searchParams = useSearchParams();
+
+  const requestedSection = searchParams.get("section");
+  const normalizedSection =
+    requestedSection === "appointments" || requestedSection === "packs"
+      ? "sessions"
+      : requestedSection;
+
+  const activeSection =
+    normalizedSection === "sessions" ||
+    normalizedSection === "profile" ||
+    normalizedSection === "documents" ||
+    normalizedSection === "help"
+      ? normalizedSection
+      : "dashboard";
 
   const copy =
     language === "ar"
@@ -70,6 +113,8 @@ export default function PatientDashboard() {
           description:
             "اطّلع على جلساتك القادمة، وأكمل الدفع، وانضم إلى الجلسات عبر الإنترنت.",
           appointments: "مواعيدي",
+          sessionsTitle: "جلساتي",
+          sessionsDescription: "تابع مواعيدك وباقة المريض من مكان واحد.",
           loading: "جارٍ تحميل المواعيد...",
           empty: "لا توجد لديك مواعيد حتى الآن.",
           findTherapist: "البحث عن معالج",
@@ -116,6 +161,37 @@ export default function PatientDashboard() {
           packCompleted: "اكتملت الباقة",
           packUsed: "جلسات مستخدمة",
           sessionPast: "جلسة سابقة",
+          openMenu: "فتح القائمة",
+          profileTitle: "ملفي الشخصي",
+          profileDescription: "يمكنك تحديث معلوماتك الشخصية وصورتك هنا. يبقى بريدك الإلكتروني مرتبطاً بحسابك.",
+          profilePhoto: "الصورة الشخصية",
+          profilePhotoHint: "اختياري · JPG أو PNG أو WEBP · بحد أقصى 5 ميغابايت",
+          choosePhoto: "اختيار صورة",
+          changePhoto: "تغيير الصورة",
+          fullName: "الاسم الكامل",
+          email: "البريد الإلكتروني",
+          emailReadOnly: "البريد الإلكتروني مرتبط بحسابك ولا يمكن تغييره من هنا.",
+          phoneNumber: "رقم الهاتف",
+          phonePlaceholder: "مثال: +961 70 123 456",
+          dateOfBirth: "تاريخ الميلاد",
+          ageHint: "يُستخدم تاريخ الميلاد بدلاً من حفظ العمر، لأن العمر يتغير مع الوقت.",
+          occupation: "العمل / المهنة",
+          occupationPlaceholder: "مثال: طالب، مهندس، مدرس...",
+          educationLevel: "الدراسة / المستوى التعليمي",
+          educationPlaceholder: "مثال: جامعي، ماجستير، ثانوي...",
+          optionalField: "اختياري",
+          saveProfile: "حفظ التغييرات",
+          savingProfile: "جارٍ الحفظ...",
+          profileSaved: "تم تحديث ملفك الشخصي.",
+          profileLoadError: "تعذر تحميل ملفك الشخصي.",
+          profileSaveError: "تعذر حفظ ملفك الشخصي. يرجى المحاولة مرة أخرى.",
+          invalidPhotoType: "يرجى اختيار صورة بصيغة JPG أو PNG أو WEBP.",
+          photoTooLarge: "يجب ألا يتجاوز حجم الصورة 5 ميغابايت.",
+          nameRequired: "يرجى إدخال اسمك الكامل.",
+          documentsTitle: "مستنداتي",
+          documentsDescription: "ستجد هنا مستنداتك وإيصالات الدفع الخاصة بك.",
+          helpTitle: "المساعدة والأسئلة الشائعة",
+          helpDescription: "ستجد هنا المساعدة والإجابات عن الأسئلة الأكثر شيوعاً.",
         }
       : language === "fr"
         ? {
@@ -124,6 +200,9 @@ export default function PatientDashboard() {
             description:
               "Consultez vos prochaines séances, finalisez vos paiements et rejoignez vos rendez-vous en ligne.",
             appointments: "Mes rendez-vous",
+            sessionsTitle: "Mes séances",
+            sessionsDescription:
+              "Retrouvez vos rendez-vous et votre Pack Patient au même endroit.",
             loading: "Chargement des rendez-vous...",
             empty: "Vous n’avez aucun rendez-vous pour le moment.",
             findTherapist: "Trouver un spécialiste",
@@ -183,6 +262,44 @@ export default function PatientDashboard() {
             packCompleted: "Pack terminé",
             packUsed: "séances utilisées",
             sessionPast: "Séance passée",
+            openMenu: "Ouvrir le menu",
+            profileTitle: "Mon profil",
+            profileDescription:
+              "Mettez à jour vos informations personnelles et votre photo de profil. Votre adresse e-mail reste liée à votre compte.",
+            profilePhoto: "Photo de profil",
+            profilePhotoHint: "Facultatif · JPG, PNG ou WEBP · 5 Mo maximum",
+            choosePhoto: "Choisir une photo",
+            changePhoto: "Changer la photo",
+            fullName: "Nom complet",
+            email: "Adresse e-mail",
+            emailReadOnly:
+              "L’adresse e-mail est liée à votre compte et ne peut pas être modifiée ici.",
+            phoneNumber: "Numéro de téléphone",
+            phonePlaceholder: "Ex. +961 70 123 456",
+            dateOfBirth: "Date de naissance",
+            ageHint:
+              "La date de naissance est enregistrée plutôt que l’âge, car l’âge évolue avec le temps.",
+            occupation: "Travail / profession",
+            occupationPlaceholder: "Ex. Étudiant, ingénieur, enseignant...",
+            educationLevel: "Études / niveau d’études",
+            educationPlaceholder: "Ex. Universitaire, master, secondaire...",
+            optionalField: "Facultatif",
+            saveProfile: "Enregistrer les modifications",
+            savingProfile: "Enregistrement...",
+            profileSaved: "Votre profil a été mis à jour.",
+            profileLoadError: "Impossible de charger votre profil.",
+            profileSaveError:
+              "Impossible d’enregistrer votre profil. Veuillez réessayer.",
+            invalidPhotoType:
+              "Veuillez choisir une image JPG, PNG ou WEBP.",
+            photoTooLarge: "La photo ne doit pas dépasser 5 Mo.",
+            nameRequired: "Veuillez renseigner votre nom complet.",
+            documentsTitle: "Mes documents",
+            documentsDescription:
+              "Retrouvez ici vos documents et vos reçus de paiement.",
+            helpTitle: "Aide & FAQ",
+            helpDescription:
+              "Retrouvez ici l’aide et les réponses aux questions les plus fréquentes.",
           }
         : {
             eyebrow: "Your private space",
@@ -190,6 +307,9 @@ export default function PatientDashboard() {
             description:
               "Review your upcoming sessions, complete payments and join your online appointments.",
             appointments: "My Appointments",
+            sessionsTitle: "My sessions",
+            sessionsDescription:
+              "Manage your appointments and Patient Pack in one place.",
             loading: "Loading appointments...",
             empty: "You do not have any appointments yet.",
             findTherapist: "Find a Therapist",
@@ -249,6 +369,44 @@ export default function PatientDashboard() {
             packCompleted: "Pack completed",
             packUsed: "sessions used",
             sessionPast: "Past session",
+            openMenu: "Open menu",
+            profileTitle: "My profile",
+            profileDescription:
+              "Update your personal information and profile photo here. Your email address remains linked to your account.",
+            profilePhoto: "Profile photo",
+            profilePhotoHint: "Optional · JPG, PNG or WEBP · 5 MB maximum",
+            choosePhoto: "Choose a photo",
+            changePhoto: "Change photo",
+            fullName: "Full name",
+            email: "Email address",
+            emailReadOnly:
+              "Your email address is linked to your account and cannot be changed here.",
+            phoneNumber: "Phone number",
+            phonePlaceholder: "e.g. +961 70 123 456",
+            dateOfBirth: "Date of birth",
+            ageHint:
+              "Date of birth is stored instead of age because age changes over time.",
+            occupation: "Work / occupation",
+            occupationPlaceholder: "e.g. Student, engineer, teacher...",
+            educationLevel: "Studies / education level",
+            educationPlaceholder: "e.g. University, master’s, secondary...",
+            optionalField: "Optional",
+            saveProfile: "Save changes",
+            savingProfile: "Saving...",
+            profileSaved: "Your profile has been updated.",
+            profileLoadError: "Unable to load your profile.",
+            profileSaveError:
+              "Unable to save your profile. Please try again.",
+            invalidPhotoType:
+              "Please choose a JPG, PNG or WEBP image.",
+            photoTooLarge: "The photo must not exceed 5 MB.",
+            nameRequired: "Please enter your full name.",
+            documentsTitle: "My documents",
+            documentsDescription:
+              "Find your documents and payment receipts here.",
+            helpTitle: "Help & FAQ",
+            helpDescription:
+              "Find help and answers to frequently asked questions here.",
           };
 
   useEffect(() => {
@@ -310,6 +468,7 @@ export default function PatientDashboard() {
       const [
         { data: bookingData, error: bookingError },
         { data: packData, error: packError },
+        { data: profileData, error: profileLoadError },
       ] = await Promise.all([
         supabase
           .from("bookings")
@@ -325,6 +484,12 @@ export default function PatientDashboard() {
           .eq("patient_id", user.id)
           .in("status", ["active", "used"])
           .order("created_at", { ascending: false }),
+
+        supabase
+          .from("profiles")
+          .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level")
+          .eq("id", user.id)
+          .single(),
       ]);
 
       if (bookingError) {
@@ -333,6 +498,23 @@ export default function PatientDashboard() {
 
       if (packError) {
         console.error("Unable to load patient packs:", packError);
+      }
+
+      if (profileLoadError) {
+        console.error("Unable to load patient profile:", profileLoadError);
+        setProfileError(copy.profileLoadError);
+      } else if (profileData) {
+        const loadedProfile = profileData as PatientProfile;
+        setPatientProfile(loadedProfile);
+        setProfileName(loadedProfile.full_name || "");
+        setProfileEmail(loadedProfile.email || user.email || "");
+        setProfilePhotoUrl(loadedProfile.photo_url || "");
+        setProfilePhone(loadedProfile.phone_number || "");
+        setProfileDateOfBirth(loadedProfile.date_of_birth || "");
+        setProfileOccupation(loadedProfile.occupation || "");
+        setProfileEducationLevel(loadedProfile.education_level || "");
+        setProfilePhotoPreview("");
+        setProfilePhotoFile(null);
       }
 
       const loadedBookings =
@@ -438,6 +620,132 @@ export default function PatientDashboard() {
       setErrorMessage(copy.unableToLoad);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProfilePhotoChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    setProfileMessage("");
+    setProfileError("");
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setProfileError(copy.invalidPhotoType);
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError(copy.photoTooLarge);
+      event.target.value = "";
+      return;
+    }
+
+    if (profilePhotoPreview.startsWith("blob:")) {
+      URL.revokeObjectURL(profilePhotoPreview);
+    }
+
+    setProfilePhotoFile(file);
+    setProfilePhotoPreview(URL.createObjectURL(file));
+  };
+
+  const savePatientProfile = async () => {
+    const trimmedName = profileName.trim();
+
+    setProfileMessage("");
+    setProfileError("");
+
+    if (!trimmedName) {
+      setProfileError(copy.nameRequired);
+      return;
+    }
+
+    setProfileSaving(true);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        window.location.href = "/login";
+        return;
+      }
+
+      let nextPhotoUrl = profilePhotoUrl || null;
+
+      if (profilePhotoFile) {
+        const extension =
+          profilePhotoFile.name.split(".").pop()?.toLowerCase() || "jpg";
+
+        const filePath =
+          `${user.id}/patient-profile-${Date.now()}.${extension}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("profile-photos")
+          .upload(filePath, profilePhotoFile, {
+            cacheControl: "3600",
+            contentType: profilePhotoFile.type,
+            upsert: false,
+          });
+
+        if (uploadError) throw uploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage
+          .from("profile-photos")
+          .getPublicUrl(filePath);
+
+        nextPhotoUrl = publicUrl;
+      }
+
+      const { data: updatedProfile, error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          full_name: trimmedName,
+          photo_url: nextPhotoUrl,
+          phone_number: profilePhone.trim() || null,
+          date_of_birth: profileDateOfBirth || null,
+          occupation: profileOccupation.trim() || null,
+          education_level: profileEducationLevel.trim() || null,
+        })
+        .eq("id", user.id)
+        .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level")
+        .single();
+
+      if (updateError) throw updateError;
+
+      const savedProfile = updatedProfile as PatientProfile;
+
+      setPatientProfile(savedProfile);
+      setProfileName(savedProfile.full_name || "");
+      setProfileEmail(savedProfile.email || user.email || "");
+      setProfilePhotoUrl(savedProfile.photo_url || "");
+      setProfilePhone(savedProfile.phone_number || "");
+      setProfileDateOfBirth(savedProfile.date_of_birth || "");
+      setProfileOccupation(savedProfile.occupation || "");
+      setProfileEducationLevel(savedProfile.education_level || "");
+
+      if (profilePhotoPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(profilePhotoPreview);
+      }
+
+      setProfilePhotoPreview("");
+      setProfilePhotoFile(null);
+      setProfileMessage(copy.profileSaved);
+    } catch (error) {
+      console.error("Unable to save patient profile:", error);
+      setProfileError(copy.profileSaveError);
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -698,6 +1006,7 @@ export default function PatientDashboard() {
     return scheduledStartMs < nowMs;
   };
 
+
   const runPatientBookingAction = async (
     booking: Booking,
     action: "request_reschedule" | "cancel_and_refund",
@@ -885,14 +1194,52 @@ export default function PatientDashboard() {
 
   return (
     <ProtectedRoute allowedRoles={["patient"]}>
-      <>
+      <div
+        dir={isArabic ? "rtl" : "ltr"}
+        className="min-h-screen bg-aan-background"
+      >
         <Navbar />
 
-        <main
-          dir={isArabic ? "rtl" : "ltr"}
-          className="min-h-screen bg-aan-background px-5 py-10 sm:px-8 lg:px-10"
-        >
-          <section className="mx-auto max-w-7xl">
+        <div className="lg:flex">
+          <PatientSidebar
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
+
+        <div className="min-w-0 flex-1">
+          <div className="sticky top-0 z-40 flex items-center border-b border-aan-border bg-white/95 px-5 py-3 backdrop-blur lg:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label={copy.openMenu}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-aan-border bg-white text-aan-navy shadow-sm"
+            >
+              <span className="sr-only">{copy.openMenu}</span>
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+
+            <div className="mx-3 min-w-0">
+              <p className="truncate text-sm font-extrabold tracking-[0.14em] text-aan-navy">
+                AAN
+              </p>
+              <p className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-aan-secondary">
+                {copy.title}
+              </p>
+            </div>
+          </div>
+
+          <main className="min-h-screen px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+            <section className="mx-auto max-w-7xl">
+            {activeSection === "dashboard" && (
             <header className="relative mb-10 overflow-hidden rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10 lg:p-12">
               <div
                 aria-hidden="true"
@@ -921,10 +1268,29 @@ export default function PatientDashboard() {
                 </p>
               </div>
             </header>
+            )}
 
-            {!loading &&
+            {activeSection === "sessions" && (
+              <header className="relative mb-10 overflow-hidden rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                  AAN Psychotherapy
+                </p>
+                <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                  {copy.sessionsTitle}
+                </h1>
+                <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
+                  {copy.sessionsDescription}
+                </p>
+              </header>
+            )}
+
+            {(activeSection === "dashboard" || activeSection === "sessions") &&
+              !loading &&
               patientPacks.length > 0 && (
-                <section className="mb-10 rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10">
+                <section
+                  id="packs"
+                  className="mb-10 scroll-mt-24 rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10"
+                >
                   <div className="mb-6">
                     <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
                       AAN Psychotherapy
@@ -1008,7 +1374,11 @@ export default function PatientDashboard() {
                 </section>
               )}
 
-            <section className="rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10">
+            {(activeSection === "dashboard" || activeSection === "sessions") && (
+            <section
+              id="appointments"
+              className="scroll-mt-24 rounded-[2.25rem] border border-aan-border bg-white p-6 shadow-[var(--aan-shadow-md)] sm:p-8 lg:p-10"
+            >
               {actionMessage && (
                 <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 font-semibold text-emerald-800">
                   {actionMessage}
@@ -1304,9 +1674,211 @@ export default function PatientDashboard() {
                 </div>
               )}
             </section>
-          </section>
-        </main>
-      </>
+            )}
+
+            {activeSection === "profile" && (
+              <section className="rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                  AAN Psychotherapy
+                </p>
+                <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                  {copy.profileTitle}
+                </h1>
+                <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
+                  {copy.profileDescription}
+                </p>
+
+                {profileMessage && (
+                  <div className="mt-7 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 font-semibold text-emerald-800">
+                    {profileMessage}
+                  </div>
+                )}
+
+                {profileError && (
+                  <div className="mt-7 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 font-semibold text-red-700">
+                    {profileError}
+                  </div>
+                )}
+
+                <div className="mt-8 grid gap-8 lg:grid-cols-[280px_1fr]">
+                  <div className="rounded-[1.75rem] border border-aan-border bg-[#fbf8f3] p-6">
+                    <p className="text-sm font-bold text-aan-navy">
+                      {copy.profilePhoto}
+                    </p>
+
+                    <div className="mt-5 flex flex-col items-center">
+                      <div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-full border border-aan-border bg-white shadow-sm">
+                        {profilePhotoPreview || profilePhotoUrl ? (
+                          <img
+                            src={profilePhotoPreview || profilePhotoUrl}
+                            alt={profileName || copy.profilePhoto}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-4xl font-bold text-aan-navy">
+                            {(profileName || profileEmail || "A")
+                              .trim()
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+
+                      <label className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-2xl border border-aan-gold bg-white px-5 py-3 text-sm font-bold text-aan-navy transition hover:bg-[#fffaf2]">
+                        {profilePhotoUrl || profilePhotoPreview
+                          ? copy.changePhoto
+                          : copy.choosePhoto}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={handleProfilePhotoChange}
+                          className="sr-only"
+                        />
+                      </label>
+
+                      <p className="mt-3 text-center text-xs leading-5 text-aan-secondary">
+                        {copy.profilePhotoHint}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.75rem] border border-aan-border bg-white p-6 sm:p-7">
+                    <div>
+                      <label
+                        htmlFor="patient-full-name"
+                        className="text-sm font-bold text-aan-navy"
+                      >
+                        {copy.fullName}
+                      </label>
+                      <input
+                        id="patient-full-name"
+                        type="text"
+                        value={profileName}
+                        onChange={(event) => {
+                          setProfileName(event.target.value);
+                          setProfileMessage("");
+                          setProfileError("");
+                        }}
+                        autoComplete="name"
+                        className="mt-2 w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15"
+                      />
+                    </div>
+
+                    <div className="mt-6">
+                      <label
+                        htmlFor="patient-email"
+                        className="text-sm font-bold text-aan-navy"
+                      >
+                        {copy.email}
+                      </label>
+                      <input
+                        id="patient-email"
+                        type="email"
+                        value={profileEmail}
+                        readOnly
+                        className="mt-2 w-full cursor-not-allowed rounded-2xl border border-aan-border bg-[#f7f5f1] px-4 py-3.5 text-aan-secondary outline-none"
+                      />
+                      <p className="mt-2 text-xs leading-5 text-aan-secondary">
+                        {copy.emailReadOnly}
+                      </p>
+                    </div>
+
+                    <div className="mt-6 grid gap-6 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="patient-phone" className="text-sm font-bold text-aan-navy">
+                          {copy.phoneNumber} <span className="text-xs font-normal text-aan-secondary">({copy.optionalField})</span>
+                        </label>
+                        <input id="patient-phone" type="tel" value={profilePhone} onChange={(event) => { setProfilePhone(event.target.value); setProfileMessage(""); setProfileError(""); }} placeholder={copy.phonePlaceholder} autoComplete="tel" className="mt-2 w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15" />
+                      </div>
+
+                      <div>
+                        <label htmlFor="patient-date-of-birth" className="text-sm font-bold text-aan-navy">
+                          {copy.dateOfBirth} <span className="text-xs font-normal text-aan-secondary">({copy.optionalField})</span>
+                        </label>
+                        <input id="patient-date-of-birth" type="date" value={profileDateOfBirth} max={new Date().toISOString().split("T")[0]} onChange={(event) => { setProfileDateOfBirth(event.target.value); setProfileMessage(""); setProfileError(""); }} autoComplete="bday" className="mt-2 w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15" />
+                        <p className="mt-2 text-xs leading-5 text-aan-secondary">{copy.ageHint}</p>
+                      </div>
+
+                      <div>
+                        <label htmlFor="patient-occupation" className="text-sm font-bold text-aan-navy">
+                          {copy.occupation} <span className="text-xs font-normal text-aan-secondary">({copy.optionalField})</span>
+                        </label>
+                        <input id="patient-occupation" type="text" value={profileOccupation} onChange={(event) => { setProfileOccupation(event.target.value); setProfileMessage(""); setProfileError(""); }} placeholder={copy.occupationPlaceholder} autoComplete="organization-title" className="mt-2 w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15" />
+                      </div>
+
+                      <div>
+                        <label htmlFor="patient-education-level" className="text-sm font-bold text-aan-navy">
+                          {copy.educationLevel} <span className="text-xs font-normal text-aan-secondary">({copy.optionalField})</span>
+                        </label>
+                        <input id="patient-education-level" type="text" value={profileEducationLevel} onChange={(event) => { setProfileEducationLevel(event.target.value); setProfileMessage(""); setProfileError(""); }} placeholder={copy.educationPlaceholder} className="mt-2 w-full rounded-2xl border border-aan-border bg-white px-4 py-3.5 text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15" />
+                      </div>
+                    </div>
+
+                    <div className="mt-8 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void savePatientProfile()}
+                        disabled={profileSaving || !patientProfile}
+                        className="aan-cta inline-flex min-w-[220px] items-center justify-center rounded-2xl px-6 py-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {profileSaving
+                          ? copy.savingProfile
+                          : copy.saveProfile}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeSection === "documents" && (
+              <section className="rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                  AAN Psychotherapy
+                </p>
+                <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                  {copy.documentsTitle}
+                </h1>
+                <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
+                  {copy.documentsDescription}
+                </p>
+              </section>
+            )}
+
+            {activeSection === "help" && (
+              <section className="rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                  AAN Psychotherapy
+                </p>
+                <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                  {copy.helpTitle}
+                </h1>
+                <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
+                  {copy.helpDescription}
+                </p>
+              </section>
+            )}
+            </section>
+          </main>
+        </div>
+        </div>
+      </div>
     </ProtectedRoute>
+  );
+}
+
+export default function PatientDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-aan-background">
+          <div className="flex min-h-screen items-center justify-center">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
+          </div>
+        </div>
+      }
+    >
+      <PatientDashboardContent />
+    </Suspense>
   );
 }
