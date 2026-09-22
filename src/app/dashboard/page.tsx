@@ -71,6 +71,8 @@ function PatientDashboardContent() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const SESSIONS_PER_PAGE = 20;
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -104,6 +106,11 @@ function PatientDashboardContent() {
     normalizedSection === "help"
       ? normalizedSection
       : "dashboard";
+
+  useEffect(() => {
+    setSessionsPage(1);
+  }, [activeSection]);
+
 
   const copy =
     language === "ar"
@@ -1035,10 +1042,23 @@ function PatientDashboardContent() {
     })
     .slice(0, 2);
 
+  const sessionsTotalPages = Math.max(
+    1,
+    Math.ceil(visibleBookings.length / SESSIONS_PER_PAGE),
+  );
+
+  const safeSessionsPage = Math.min(sessionsPage, sessionsTotalPages);
+  const sessionsPageStart = (safeSessionsPage - 1) * SESSIONS_PER_PAGE;
+
+  const paginatedSessionBookings = visibleBookings.slice(
+    sessionsPageStart,
+    sessionsPageStart + SESSIONS_PER_PAGE,
+  );
+
   const displayedBookings =
     activeSection === "dashboard"
       ? [...dashboardUpcomingBookings, ...dashboardPastBookings]
-      : visibleBookings;
+      : paginatedSessionBookings;
 
 
   const runPatientBookingAction = async (
@@ -1700,6 +1720,109 @@ function PatientDashboardContent() {
                   ))}
                 </div>
               )}
+
+              {!loading &&
+                activeSection === "sessions" &&
+                visibleBookings.length > SESSIONS_PER_PAGE && (
+                  <div className="mt-6 flex flex-col gap-4 border-t border-aan-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold text-aan-secondary">
+                      {language === "ar"
+                        ? `عرض ${formatDigits(sessionsPageStart + 1)} إلى ${formatDigits(
+                            Math.min(
+                              sessionsPageStart + SESSIONS_PER_PAGE,
+                              visibleBookings.length,
+                            ),
+                          )} من أصل ${formatDigits(visibleBookings.length)} جلسة`
+                        : language === "fr"
+                          ? `Affichage de ${formatDigits(
+                              sessionsPageStart + 1,
+                            )} à ${formatDigits(
+                              Math.min(
+                                sessionsPageStart + SESSIONS_PER_PAGE,
+                                visibleBookings.length,
+                              ),
+                            )} sur ${formatDigits(
+                              visibleBookings.length,
+                            )} séances`
+                          : `Showing ${formatDigits(
+                              sessionsPageStart + 1,
+                            )} to ${formatDigits(
+                              Math.min(
+                                sessionsPageStart + SESSIONS_PER_PAGE,
+                                visibleBookings.length,
+                              ),
+                            )} of ${formatDigits(
+                              visibleBookings.length,
+                            )} sessions`}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSessionsPage((current) => Math.max(1, current - 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={safeSessionsPage === 1}
+                        className="flex h-10 min-w-10 items-center justify-center rounded-xl border border-aan-border bg-white px-3 font-bold text-aan-navy transition hover:border-aan-gold disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={
+                          language === "ar"
+                            ? "الصفحة السابقة"
+                            : language === "fr"
+                              ? "Page précédente"
+                              : "Previous page"
+                        }
+                      >
+                        ‹
+                      </button>
+
+                      {Array.from(
+                        { length: sessionsTotalPages },
+                        (_, index) => index + 1,
+                      ).map((pageNumber) => (
+                        <button
+                          key={pageNumber}
+                          type="button"
+                          onClick={() => {
+                            setSessionsPage(pageNumber);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          aria-current={
+                            safeSessionsPage === pageNumber ? "page" : undefined
+                          }
+                          className={`flex h-10 min-w-10 items-center justify-center rounded-xl border px-3 text-sm font-bold transition ${
+                            safeSessionsPage === pageNumber
+                              ? "border-aan-button bg-aan-button text-white shadow-sm"
+                              : "border-aan-border bg-white text-aan-navy hover:border-aan-gold"
+                          }`}
+                        >
+                          {formatDigits(pageNumber)}
+                        </button>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSessionsPage((current) =>
+                            Math.min(sessionsTotalPages, current + 1),
+                          );
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={safeSessionsPage === sessionsTotalPages}
+                        className="flex h-10 min-w-10 items-center justify-center rounded-xl border border-aan-border bg-white px-3 font-bold text-aan-navy transition hover:border-aan-gold disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={
+                          language === "ar"
+                            ? "الصفحة التالية"
+                            : language === "fr"
+                              ? "Page suivante"
+                              : "Next page"
+                        }
+                      >
+                        ›
+                      </button>
+                    </div>
+                  </div>
+                )}
             </section>
             )}
 
