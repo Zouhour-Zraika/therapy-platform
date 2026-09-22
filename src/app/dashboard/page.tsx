@@ -1007,6 +1007,40 @@ function PatientDashboardContent() {
   };
 
 
+  const dashboardUpcomingBookings = [...visibleBookings]
+    .filter((booking) => !isPastBooking(booking))
+    .sort((a, b) => {
+      const aTime = a.scheduled_start
+        ? new Date(a.scheduled_start).getTime()
+        : Number.MAX_SAFE_INTEGER;
+      const bTime = b.scheduled_start
+        ? new Date(b.scheduled_start).getTime()
+        : Number.MAX_SAFE_INTEGER;
+
+      return aTime - bTime;
+    })
+    .slice(0, 2);
+
+  const dashboardPastBookings = [...visibleBookings]
+    .filter((booking) => isPastBooking(booking))
+    .sort((a, b) => {
+      const aTime = a.scheduled_start
+        ? new Date(a.scheduled_start).getTime()
+        : 0;
+      const bTime = b.scheduled_start
+        ? new Date(b.scheduled_start).getTime()
+        : 0;
+
+      return bTime - aTime;
+    })
+    .slice(0, 2);
+
+  const displayedBookings =
+    activeSection === "dashboard"
+      ? [...dashboardUpcomingBookings, ...dashboardPastBookings]
+      : visibleBookings;
+
+
   const runPatientBookingAction = async (
     booking: Booking,
     action: "request_reschedule" | "cancel_and_refund",
@@ -1397,9 +1431,27 @@ function PatientDashboardContent() {
                 </div>
 
                 {!loading && visibleBookings.length > 0 && (
-                  <span className="inline-flex w-fit rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-bold text-aan-navy">
-                    {formatDigits(visibleBookings.length)}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {activeSection === "dashboard" && visibleBookings.length > displayedBookings.length && (
+                      <Link
+                        href="/dashboard?section=sessions"
+                        className="rounded-xl border border-aan-border bg-white px-4 py-2 text-sm font-bold text-aan-navy transition hover:border-aan-gold hover:bg-[#fbf8f3]"
+                      >
+                        {language === "ar"
+                          ? "عرض كل الجلسات"
+                          : language === "fr"
+                            ? "Voir toutes mes séances"
+                            : "View all my sessions"}
+                      </Link>
+                    )}
+                    <span className="inline-flex w-fit rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-bold text-aan-navy">
+                      {formatDigits(
+                        activeSection === "dashboard"
+                          ? displayedBookings.length
+                          : visibleBookings.length,
+                      )}
+                    </span>
+                  </div>
                 )}
               </div>
 
@@ -1415,7 +1467,7 @@ function PatientDashboardContent() {
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-7 text-center text-red-700">
                   {errorMessage}
                 </div>
-              ) : visibleBookings.length === 0 ? (
+              ) : displayedBookings.length === 0 ? (
                 <div className="rounded-[2rem] border border-dashed border-aan-border bg-[#fbf8f3] p-10 text-center">
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white text-2xl text-aan-gold shadow-sm">
                     ◇
@@ -1433,139 +1485,103 @@ function PatientDashboardContent() {
                   </Link>
                 </div>
               ) : (
-                <div className="grid gap-6">
-                  {visibleBookings.map((booking) => (
+                <div className="grid gap-3">
+                  {displayedBookings.map((booking) => (
                     <article
                       key={booking.id}
-                      className="overflow-hidden rounded-[2rem] border border-aan-border bg-white shadow-[var(--aan-shadow-sm)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--aan-shadow-md)]"
+                      className="rounded-2xl border border-aan-border bg-white px-4 py-4 shadow-[var(--aan-shadow-sm)] transition hover:border-aan-gold/60 sm:px-5"
                     >
-                      <div className="grid lg:grid-cols-[1fr_280px]">
-                        <div className="p-6 sm:p-8">
-                          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <p className="text-xs font-bold uppercase tracking-[0.22em] text-aan-gold">
-                                {copy.sessionDetails}
-                              </p>
-
-                              <h3 className="aan-heading mt-3 text-3xl">
-                                {booking.therapist_name}
-                              </h3>
-
-                              {isPackBooking(
-                                booking,
-                              ) && (
-                                <div className="mt-3 flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex rounded-full border border-[#d8c7aa] bg-[#fffaf2] px-3 py-1.5 text-xs font-bold text-[#8f744d]">
-                                    {copy.packTitle}
-                                  </span>
-
-                                  {getPackSessionNumber(
-                                    booking,
-                                  ) && (
-                                    <span className="inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-navy">
-                                      {copy.packSession}{" "}
-                                      {formatDigits(
-                                        getPackSessionNumber(
-                                          booking,
-                                        ) as number,
-                                      )}{" "}
-                                      {copy.packOf}{" "}
-                                      {formatDigits(
-                                        getPackForBooking(
-                                          booking,
-                                        )?.sessions_total ||
-                                          4,
-                                      )}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            <span
-                              className={`inline-flex w-fit rounded-full border px-4 py-2 text-sm font-bold ${getStatusClasses(
-                                booking.status,
-                              )}`}
+                      <div className="grid gap-4 xl:grid-cols-[minmax(180px,0.8fr)_minmax(210px,1fr)_minmax(250px,1.25fr)_auto] xl:items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eef4fa] text-aan-button">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-5 w-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              aria-hidden="true"
                             >
-                              {getStatusLabel(booking.status)}
-                            </span>
+                              <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+                            </svg>
                           </div>
 
-                          <div className="mt-7 grid gap-4 sm:grid-cols-3">
-                            <div className="rounded-2xl bg-[#fbf8f3] p-4">
-                              <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                {copy.date}
-                              </p>
-
-                              <p className="mt-2 font-bold capitalize text-aan-navy">
-                                {formatAppointmentDate(booking)}
-                              </p>
-                            </div>
-
-                            <div className="rounded-2xl bg-[#fbf8f3] p-4">
-                              <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                {copy.time}
-                              </p>
-
-                              <p className="mt-2 font-bold text-aan-navy">
-                                {formatAppointmentTime(booking)}
-                              </p>
-
-                              {booking.scheduled_start && (
-                                <p className="mt-1 text-xs leading-5 text-aan-secondary">
-                                  {copy.localTime}
-                                  {localTimeZone ? ` · ${localTimeZone}` : ""}
-                                </p>
-                              )}
-                            </div>
-
-                            <div className="rounded-2xl bg-[#fbf8f3] p-4">
-                              <p className="text-xs font-bold uppercase tracking-[0.18em] text-aan-gold">
-                                {copy.price}
-                              </p>
-
-                              <p className="mt-2 font-bold text-aan-navy">
-                                {isPackBooking(booking)
-                                  ? copy.packIncluded
-                                  : formatPrice(
-                                      booking.price,
-                                    )}
-                              </p>
-
-                              {isPackBooking(
-                                booking,
-                              ) && (
-                                <p className="mt-1 text-xs leading-5 text-aan-secondary">
-                                  {
-                                    copy.packNoExtraPayment
-                                  }
-                                </p>
-                              )}
-                            </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-extrabold capitalize text-aan-navy">
+                              {formatAppointmentDate(booking)}
+                            </p>
+                            <p className="mt-0.5 text-sm font-semibold text-aan-secondary">
+                              {formatAppointmentTime(booking)}
+                              {booking.scheduled_start && localTimeZone
+                                ? ` · ${localTimeZone}`
+                                : ""}
+                            </p>
                           </div>
+                        </div>
 
-                          <p className="mt-6 text-sm text-aan-secondary">
-                            <span className="font-semibold text-aan-navy">
-                              {copy.booked}:
-                            </span>{" "}
-                            {formatBookedDate(booking.created_at)}
+                        <div className="min-w-0 xl:border-s xl:border-aan-border xl:ps-5">
+                          <p className="truncate font-extrabold text-aan-navy">
+                            {booking.therapist_name}
+                          </p>
+                          <p className="mt-1 text-xs text-aan-secondary">
+                            {copy.sessionDetails}
                           </p>
                         </div>
 
-                        <div className="flex flex-col justify-center border-t border-aan-border bg-[linear-gradient(145deg,#fbf8f3_0%,#eef4fa_100%)] p-6 lg:border-s lg:border-t-0 sm:p-8">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isPackBooking(booking) ? (
+                            <>
+                              <span className="inline-flex rounded-full border border-[#d8c7aa] bg-[#fffaf2] px-3 py-1.5 text-xs font-bold text-[#8f744d]">
+                                {copy.packTitle}
+                              </span>
+
+                              {getPackSessionNumber(booking) && (
+                                <span className="inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1.5 text-xs font-bold text-aan-navy">
+                                  {copy.packSession}{" "}
+                                  {formatDigits(
+                                    getPackSessionNumber(booking) as number,
+                                  )}{" "}
+                                  {copy.packOf}{" "}
+                                  {formatDigits(
+                                    getPackForBooking(booking)?.sessions_total ||
+                                      4,
+                                  )}
+                                </span>
+                              )}
+
+                              <span className="text-xs font-bold text-aan-navy">
+                                {copy.packIncluded}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-sm font-bold text-aan-navy">
+                              {formatPrice(booking.price)}
+                            </span>
+                          )}
+
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${getStatusClasses(
+                              booking.status,
+                            )}`}
+                          >
+                            {getStatusLabel(booking.status)}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                           {booking.status === "paid" ? (
                             isPastBooking(booking) ? (
-                              <div className="rounded-2xl border border-aan-border bg-white/80 px-6 py-4 text-center font-bold text-aan-secondary">
+                              <span className="rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-2 text-xs font-bold text-aan-secondary">
                                 {copy.sessionPast}
-                              </div>
+                              </span>
                             ) : (
-                              <div className="space-y-3">
+                              <>
                                 {booking.zoom_join_url ? (
                                   <a
                                     href={booking.zoom_join_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                                    className="aan-cta inline-flex items-center justify-center rounded-xl px-4 py-2 text-xs font-bold text-white"
                                   >
                                     {copy.joinZoom}
                                   </a>
@@ -1573,7 +1589,7 @@ function PatientDashboardContent() {
                                   <button
                                     type="button"
                                     disabled
-                                    className="w-full cursor-not-allowed rounded-2xl bg-aan-button/40 px-6 py-4 font-bold text-white"
+                                    className="cursor-not-allowed rounded-xl bg-aan-button/40 px-4 py-2 text-xs font-bold text-white"
                                   >
                                     {copy.zoomNotReady}
                                   </button>
@@ -1589,10 +1605,8 @@ function PatientDashboardContent() {
                                           "request_reschedule",
                                         )
                                       }
-                                      disabled={
-                                        bookingActionId === booking.id
-                                      }
-                                      className="w-full rounded-2xl border border-aan-gold bg-white px-5 py-3 font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
+                                      disabled={bookingActionId === booking.id}
+                                      className="rounded-xl border border-aan-gold bg-white px-4 py-2 text-xs font-bold text-aan-navy transition hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       {bookingActionId === booking.id
                                         ? copy.changing
@@ -1608,45 +1622,37 @@ function PatientDashboardContent() {
                                             "cancel_and_refund",
                                           )
                                         }
-                                        disabled={
-                                          bookingActionId === booking.id
-                                        }
-                                        className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                        disabled={bookingActionId === booking.id}
+                                        className="rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         {bookingActionId === booking.id
                                           ? copy.cancelling
                                           : copy.cancelAndRefund}
                                       </button>
                                     )}
-
-                                    <p className="text-center text-xs leading-5 text-aan-secondary">
-                                      {isPackBooking(booking)
-                                        ? copy.packManageUntil
-                                        : copy.manageUntil}
-                                    </p>
                                   </>
                                 ) : (
-                                  <div className="rounded-2xl border border-aan-border bg-white/80 px-4 py-3 text-center text-xs leading-5 text-aan-secondary">
+                                  <span className="max-w-[230px] rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-center text-[11px] leading-4 text-aan-secondary">
                                     {hasValidScheduledStart(booking)
                                       ? copy.tooLate
                                       : copy.missingScheduledStart}
-                                  </div>
+                                  </span>
                                 )}
-                              </div>
+                              </>
                             )
                           ) : booking.status === "cancelled" ? (
-                            <span className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-center font-bold text-red-700">
+                            <span className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700">
                               {copy.cancelled}
                             </span>
                           ) : (
-                            <div className="space-y-3">
+                            <>
                               <Link
                                 href={`/payment?bookingId=${booking.id}&therapist=${encodeURIComponent(
                                   booking.therapist_name,
                                 )}&price=${booking.price}&slot=${encodeURIComponent(
                                   `${booking.slot_day} ${booking.slot_time}`,
                                 )}`}
-                                className="aan-cta flex w-full items-center justify-center rounded-2xl px-6 py-4 text-center font-bold text-white"
+                                className="aan-cta inline-flex items-center justify-center rounded-xl px-4 py-2 text-xs font-bold text-white"
                               >
                                 {copy.completePayment}
                               </Link>
@@ -1656,18 +1662,39 @@ function PatientDashboardContent() {
                                 onClick={() =>
                                   void cancelPendingBooking(booking)
                                 }
-                                disabled={
-                                  bookingActionId === booking.id
-                                }
-                                className="w-full rounded-2xl border border-red-200 bg-white px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={bookingActionId === booking.id}
+                                className="rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {bookingActionId === booking.id
                                   ? copy.cancellingPending
                                   : copy.cancelPending}
                               </button>
-                            </div>
+                            </>
                           )}
                         </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-aan-border/70 pt-3 text-[11px] text-aan-secondary">
+                        <span>
+                          <span className="font-bold text-aan-navy">
+                            {copy.booked}:
+                          </span>{" "}
+                          {formatBookedDate(booking.created_at)}
+                        </span>
+
+                        {isPackBooking(booking) && (
+                          <span>{copy.packNoExtraPayment}</span>
+                        )}
+
+                        {booking.status === "paid" &&
+                          !isPastBooking(booking) &&
+                          canPatientManageBooking(booking) && (
+                            <span>
+                              {isPackBooking(booking)
+                                ? copy.packManageUntil
+                                : copy.manageUntil}
+                            </span>
+                          )}
                       </div>
                     </article>
                   ))}
