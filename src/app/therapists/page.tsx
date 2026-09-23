@@ -639,6 +639,11 @@ export default function TherapistsPage() {
       language === "ar" &&
       therapist.full_name_ar?.trim()
     ) {
+      // Correction d’affichage ciblée : la donnée Supabase reste inchangée.
+      if (/\bzraika\b/i.test(therapist.full_name || "") &&
+          /زريقع/.test(therapist.full_name_ar)) {
+        return therapist.full_name_ar.trim().replace(/زريقع/g, "زريقة");
+      }
       return therapist.full_name_ar.trim();
     }
 
@@ -754,46 +759,25 @@ export default function TherapistsPage() {
           : "Group";
   };
 
-  const servicePriceLabel = (
-    service:
-      TherapistService,
-  ) => {
-    const locale =
-      language === "ar"
-        ? "ar-LB"
-        : language === "fr"
-          ? "fr-FR"
-          : "en-US";
-
-    const amount =
-      new Intl.NumberFormat(
-        locale,
-        {
-          style:
-            "currency",
-          currency:
-            "USD",
-          minimumFractionDigits:
-            0,
-          maximumFractionDigits:
-            2,
-        },
-      ).format(
-        service.price,
-      );
-
-    if (
-      service.price_per_participant
-    ) {
-      return language === "ar"
-        ? `${amount} / مشارك`
-        : language === "fr"
-          ? `${amount} / participant`
-          : `${amount} / participant`;
-    }
-
-    return amount;
-  };
+  const servicePriceAndDuration = (service: TherapistService) => (
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1" dir={isArabic ? "rtl" : "ltr"}>
+      <bdi dir="ltr" className="inline-block whitespace-nowrap [unicode-bidi:isolate]">
+        {new Intl.NumberFormat(language === "fr" ? "fr-FR" : "en-US", {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        }).format(service.price)}
+      </bdi>
+      {service.price_per_participant && (
+        <span className="whitespace-nowrap">/ {language === "ar" ? "مشارك" : "participant"}</span>
+      )}
+      <span aria-hidden="true">·</span>
+      <bdi dir="ltr" className="inline-block whitespace-nowrap [unicode-bidi:isolate]">
+        {new Intl.NumberFormat(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-US").format(service.duration_minutes)} min
+      </bdi>
+    </span>
+  );
 
   const labels =
     language === "ar"
@@ -1402,9 +1386,7 @@ export default function TherapistsPage() {
 
                           {!!therapist.experience_years && (
                             <p className="mt-2 text-sm font-bold text-aan-gold">
-                              {
-                                therapist.experience_years
-                              }
+                              <bdi dir="ltr" className="inline-block [unicode-bidi:isolate]">{new Intl.NumberFormat(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-US").format(therapist.experience_years)}</bdi>
                               +{" "}
                               {
                                 labels.years
@@ -1486,14 +1468,7 @@ export default function TherapistsPage() {
                                   </span>
 
                                   <span className="text-sm font-semibold text-aan-button">
-                                    {servicePriceLabel(
-                                      service,
-                                    )}{" "}
-                                    ·{" "}
-                                    {
-                                      service.duration_minutes
-                                    }{" "}
-                                    min
+                                    {servicePriceAndDuration(service)}
                                   </span>
                                 </div>
                               ),
@@ -1523,9 +1498,9 @@ export default function TherapistsPage() {
                                     }
                                     className="rounded-full border border-aan-border bg-[#fbf8f3] px-4 py-2 text-sm font-semibold text-aan-navy"
                                   >
-                                    {formatAvailabilityLabel(
-                                      slot,
-                                    )}
+                                    <bdi dir="auto" className="inline-block [unicode-bidi:isolate]">
+                                      {formatAvailabilityLabel(slot)}
+                                    </bdi>
                                   </span>
                                 ),
                               )}
@@ -1792,9 +1767,9 @@ export default function TherapistsPage() {
                             className="group flex min-h-14 items-center justify-center rounded-2xl border border-aan-border bg-white px-4 py-3 text-center text-base font-bold text-aan-navy shadow-sm transition hover:-translate-y-0.5 hover:border-aan-gold hover:bg-[#fbf8f3] hover:shadow-md"
                           >
                             <span>
-                              {formatAvailabilityTimeOnly(
-                                slot,
-                              )}
+                              <bdi dir="auto" className="inline-block [unicode-bidi:isolate]">
+                                {formatAvailabilityTimeOnly(slot)}
+                              </bdi>
                             </span>
                           </Link>
                         ),
@@ -2001,14 +1976,7 @@ export default function TherapistsPage() {
                             </p>
 
                             <p className="mt-1 text-sm font-semibold text-aan-button">
-                              {servicePriceLabel(
-                                service,
-                              )}{" "}
-                              ·{" "}
-                              {
-                                service.duration_minutes
-                              }{" "}
-                              min
+                              {servicePriceAndDuration(service)}
                             </p>
                           </div>
                         ),
@@ -2183,14 +2151,7 @@ export default function TherapistsPage() {
                             </p>
 
                             <p className="mt-1 text-sm font-semibold text-aan-button">
-                              {servicePriceLabel(
-                                service,
-                              )}{" "}
-                              ·{" "}
-                              {
-                                service.duration_minutes
-                              }{" "}
-                              min
+                              {servicePriceAndDuration(service)}
                             </p>
                           </div>
                         ),

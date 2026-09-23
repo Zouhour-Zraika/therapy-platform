@@ -1073,17 +1073,23 @@ function BookingContent() {
     }
   };
 
-  const formatTimeZoneName = (
-    timeZone: string,
-  ) => {
-    const offset =
-      getTimeZoneOffsetLabel(
+  // Intl traduit automatiquement le nom du fuseau dans la langue de l'interface.
+  // L'identifiant IANA reste inchangé pour les calculs et l'enregistrement.
+  const formatTimeZoneName = (timeZone: string) => {
+    const offset = getTimeZoneOffsetLabel(timeZone);
+    try {
+      const parts = new Intl.DateTimeFormat(getLocale(), {
         timeZone,
-      );
-
-    return offset
-      ? `${timeZone} (${offset})`
-      : timeZone;
+        timeZoneName: "longGeneric",
+      }).formatToParts(new Date());
+      const localizedName = parts.find((part) => part.type === "timeZoneName")?.value;
+      const name = localizedName && localizedName !== timeZone
+        ? localizedName
+        : timeZone;
+      return offset ? `${name} (${offset})` : name;
+    } catch {
+      return offset ? `${timeZone} (${offset})` : timeZone;
+    }
   };
 
   const formatSlotDate = (
@@ -3577,15 +3583,13 @@ function BookingContent() {
                                         <span className="block font-bold text-[#223748]">
                                           {getServiceLabel(service.service_type)}
                                         </span>
-                                        <span className="mt-2 block text-sm text-[#69747a]">
-                                          ${Number(service.price)} · {service.duration_minutes} min
-                                          {service.price_per_participant
-                                            ? language === "ar"
-                                              ? " / للمشارك"
-                                              : language === "fr"
-                                                ? " / participant"
-                                                : " / participant"
-                                            : ""}
+                                        <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#69747a]">
+                                          <bdi dir="ltr">{new Intl.NumberFormat(getLocale(), { style: "currency", currency: "USD" }).format(Number(service.price))}</bdi>
+                                          <span aria-hidden="true">·</span>
+                                          <span>{new Intl.NumberFormat(getLocale()).format(service.duration_minutes)} {language === "ar" ? "دقيقة" : "min"}</span>
+                                          {service.price_per_participant && (
+                                            <span>{language === "ar" ? "/ للمشارك" : "/ participant"}</span>
+                                          )}
                                         </span>
                                       </button>
                                     );
@@ -3659,11 +3663,11 @@ function BookingContent() {
                                   </span>
 
                                   <span className="mt-2 block text-2xl font-bold text-[#223748]">
-                                    ${Number(selectedService.price)}
+                                    <bdi dir="ltr">{new Intl.NumberFormat(getLocale(), { style: "currency", currency: "USD" }).format(Number(selectedService.price))}</bdi>
                                   </span>
 
                                   <span className="mt-2 block text-sm text-[#69747a]">
-                                    {selectedService.duration_minutes} min
+                                    {new Intl.NumberFormat(getLocale()).format(selectedService.duration_minutes)} {language === "ar" ? "دقيقة" : "min"}
                                   </span>
                                 </button>
 
