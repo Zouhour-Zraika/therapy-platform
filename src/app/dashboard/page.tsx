@@ -1244,6 +1244,24 @@ function PatientDashboardContent() {
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
 
+  // Traduit le libellé du fuseau IANA dans la langue de l’interface.
+  // Le fuseau technique et les calculs des rendez-vous restent inchangés.
+  const formatTimeZoneLabel = (timeZone: string) => {
+    try {
+      const parts = new Intl.DateTimeFormat(getLocale(), {
+        timeZone,
+        timeZoneName: "longGeneric",
+      }).formatToParts(new Date());
+
+      return (
+        parts.find((part) => part.type === "timeZoneName")?.value ||
+        timeZone
+      );
+    } catch {
+      return timeZone;
+    }
+  };
+
   const localTimeZone = getLocalTimeZone();
 
   return (
@@ -1533,7 +1551,7 @@ function PatientDashboardContent() {
                             <p className="mt-0.5 text-sm font-semibold text-aan-secondary">
                               {formatAppointmentTime(booking)}
                               {booking.scheduled_start && localTimeZone
-                                ? ` · ${localTimeZone}`
+                                ? ` · ${formatTimeZoneLabel(localTimeZone)}`
                                 : ""}
                             </p>
                           </div>
