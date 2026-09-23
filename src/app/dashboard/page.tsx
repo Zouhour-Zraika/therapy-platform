@@ -1301,17 +1301,6 @@ function PatientDashboardContent() {
         ? offsetPart.replace(/^GMT/, "UTC").replace(/^UTC$/, "UTC+0")
         : "";
       const localLabel = copy.localTime;
-      if (isArabic) {
-        // Intl traduit le nom du fuseau pour toutes les zones IANA prises en charge.
-        // "long" précise, lorsque disponible, le régime été/hiver à la date de la séance.
-        const arabicName = new Intl.DateTimeFormat("ar-LB", {
-          timeZone,
-          timeZoneName: "long",
-        })
-          .formatToParts(date)
-          .find((part) => part.type === "timeZoneName")?.value;
-        return `${localLabel} : ${arabicName || timeZone}${offset ? ` (${formatDigits(offset)})` : ""}`;
-      }
       return `${localLabel} : ${timeZone}${offset ? ` (${offset})` : ""}`;
     } catch {
       return `${copy.localTime} : ${timeZone}`;
