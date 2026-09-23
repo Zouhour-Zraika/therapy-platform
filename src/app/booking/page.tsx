@@ -1077,19 +1077,7 @@ function BookingContent() {
   // L'identifiant IANA reste inchangé pour les calculs et l'enregistrement.
   const formatTimeZoneName = (timeZone: string) => {
     const offset = getTimeZoneOffsetLabel(timeZone);
-    try {
-      const parts = new Intl.DateTimeFormat(getLocale(), {
-        timeZone,
-        timeZoneName: "longGeneric",
-      }).formatToParts(new Date());
-      const localizedName = parts.find((part) => part.type === "timeZoneName")?.value;
-      const name = localizedName && localizedName !== timeZone
-        ? localizedName
-        : timeZone;
-      return offset ? `${name} (${offset})` : name;
-    } catch {
-      return offset ? `${timeZone} (${offset})` : timeZone;
-    }
+    return offset ? `${timeZone} (${offset})` : timeZone;
   };
 
   const formatSlotDate = (
