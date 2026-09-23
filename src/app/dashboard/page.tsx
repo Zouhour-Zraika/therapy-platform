@@ -50,6 +50,7 @@ type PatientProfile = {
   date_of_birth: string | null;
   occupation: string | null;
   education_level: string | null;
+  preferred_timezone: string | null;
 };
 
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
@@ -72,6 +73,7 @@ function PatientDashboardContent() {
   const [errorMessage, setErrorMessage] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionsPage, setSessionsPage] = useState(1);
+  const [preferredTimeZone, setPreferredTimeZone] = useState("");
   const SESSIONS_PER_PAGE = 20;
   const [bookingActionId, setBookingActionId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState("");
@@ -494,7 +496,7 @@ function PatientDashboardContent() {
 
         supabase
           .from("profiles")
-          .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level")
+          .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level, preferred_timezone")
           .eq("id", user.id)
           .single(),
       ]);
@@ -512,6 +514,15 @@ function PatientDashboardContent() {
         setProfileError(copy.profileLoadError);
       } else if (profileData) {
         const loadedProfile = profileData as PatientProfile;
+        // Le profil synchronisé entre appareils prime sur le stockage local.
+        if (isValidTimeZone(loadedProfile.preferred_timezone)) {
+          setPreferredTimeZone(loadedProfile.preferred_timezone!);
+          try {
+            window.localStorage.setItem("aan_booking_timezone", loadedProfile.preferred_timezone!);
+          } catch {
+            // Le stockage local peut être désactivé ; Supabase reste la source de vérité.
+          }
+        }
         setPatientProfile(loadedProfile);
         setProfileName(loadedProfile.full_name || "");
         setProfileEmail(loadedProfile.email || user.email || "");
@@ -894,13 +905,39 @@ function PatientDashboardContent() {
     return "en-GB";
   };
 
-  const getLocalTimeZone = () => {
+  const isValidTimeZone = (value: string | null | undefined): value is string => {
+    if (!value) return false;
     try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      new Intl.DateTimeFormat("en-US", { timeZone: value });
+      return true;
     } catch {
-      return "";
+      return false;
     }
   };
+
+  const getLocalTimeZone = () => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    } catch {
+      return "UTC";
+    }
+  };
+
+  // Préférence enregistrée, puis choix local de /booking, puis fuseau du navigateur.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("aan_booking_timezone");
+      if (isValidTimeZone(saved)) {
+        setPreferredTimeZone(saved);
+        return;
+      }
+    } catch {
+      // Stockage local indisponible.
+    }
+    setPreferredTimeZone(getLocalTimeZone());
+  }, []);
+
+  const displayTimeZone = preferredTimeZone || getLocalTimeZone();
 
   /*
    * IMPORTANT :
@@ -917,6 +954,7 @@ function PatientDashboardContent() {
     return new Intl.DateTimeFormat(getLocale(), {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone: displayTimeZone,
     }).format(parsedDate);
   };
 
@@ -935,6 +973,7 @@ function PatientDashboardContent() {
           day: "numeric",
           month: "long",
           year: "numeric",
+          timeZone: displayTimeZone,
         }).format(scheduledDate);
       }
     }
@@ -954,6 +993,7 @@ function PatientDashboardContent() {
         const formatted = new Intl.DateTimeFormat(getLocale(), {
           hour: "2-digit",
           minute: "2-digit",
+          timeZone: displayTimeZone,
         }).format(scheduledDate);
 
         return formatDigits(formatted);
@@ -1244,25 +1284,30 @@ function PatientDashboardContent() {
     return "border-amber-200 bg-amber-50 text-amber-700";
   };
 
-  // Traduit le libellé du fuseau IANA dans la langue de l’interface.
-  // Le fuseau technique et les calculs des rendez-vous restent inchangés.
-  const formatTimeZoneLabel = (timeZone: string) => {
-    try {
-      const parts = new Intl.DateTimeFormat(getLocale(), {
-        timeZone,
-        timeZoneName: "longGeneric",
-      }).formatToParts(new Date());
+  // Affiche le fuseau réellement choisi et son décalage UTC à la date
+  // de la séance (y compris lors des changements d'heure été/hiver).
+  const formatTimeZoneLabel = (timeZone: string, scheduledStart: string) => {
+    const date = new Date(scheduledStart);
+    if (Number.isNaN(date.getTime())) return timeZone;
 
-      return (
-        parts.find((part) => part.type === "timeZoneName")?.value ||
-        timeZone
-      );
+    try {
+      const offsetPart = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        timeZoneName: "shortOffset",
+      })
+        .formatToParts(date)
+        .find((part) => part.type === "timeZoneName")?.value;
+      const offset = offsetPart
+        ? offsetPart.replace(/^GMT/, "UTC").replace(/^UTC$/, "UTC+0")
+        : "";
+      const localLabel = copy.localTime;
+      return `${localLabel} : ${timeZone}${offset ? ` (${offset})` : ""}`;
     } catch {
-      return timeZone;
+      return `${copy.localTime} : ${timeZone}`;
     }
   };
 
-  const localTimeZone = getLocalTimeZone();
+
 
   return (
     <ProtectedRoute allowedRoles={["patient"]}>
@@ -1550,8 +1595,8 @@ function PatientDashboardContent() {
                             </p>
                             <p className="mt-0.5 text-sm font-semibold text-aan-secondary">
                               {formatAppointmentTime(booking)}
-                              {booking.scheduled_start && localTimeZone
-                                ? ` · ${formatTimeZoneLabel(localTimeZone)}`
+                              {booking.scheduled_start && displayTimeZone
+                                ? ` · ${formatTimeZoneLabel(displayTimeZone, booking.scheduled_start)}`
                                 : ""}
                             </p>
                           </div>
