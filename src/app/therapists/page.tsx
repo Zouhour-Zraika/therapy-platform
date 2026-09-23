@@ -773,9 +773,10 @@ export default function TherapistsPage() {
         <span className="whitespace-nowrap">/ {language === "ar" ? "مشارك" : "participant"}</span>
       )}
       <span aria-hidden="true">·</span>
-      <bdi dir="ltr" className="inline-block whitespace-nowrap [unicode-bidi:isolate]">
-        {new Intl.NumberFormat(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-US").format(service.duration_minutes)} min
-      </bdi>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap" dir={isArabic ? "rtl" : "ltr"}>
+        <bdi dir="auto">{new Intl.NumberFormat(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-US").format(service.duration_minutes)}</bdi>
+        <span>{language === "ar" ? "دقيقة" : "min"}</span>
+      </span>
     </span>
   );
 
