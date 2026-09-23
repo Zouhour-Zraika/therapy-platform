@@ -359,33 +359,86 @@ function BookingContent() {
     setTimeZoneReady,
   ] = useState(false);
 
+  // Prevent a late profile fetch from replacing a choice made in the selector.
+  const timeZoneChangedByPatient = useRef(false);
+
   useEffect(() => {
-    try {
-      const savedTimeZone =
-        window.localStorage.getItem(
-          "aan_booking_timezone",
-        );
+    let cancelled = false;
 
-      const detectedTimeZone =
-        Intl.DateTimeFormat()
-          .resolvedOptions()
-          .timeZone;
+    const loadPreferredTimeZone = async () => {
+      let savedTimeZone = "";
+      let detectedTimeZone = "";
 
-      const initialTimeZone =
-        savedTimeZone ||
-        detectedTimeZone ||
-        "Asia/Beirut";
+      try {
+        savedTimeZone =
+          window.localStorage.getItem("aan_booking_timezone") || "";
+      } catch {
+        // Local storage can be disabled by the browser.
+      }
 
-      setSelectedTimeZone(
-        initialTimeZone,
-      );
-    } catch {
-      setSelectedTimeZone(
-        "Asia/Beirut",
-      );
-    } finally {
-      setTimeZoneReady(true);
-    }
+      try {
+        detectedTimeZone =
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      } catch {
+        // Keep the Beirut fallback below.
+      }
+
+      const fallbackTimeZone =
+        savedTimeZone || detectedTimeZone || "Asia/Beirut";
+
+      if (!cancelled) {
+        setSelectedTimeZone(fallbackTimeZone);
+        setTimeZoneReady(true);
+      }
+
+      // A signed-in patient's saved preference takes priority across devices.
+      // An anonymous visitor can still use the existing local selector.
+      try {
+        const { data: { user }, error: userError } =
+          await supabase.auth.getUser();
+        if (cancelled || userError || !user) return;
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("preferred_timezone")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (cancelled || profileError) {
+          if (profileError) {
+            console.error("Unable to load preferred time zone:", profileError);
+          }
+          return;
+        }
+
+        const preferredTimeZone = profile?.preferred_timezone;
+        if (preferredTimeZone && !timeZoneChangedByPatient.current) {
+          try {
+            new Intl.DateTimeFormat("en-US", {
+              timeZone: preferredTimeZone,
+            });
+            setSelectedTimeZone(preferredTimeZone);
+            try {
+              window.localStorage.setItem(
+                "aan_booking_timezone",
+                preferredTimeZone,
+              );
+            } catch {
+              // Profile preference remains available without local storage.
+            }
+          } catch {
+            console.error("Invalid preferred time zone:", preferredTimeZone);
+          }
+        }
+      } catch (error) {
+        console.error("Unable to load preferred time zone:", error);
+      }
+    };
+
+    void loadPreferredTimeZone();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1147,18 +1200,35 @@ function BookingContent() {
   const handleTimeZoneChange = (
     value: string,
   ) => {
-    setSelectedTimeZone(
-      value,
-    );
+    timeZoneChangedByPatient.current = true;
+    setSelectedTimeZone(value);
 
     try {
-      window.localStorage.setItem(
-        "aan_booking_timezone",
-        value,
-      );
+      window.localStorage.setItem("aan_booking_timezone", value);
     } catch {
       // The selector still works even if storage is unavailable.
     }
+
+    // Reuse the existing selector; persist its IANA identifier only for
+    // authenticated patients. Do not change scheduled_start or slot times.
+    void (async () => {
+      try {
+        const { data: { user }, error: userError } =
+          await supabase.auth.getUser();
+        if (userError || !user) return;
+
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({ preferred_timezone: value })
+          .eq("id", user.id);
+
+        if (updateError) {
+          console.error("Unable to save preferred time zone:", updateError);
+        }
+      } catch (error) {
+        console.error("Unable to save preferred time zone:", error);
+      }
+    })();
   };
 
   const getTimeZoneOffsetMs = (
@@ -4299,4 +4369,3 @@ export default function BookingPage() {
     </Suspense>
      );
 }
-
