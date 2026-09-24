@@ -1096,6 +1096,7 @@ async function sendPatientPackConfirmationEmail({
 
 async function sendTherapistBookingConfirmationEmail({
   to,
+  language,
   therapistName,
   patientEmail,
   scheduledStart,
@@ -1108,6 +1109,7 @@ async function sendTherapistBookingConfirmationEmail({
   bookingId,
 }: {
   to: string;
+  language: Language;
   therapistName?: string | null;
   patientEmail?: string | null;
   scheduledStart?: string | null;
@@ -1126,18 +1128,73 @@ async function sendTherapistBookingConfirmationEmail({
   }
 
   const resend = new Resend(resendApiKey);
+  const isArabic = language === "ar";
+
+  const labels =
+    language === "fr"
+      ? {
+          subject: "AAN Psychotherapy — Nouvelle réservation confirmée",
+          title: "Nouvelle réservation confirmée",
+          intro: (name: string) =>
+            `Bonjour ${name}, une nouvelle séance a été confirmée.`,
+          patient: "Patient",
+          appointment: "Rendez-vous",
+          service: "Service",
+          duration: "Durée",
+          booking: "Référence réservation",
+          platform: "Plateforme de séance",
+          start: "Démarrer la séance avec",
+          backup: "Lien de continuité",
+          footer: "Notification de nouvelle réservation",
+        }
+      : language === "ar"
+        ? {
+            subject: "AAN Psychotherapy — حجز جديد مؤكّد",
+            title: "حجز جديد مؤكّد",
+            intro: (name: string) =>
+              `مرحباً ${name}، تم تأكيد جلسة جديدة.`,
+            patient: "المريض",
+            appointment: "الموعد",
+            service: "الخدمة",
+            duration: "المدة",
+            booking: "مرجع الحجز",
+            platform: "منصة الجلسة",
+            start: "بدء الجلسة عبر",
+            backup: "رابط المتابعة",
+            footer: "إشعار حجز جديد",
+          }
+        : {
+            subject: "AAN Psychotherapy — New confirmed booking",
+            title: "New confirmed booking",
+            intro: (name: string) =>
+              `Hello ${name}, a new session has been confirmed.`,
+            patient: "Patient",
+            appointment: "Appointment",
+            service: "Service",
+            duration: "Duration",
+            booking: "Booking reference",
+            platform: "Session platform",
+            start: "Start session with",
+            backup: "Continuation link",
+            footer: "New booking notification",
+          };
 
   const safeTherapistName = escapeReceiptHtml(
-    therapistName || "Specialist",
+    therapistName || (language === "fr" ? "Spécialiste" : language === "ar" ? "المختص" : "Specialist"),
   );
-  const safePatientEmail = escapeReceiptHtml(
-    patientEmail || "—",
-  );
+  const safePatientEmail = escapeReceiptHtml(patientEmail || "—");
   const safeBookingId = escapeReceiptHtml(bookingId);
+
+  const appointmentLocale =
+    language === "fr"
+      ? "fr-FR"
+      : language === "ar"
+        ? "ar-LB"
+        : "en-GB";
 
   const safeAppointment = scheduledStart
     ? escapeReceiptHtml(
-        new Intl.DateTimeFormat("en-GB", {
+        new Intl.DateTimeFormat(appointmentLocale, {
           timeZone: "Asia/Beirut",
           weekday: "long",
           day: "numeric",
@@ -1150,13 +1207,40 @@ async function sendTherapistBookingConfirmationEmail({
       )
     : "—";
 
-  const safeService = escapeReceiptHtml(
-    serviceType || "Session",
-  );
+  const localizedService =
+    serviceType === "individual"
+      ? language === "fr"
+        ? "Séance individuelle"
+        : language === "ar"
+          ? "جلسة فردية"
+          : "Individual session"
+      : serviceType === "couples"
+        ? language === "fr"
+          ? "Séance de couple"
+          : language === "ar"
+            ? "جلسة زوجية"
+            : "Couples session"
+        : serviceType === "family"
+          ? language === "fr"
+            ? "Séance familiale"
+            : language === "ar"
+              ? "جلسة عائلية"
+              : "Family session"
+          : serviceType === "group"
+            ? language === "fr"
+              ? "Séance de groupe"
+              : language === "ar"
+                ? "جلسة جماعية"
+                : "Group session"
+            : serviceType || (language === "fr" ? "Séance" : language === "ar" ? "جلسة" : "Session");
+
+  const safeService = escapeReceiptHtml(localizedService);
 
   const safeDuration =
     typeof durationMinutes === "number"
-      ? `${escapeReceiptHtml(durationMinutes)} min`
+      ? language === "ar"
+        ? `${escapeReceiptHtml(durationMinutes)} دقيقة`
+        : `${escapeReceiptHtml(durationMinutes)} min`
       : "—";
 
   const providerName =
@@ -1164,19 +1248,24 @@ async function sendTherapistBookingConfirmationEmail({
       ? "Zoom"
       : meetingProvider === "google_meet"
         ? "Google Meet"
-        : "Session link";
+        : language === "fr"
+          ? "Lien de séance"
+          : language === "ar"
+            ? "رابط الجلسة"
+            : "Session link";
 
   const backupProviderName =
     backupMeetingProvider === "zoom"
       ? "Zoom"
       : backupMeetingProvider === "google_meet"
         ? "Google Meet"
-        : "Backup link";
+        : language === "fr"
+          ? "Lien de secours"
+          : language === "ar"
+            ? "الرابط الاحتياطي"
+            : "Backup link";
 
-  const safeMeetingUrl = meetingUrl
-    ? escapeReceiptHtml(meetingUrl)
-    : "";
-
+  const safeMeetingUrl = meetingUrl ? escapeReceiptHtml(meetingUrl) : "";
   const safeBackupMeetingUrl = backupMeetingUrl
     ? escapeReceiptHtml(backupMeetingUrl)
     : "";
@@ -1187,15 +1276,11 @@ async function sendTherapistBookingConfirmationEmail({
         <tr>
           <td style="padding:0 36px 22px;text-align:center;">
             <p style="margin:0 0 12px;color:#5f6f82;font-size:14px;">
-              Session platform: <strong>${escapeReceiptHtml(providerName)}</strong>
+              ${escapeReceiptHtml(labels.platform)}: <strong>${escapeReceiptHtml(providerName)}</strong>
             </p>
-            <a
-              href="${safeMeetingUrl}"
-              target="_blank"
-              rel="noopener noreferrer"
-              style="display:inline-block;background:#61779d;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 22px;border-radius:12px;"
-            >
-              Start session with ${escapeReceiptHtml(providerName)}
+            <a href="${safeMeetingUrl}" target="_blank" rel="noopener noreferrer"
+              style="display:inline-block;background:#61779d;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 22px;border-radius:12px;">
+              ${escapeReceiptHtml(labels.start)} ${escapeReceiptHtml(providerName)}
             </a>
           </td>
         </tr>
@@ -1208,14 +1293,10 @@ async function sendTherapistBookingConfirmationEmail({
         <tr>
           <td style="padding:0 36px 28px;text-align:center;">
             <p style="margin:0 0 10px;color:#5f6f82;font-size:13px;">
-              Continuation link (${escapeReceiptHtml(backupProviderName)})
+              ${escapeReceiptHtml(labels.backup)} (${escapeReceiptHtml(backupProviderName)})
             </p>
-            <a
-              href="${safeBackupMeetingUrl}"
-              target="_blank"
-              rel="noopener noreferrer"
-              style="color:#61779d;font-size:13px;word-break:break-all;"
-            >
+            <a href="${safeBackupMeetingUrl}" target="_blank" rel="noopener noreferrer"
+              style="color:#61779d;font-size:13px;word-break:break-all;">
               ${safeBackupMeetingUrl}
             </a>
           </td>
@@ -1225,61 +1306,36 @@ async function sendTherapistBookingConfirmationEmail({
 
   const html = `
     <!doctype html>
-    <html lang="en">
+    <html lang="${language}" dir="${isArabic ? "rtl" : "ltr"}">
       <body style="margin:0;padding:0;background:#f3efe9;font-family:Arial,Helvetica,sans-serif;color:#24364b;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px;">
           <tr>
             <td align="center">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border-radius:22px;overflow:hidden;">
                 <tr>
-                  <td style="padding:34px 36px 20px;">
-                    <p style="margin:0;color:#b5965c;font-size:12px;font-weight:700;letter-spacing:2.5px;">
-                      AAN PSYCHOTHERAPY
-                    </p>
-                    <h1 style="margin:14px 0 0;color:#24364b;font-size:30px;line-height:1.25;">
-                      New confirmed booking
-                    </h1>
-                    <p style="margin:14px 0 0;color:#5f6f82;font-size:16px;line-height:1.7;">
-                      Hello ${safeTherapistName}, a patient has completed payment and the session is confirmed.
-                    </p>
+                  <td style="padding:34px 36px 20px;text-align:${isArabic ? "right" : "left"};">
+                    <p style="margin:0;color:#b5965c;font-size:12px;font-weight:700;letter-spacing:2.5px;">AAN PSYCHOTHERAPY</p>
+                    <h1 style="margin:14px 0 0;color:#24364b;font-size:30px;line-height:1.25;">${escapeReceiptHtml(labels.title)}</h1>
+                    <p style="margin:14px 0 0;color:#5f6f82;font-size:16px;line-height:1.7;">${labels.intro(safeTherapistName)}</p>
                   </td>
                 </tr>
-
                 <tr>
                   <td style="padding:0 36px 28px;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f9f6f1;border-radius:18px;padding:20px;">
-                      <tr>
-                        <td style="padding:8px 0;font-weight:700;">Patient</td>
-                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safePatientEmail}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;font-weight:700;">Appointment</td>
-                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeAppointment}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;font-weight:700;">Service</td>
-                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeService}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;font-weight:700;">Duration</td>
-                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeDuration}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:8px 0;font-weight:700;">Booking reference</td>
-                        <td style="padding:8px 0;text-align:right;color:#5f6f82;word-break:break-all;">${safeBookingId}</td>
-                      </tr>
+                      <tr><td style="padding:8px 0;font-weight:700;">${escapeReceiptHtml(labels.patient)}</td><td style="padding:8px 0;text-align:${isArabic ? "left" : "right"};color:#5f6f82;">${safePatientEmail}</td></tr>
+                      <tr><td style="padding:8px 0;font-weight:700;">${escapeReceiptHtml(labels.appointment)}</td><td style="padding:8px 0;text-align:${isArabic ? "left" : "right"};color:#5f6f82;">${safeAppointment}</td></tr>
+                      <tr><td style="padding:8px 0;font-weight:700;">${escapeReceiptHtml(labels.service)}</td><td style="padding:8px 0;text-align:${isArabic ? "left" : "right"};color:#5f6f82;">${safeService}</td></tr>
+                      <tr><td style="padding:8px 0;font-weight:700;">${escapeReceiptHtml(labels.duration)}</td><td style="padding:8px 0;text-align:${isArabic ? "left" : "right"};color:#5f6f82;">${safeDuration}</td></tr>
+                      <tr><td style="padding:8px 0;font-weight:700;">${escapeReceiptHtml(labels.booking)}</td><td style="padding:8px 0;text-align:${isArabic ? "left" : "right"};color:#5f6f82;word-break:break-all;">${safeBookingId}</td></tr>
                     </table>
                   </td>
                 </tr>
-
                 ${meetingBlock}
                 ${backupBlock}
-
                 <tr>
                   <td style="padding:20px 36px;background:#24364b;text-align:center;">
                     <p style="margin:0;color:#ffffff;font-size:13px;line-height:1.7;">
-                      AAN Psychotherapy<br />
-                      New booking notification
+                      AAN Psychotherapy<br />${escapeReceiptHtml(labels.footer)}
                     </p>
                   </td>
                 </tr>
@@ -1296,7 +1352,7 @@ async function sendTherapistBookingConfirmationEmail({
       process.env.RESEND_FROM_EMAIL ||
       "AAN Psychotherapy <onboarding@resend.dev>",
     to,
-    subject: "AAN Psychotherapy — New confirmed booking",
+    subject: labels.subject,
     html,
   });
 
@@ -4920,6 +4976,23 @@ export async function POST(
           therapistAuthData.user?.email?.trim() ||
           "";
 
+        const rawTherapistLanguage =
+          therapistAuthData.user?.user_metadata?.language ||
+          therapistAuthData.user?.user_metadata?.locale ||
+          "";
+
+        const therapistLanguage: Language =
+          rawTherapistLanguage === "ar" ||
+          String(rawTherapistLanguage).toLowerCase().startsWith("ar")
+            ? "ar"
+            : rawTherapistLanguage === "fr" ||
+                String(rawTherapistLanguage).toLowerCase().startsWith("fr")
+              ? "fr"
+              : rawTherapistLanguage === "en" ||
+                  String(rawTherapistLanguage).toLowerCase().startsWith("en")
+                ? "en"
+                : language;
+
         if (!therapistEmail) {
           console.error(
             "Therapist booking notification skipped: therapist email is missing.",
@@ -4932,6 +5005,7 @@ export async function POST(
         } else {
           await sendTherapistBookingConfirmationEmail({
             to: therapistEmail,
+            language: therapistLanguage,
             therapistName,
             patientEmail:
               customerEmail || null,
