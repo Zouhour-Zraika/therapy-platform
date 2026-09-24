@@ -3,43 +3,25 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-export async function GET(
-  request: NextRequest,
-) {
+export async function GET(request: NextRequest) {
   try {
-    const authHeader =
-      request.headers.get(
-        "authorization",
-      );
+    const authHeader = request.headers.get("authorization");
 
-    if (
-      !authHeader?.startsWith(
-        "Bearer ",
-      )
-    ) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json(
         {
-          error:
-            "Non autorisé.",
+          error: "Non autorisé.",
         },
         { status: 401 },
       );
     }
 
-    const token =
-      authHeader.substring(7);
+    const token = authHeader.substring(7);
 
-    const supabaseUrl =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_URL;
-
-    const supabaseAnonKey =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceRoleKey =
-      process.env
-        .SUPABASE_SERVICE_ROLE_KEY;
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -48,86 +30,58 @@ export async function GET(
     ) {
       return NextResponse.json(
         {
-          error:
-            "Configuration Supabase incomplète.",
+          error: "Configuration Supabase incomplète.",
         },
         { status: 500 },
       );
     }
 
-    const supabaseAuth =
-      createClient(
-        supabaseUrl,
-        supabaseAnonKey,
-        {
-          auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
-          },
+    const supabaseAuth = createClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
         },
-      );
+      },
+    );
 
     const {
-      data: {
-        user,
-      },
+      data: { user },
       error: userError,
-    } =
-      await supabaseAuth.auth.getUser(
-        token,
-      );
+    } = await supabaseAuth.auth.getUser(token);
 
-    if (
-      userError ||
-      !user
-    ) {
+    if (userError || !user) {
       return NextResponse.json(
         {
-          error:
-            "Session invalide.",
+          error: "Session invalide.",
         },
         { status: 401 },
       );
     }
 
-    const supabaseAdmin =
-      createClient(
-        supabaseUrl,
-        supabaseServiceRoleKey,
-        {
-          auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
-          },
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
         },
-      );
+      },
+    );
 
-    const {
-      data,
-      error,
-    } =
-      await supabaseAdmin
-        .from(
-          "therapist_google_connections",
-        )
-        .select(
-          "google_email",
-        )
-        .eq(
-          "therapist_id",
-          user.id,
-        )
-        .maybeSingle();
+    const { data, error } = await supabaseAdmin
+      .from("therapist_google_connections")
+      .select(
+        "google_email, calendar_enabled, meet_enabled",
+      )
+      .eq("therapist_id", user.id)
+      .maybeSingle();
 
     if (error) {
-      console.error(
-        "Google status error:",
-        error,
-      );
+      console.error("Google status error:", error);
 
       return NextResponse.json(
         {
@@ -138,12 +92,23 @@ export async function GET(
       );
     }
 
+    const googleConnected = Boolean(data);
+
     return NextResponse.json({
-      connected:
-        Boolean(data),
+      connected: googleConnected,
+
+      googleConnected,
+
       googleEmail:
-        data?.google_email ||
-        null,
+        data?.google_email || null,
+
+      calendarConnected:
+        googleConnected &&
+        data?.calendar_enabled === true,
+
+      meetConnected:
+        googleConnected &&
+        data?.meet_enabled === true,
     });
   } catch (error) {
     console.error(

@@ -298,9 +298,13 @@ export default function TherapistDashboard() {
     setGoogleConnection,
   ] = useState<{
     connected: boolean;
+    calendarConnected: boolean;
+    meetConnected: boolean;
     email: string | null;
   }>({
     connected: false,
+    calendarConnected: false,
+    meetConnected: false,
     email: null,
   });
 
@@ -2770,35 +2774,31 @@ export default function TherapistDashboard() {
 
       try {
         const {
-          data: {
-            session,
-          },
-        } =
-          await supabase.auth.getSession();
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (!session) {
           setGoogleConnection({
             connected: false,
+            calendarConnected: false,
+            meetConnected: false,
             email: null,
           });
-
           return;
         }
 
-        const response =
-          await fetch(
-            "/api/google-calendar/status",
-            {
-              method: "GET",
-              headers: {
-                Authorization:
-                  `Bearer ${session.access_token}`,
-              },
+        const response = await fetch(
+          "/api/google-calendar/status",
+          {
+            method: "GET",
+            headers: {
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
-          );
+          },
+        );
 
-        const result =
-          await response.json();
+        const result = await response.json();
 
         if (!response.ok) {
           throw new Error(
@@ -2808,11 +2808,18 @@ export default function TherapistDashboard() {
         }
 
         setGoogleConnection({
-          connected:
-            Boolean(result.connected),
+          connected: Boolean(
+            result.googleConnected ??
+              result.connected,
+          ),
+          calendarConnected: Boolean(
+            result.calendarConnected,
+          ),
+          meetConnected: Boolean(
+            result.meetConnected,
+          ),
           email:
-            result.googleEmail ||
-            null,
+            result.googleEmail || null,
         });
       } catch (error) {
         console.error(
@@ -2822,153 +2829,138 @@ export default function TherapistDashboard() {
 
         setGoogleConnection({
           connected: false,
+          calendarConnected: false,
+          meetConnected: false,
           email: null,
         });
       } finally {
-        setGoogleStatusLoading(
-          false,
-        );
+        setGoogleStatusLoading(false);
       }
     };
 
 
-  const disconnectGoogleCalendar =
-    async () => {
+  const disconnectGoogleService =
+    async (
+      service:
+        | "calendar"
+        | "meet",
+    ) => {
+      const serviceLabel =
+        service === "calendar"
+          ? "Google Calendar"
+          : "Google Meet";
+
       const confirmed =
         window.confirm(
           language === "ar"
-            ? "هل تريد فصل حساب Google عن Platform Aan؟"
+            ? `هل تريد تعطيل ${serviceLabel}؟`
             : language === "fr"
-              ? "Déconnecter ce compte Google de Platform Aan ?"
-              : "Disconnect this Google account from Platform Aan?",
+              ? `Désactiver ${serviceLabel} ?`
+              : `Disable ${serviceLabel}?`,
         );
 
       if (!confirmed) {
         return;
       }
 
-      setDisconnectingGoogle(
-        true,
-      );
+      setDisconnectingGoogle(true);
 
       try {
         const {
-          data: {
-            session,
-          },
-          error:
-            sessionError,
-        } =
-          await supabase.auth.getSession();
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (
-          sessionError ||
-          !session
-        ) {
-          alert(
-            text.loginRequired,
-          );
-
+        if (sessionError || !session) {
+          alert(text.loginRequired);
           return;
         }
 
-        const response =
-          await fetch(
-            "/api/google-calendar/disconnect",
-            {
-              method: "POST",
-              headers: {
-                Authorization:
-                  `Bearer ${session.access_token}`,
-              },
+        const response = await fetch(
+          "/api/google-calendar/disconnect",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
-          );
+            body: JSON.stringify({
+              service,
+            }),
+          },
+        );
 
-        const result =
-          await response.json();
+        const result = await response.json();
 
         if (!response.ok) {
           throw new Error(
             result?.error ||
-              "Unable to disconnect Google.",
+              "Unable to update Google connection.",
           );
         }
 
-        setGoogleConnection({
-          connected: false,
-          email: null,
-        });
+        await getGoogleConnection();
 
         alert(
           language === "ar"
-            ? "تم فصل حساب Google."
+            ? `تم تعطيل ${serviceLabel}.`
             : language === "fr"
-              ? "Le compte Google a été déconnecté."
-              : "Google account disconnected.",
+              ? `${serviceLabel} a été désactivé.`
+              : `${serviceLabel} has been disabled.`,
         );
       } catch (error) {
         console.error(
-          "Google disconnect error:",
+          "Google service disconnect error:",
           error,
         );
 
         alert(
           language === "ar"
-            ? "تعذر فصل حساب Google."
+            ? `تعذر تعطيل ${serviceLabel}.`
             : language === "fr"
-              ? "Impossible de déconnecter le compte Google."
-              : "Unable to disconnect the Google account.",
+              ? `Impossible de désactiver ${serviceLabel}.`
+              : `Unable to disable ${serviceLabel}.`,
         );
       } finally {
-        setDisconnectingGoogle(
-          false,
-        );
+        setDisconnectingGoogle(false);
       }
     };
 
 
-  const connectGoogleCalendar =
-    async () => {
+  const connectGoogleService =
+    async (
+      service:
+        | "calendar"
+        | "meet",
+    ) => {
       setConnectingGoogle(true);
 
       try {
         const {
-          data: {
-            session,
-          },
-          error:
-            sessionError,
-        } =
-          await supabase.auth.getSession();
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (
-          sessionError ||
-          !session
-        ) {
-          alert(
-            text.loginRequired,
-          );
-
-          window.location.href =
-            "/login";
-
+        if (sessionError || !session) {
+          alert(text.loginRequired);
+          window.location.href = "/login";
           return;
         }
 
-        const response =
-          await fetch(
-            "/api/google-calendar/connect",
-            {
-              method: "GET",
-              headers: {
-                Authorization:
-                  `Bearer ${session.access_token}`,
-              },
+        const response = await fetch(
+          `/api/google-calendar/connect?service=${service}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization:
+                `Bearer ${session.access_token}`,
             },
-          );
+          },
+        );
 
-        const result =
-          await response.json();
+        const result = await response.json();
 
         if (
           !response.ok ||
@@ -2984,7 +2976,7 @@ export default function TherapistDashboard() {
           result.authorizationUrl;
       } catch (error) {
         console.error(
-          "Google Calendar connection error:",
+          "Google connection error:",
           error,
         );
 
@@ -2996,9 +2988,7 @@ export default function TherapistDashboard() {
               : "Unable to start the Google connection. Please try again.",
         );
       } finally {
-        setConnectingGoogle(
-          false,
-        );
+        setConnectingGoogle(false);
       }
     };
 
@@ -3244,14 +3234,14 @@ export default function TherapistDashboard() {
     ) => {
       if (
         provider === "google_meet" &&
-        !googleConnection.connected
+        !googleConnection.meetConnected
       ) {
         alert(
           language === "ar"
-            ? "يرجى ربط Google أولاً."
+            ? "يرجى ربط Google Meet أولاً."
             : language === "fr"
-              ? "Veuillez d’abord connecter Google."
-              : "Please connect Google first.",
+              ? "Veuillez d’abord connecter Google Meet."
+              : "Please connect Google Meet first.",
         );
         return;
       }
@@ -3615,7 +3605,7 @@ export default function TherapistDashboard() {
       booking: Booking,
     ) => {
       if (
-        googleConnection.connected &&
+        googleConnection.meetConnected &&
         zoomConnection.connected
       ) {
         setSessionProviderBooking(
@@ -3626,10 +3616,10 @@ export default function TherapistDashboard() {
 
       alert(
         language === "ar"
-          ? "يجب ربط Google وZoom لاستخدام منصة بديلة."
+          ? "يجب ربط Google Meet وZoom لاستخدام منصة بديلة."
           : language === "fr"
-            ? "Connectez Google et Zoom pour disposer d’une plateforme de secours."
-            : "Connect both Google and Zoom to use a backup platform.",
+            ? "Connectez Google Meet et Zoom pour disposer d’une plateforme de secours."
+            : "Connect both Google Meet and Zoom to use a backup platform.",
       );
     };
 
@@ -4385,151 +4375,243 @@ export default function TherapistDashboard() {
                   {googleStatusLoading ? (
                     <p className="text-sm font-semibold text-aan-secondary">
                       {language === "ar"
-                        ? "جارٍ التحقق من Google..."
+                        ? "جارٍ التحقق من Google Calendar..."
                         : language === "fr"
-                          ? "Vérification Google..."
-                          : "Checking Google..."}
+                          ? "Vérification de Google Calendar..."
+                          : "Checking Google Calendar..."}
                     </p>
-                  ) : googleConnection.connected ? (
+                  ) : (
                     <div className="space-y-3">
                       <div className="flex items-start gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbf8f3] text-sm font-black text-aan-gold">
-                          G
+                          C
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-emerald-700">
-                            {language === "ar"
-                              ? "Google متصل ✓"
-                              : language === "fr"
-                                ? "Google connecté ✓"
-                                : "Google connected ✓"}
+                          <p className="text-sm font-bold text-aan-navy">
+                            Google Calendar
                           </p>
 
-                          <p
-                            className="truncate text-[11px] text-aan-secondary"
-                            title={googleConnection.email || ""}
-                          >
-                            {googleConnection.email}
-                          </p>
+                          {googleConnection.email ? (
+                            <p
+                              className="truncate text-[11px] text-aan-secondary"
+                              title={googleConnection.email}
+                            >
+                              {googleConnection.email}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
-                        <p className="text-xs font-bold text-emerald-800">
-                          {language === "ar"
-                            ? "Google Calendar مفعّل ✓"
-                            : language === "fr"
-                              ? "Google Calendar activé ✓"
-                              : "Google Calendar enabled ✓"}
-                        </p>
+                      {googleConnection.calendarConnected ? (
+                        <>
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                            <p className="text-xs font-bold text-emerald-800">
+                              {language === "ar"
+                                ? "Google Calendar مفعّل ✓"
+                                : language === "fr"
+                                  ? "Google Calendar activé ✓"
+                                  : "Google Calendar enabled ✓"}
+                            </p>
 
-                        <p className="mt-1 text-[11px] leading-[1.45] text-aan-secondary">
-                          {language === "ar"
-                            ? "تُضاف جلساتك الجديدة تلقائياً إلى تقويم Google، سواء كنت تستخدم Google Meet أو Zoom."
-                            : language === "fr"
-                              ? "Vos nouvelles séances sont ajoutées automatiquement à votre Google Calendar, avec Google Meet ou Zoom."
-                              : "Your new sessions are added automatically to Google Calendar, whether you use Google Meet or Zoom."}
-                        </p>
+                            <p className="mt-1 text-[11px] leading-[1.45] text-aan-secondary">
+                              {language === "ar"
+                                ? "تُضاف جلساتك الجديدة تلقائياً إلى تقويم Google، بما في ذلك جلسات Zoom."
+                                : language === "fr"
+                                  ? "Vos nouvelles séances sont ajoutées automatiquement à Google Calendar, y compris les séances Zoom."
+                                  : "Your new sessions are added automatically to Google Calendar, including Zoom sessions."}
+                            </p>
 
-                        <div className="mt-3 flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                window.open(
+                                  "https://calendar.google.com/",
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                )
+                              }
+                              className="mt-3 text-left text-[11px] font-bold text-aan-navy underline underline-offset-2 transition hover:text-aan-gold"
+                            >
+                              {language === "ar"
+                                ? "فتح Google Calendar ↗"
+                                : language === "fr"
+                                  ? "Ouvrir Google Calendar ↗"
+                                  : "Open Google Calendar ↗"}
+                            </button>
+                          </div>
+
                           <button
                             type="button"
                             onClick={() =>
-                              window.open(
-                                "https://calendar.google.com/",
-                                "_blank",
-                                "noopener,noreferrer",
+                              void disconnectGoogleService(
+                                "calendar",
                               )
                             }
-                            className="text-left text-[11px] font-bold text-aan-navy underline underline-offset-2 transition hover:text-aan-gold"
+                            disabled={disconnectingGoogle}
+                            className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-xs font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
                           >
-                            {language === "ar"
-                              ? "فتح Google Calendar ↗"
-                              : language === "fr"
-                                ? "Ouvrir Google Calendar ↗"
-                                : "Open Google Calendar ↗"}
+                            {disconnectingGoogle
+                              ? language === "ar"
+                                ? "جارٍ التعطيل..."
+                                : language === "fr"
+                                  ? "Désactivation..."
+                                  : "Disabling..."
+                              : language === "ar"
+                                ? "تعطيل Google Calendar"
+                                : language === "fr"
+                                  ? "Déconnecter Google Calendar"
+                                  : "Disconnect Google Calendar"}
                           </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs leading-5 text-aan-secondary">
+                            {language === "ar"
+                              ? "فعّل التقويم لإضافة جلساتك تلقائياً إلى Google Calendar، حتى عند استخدام Zoom."
+                              : language === "fr"
+                                ? "Activez le calendrier pour ajouter automatiquement vos séances à Google Calendar, même lorsque vous utilisez Zoom."
+                                : "Enable Calendar to add sessions automatically to Google Calendar, even when you use Zoom."}
+                          </p>
 
                           <button
                             type="button"
                             onClick={() =>
-                              void connectGoogleCalendar()
+                              void connectGoogleService(
+                                "calendar",
+                              )
                             }
                             disabled={connectingGoogle}
-                            className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60"
+                            className="aan-button w-full py-2.5 text-sm disabled:opacity-60"
                           >
                             {connectingGoogle
                               ? language === "ar"
-                                ? "جارٍ إعادة الاتصال..."
+                                ? "جارٍ الاتصال..."
                                 : language === "fr"
-                                  ? "Reconnexion..."
-                                  : "Reconnecting..."
+                                  ? "Connexion..."
+                                  : "Connecting..."
                               : language === "ar"
-                                ? "إعادة ربط Google Calendar"
+                                ? "ربط Google Calendar"
                                 : language === "fr"
-                                  ? "Reconnecter Google Calendar"
-                                  : "Reconnect Google Calendar"}
+                                  ? "Connecter Google Calendar"
+                                  : "Connect Google Calendar"}
                           </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-aan-border bg-white p-4 shadow-[var(--aan-shadow-sm)]">
+                  {googleStatusLoading ? (
+                    <p className="text-sm font-semibold text-aan-secondary">
+                      {language === "ar"
+                        ? "جارٍ التحقق من Google Meet..."
+                        : language === "fr"
+                          ? "Vérification de Google Meet..."
+                          : "Checking Google Meet..."}
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f1f8f5] text-sm font-black text-emerald-700">
+                          M
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-aan-navy">
+                            Google Meet
+                          </p>
+
+                          {googleConnection.email ? (
+                            <p
+                              className="truncate text-[11px] text-aan-secondary"
+                              title={googleConnection.email}
+                            >
+                              {googleConnection.email}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void disconnectGoogleCalendar()
-                        }
-                        disabled={disconnectingGoogle}
-                        className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-xs font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
-                      >
-                        {disconnectingGoogle
-                          ? language === "ar"
-                            ? "جارٍ الفصل..."
-                            : language === "fr"
-                              ? "Déconnexion..."
-                              : "Disconnecting..."
-                          : language === "ar"
-                            ? "فصل Google"
-                            : language === "fr"
-                              ? "Déconnecter Google"
-                              : "Disconnect Google"}
-                      </button>
+                      {googleConnection.meetConnected ? (
+                        <>
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5">
+                            <p className="text-xs font-bold text-emerald-800">
+                              {language === "ar"
+                                ? "Google Meet مفعّل ✓"
+                                : language === "fr"
+                                  ? "Google Meet activé ✓"
+                                  : "Google Meet enabled ✓"}
+                            </p>
+
+                            <p className="mt-1 text-[11px] leading-[1.45] text-aan-secondary">
+                              {language === "ar"
+                                ? "يمكن لـ AAN إنشاء روابط Google Meet لجلساتك."
+                                : language === "fr"
+                                  ? "AAN peut créer des liens Google Meet pour vos séances."
+                                  : "AAN can create Google Meet links for your sessions."}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void disconnectGoogleService(
+                                "meet",
+                              )
+                            }
+                            disabled={disconnectingGoogle}
+                            className="w-full rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2 text-xs font-bold text-aan-navy transition hover:bg-white disabled:opacity-60"
+                          >
+                            {disconnectingGoogle
+                              ? language === "ar"
+                                ? "جارٍ التعطيل..."
+                                : language === "fr"
+                                  ? "Désactivation..."
+                                  : "Disabling..."
+                              : language === "ar"
+                                ? "تعطيل Google Meet"
+                                : language === "fr"
+                                  ? "Déconnecter Google Meet"
+                                  : "Disconnect Google Meet"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs leading-5 text-aan-secondary">
+                            {language === "ar"
+                              ? "فعّل Google Meet إذا كنت تريد استخدامه كمنصة فيديو للجلسات."
+                              : language === "fr"
+                                ? "Activez Google Meet si vous souhaitez l’utiliser comme plateforme vidéo pour vos séances."
+                                : "Enable Google Meet if you want to use it as a video platform for your sessions."}
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void connectGoogleService(
+                                "meet",
+                              )
+                            }
+                            disabled={connectingGoogle}
+                            className="aan-button w-full py-2.5 text-sm disabled:opacity-60"
+                          >
+                            {connectingGoogle
+                              ? language === "ar"
+                                ? "جارٍ الاتصال..."
+                                : language === "fr"
+                                  ? "Connexion..."
+                                  : "Connecting..."
+                              : language === "ar"
+                                ? "ربط Google Meet"
+                                : language === "fr"
+                                  ? "Connecter Google Meet"
+                                  : "Connect Google Meet"}
+                          </button>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <p className="font-bold text-aan-navy">
-                        Google Calendar
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-aan-secondary">
-                        {language === "ar"
-                          ? "اربط حساب Google لإضافة جلساتك تلقائياً إلى التقويم وإنشاء روابط Google Meet عند اختياره."
-                          : language === "fr"
-                            ? "Connectez Google pour ajouter automatiquement vos séances au calendrier et créer les liens Google Meet lorsque cette plateforme est choisie."
-                            : "Connect Google to add sessions automatically to Calendar and create Google Meet links when that platform is selected."}
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void connectGoogleCalendar()
-                        }
-                        disabled={connectingGoogle}
-                        className="aan-button mt-4 w-full py-2.5 text-sm disabled:opacity-60"
-                      >
-                        {connectingGoogle
-                          ? language === "ar"
-                            ? "جارٍ الاتصال..."
-                            : language === "fr"
-                              ? "Connexion..."
-                              : "Connecting..."
-                          : language === "ar"
-                            ? "ربط Google"
-                            : language === "fr"
-                              ? "Connecter Google"
-                              : "Connect Google"}
-                      </button>
-                    </>
                   )}
                 </div>
 
@@ -4666,7 +4748,7 @@ export default function TherapistDashboard() {
                       }
                       disabled={
                         savingPreferredMeetingProvider ||
-                        !googleConnection.connected
+                        !googleConnection.meetConnected
                       }
                       className={`rounded-xl border px-2 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         preferredMeetingProvider ===
@@ -4825,7 +4907,7 @@ export default function TherapistDashboard() {
                 </div>
 
                 <div className="flex flex-wrap gap-3 lg:hidden">
-                  {googleConnection.connected ? (
+                  {googleConnection.meetConnected ? (
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
                       Google connecté ✓
                     </span>
@@ -4833,7 +4915,9 @@ export default function TherapistDashboard() {
                     <button
                       type="button"
                       onClick={() =>
-                        void connectGoogleCalendar()
+                        void connectGoogleService(
+                          "meet",
+                        )
                       }
                       className="aan-button px-5 py-3"
                     >
@@ -5386,7 +5470,7 @@ export default function TherapistDashboard() {
                       displayedUpcomingBookings.map(
                         (booking) => {
                           const canStartSession =
-                            googleConnection.connected ||
+                            googleConnection.meetConnected ||
                             zoomConnection.connected;
 
                           return (
@@ -5480,7 +5564,7 @@ export default function TherapistDashboard() {
                                 </div>
 
                                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {googleConnection.connected &&
+                                  {googleConnection.meetConnected &&
                                   zoomConnection.connected ? (
                                     <button
                                       type="button"
@@ -5516,7 +5600,7 @@ export default function TherapistDashboard() {
                                       booking.id
                                     }
                                     className={`w-full rounded-xl border border-aan-gold bg-white px-3 py-2.5 text-sm font-semibold text-aan-navy transition hover:bg-[#fffaf2] disabled:cursor-not-allowed disabled:opacity-60 ${
-                                      !googleConnection.connected ||
+                                      !googleConnection.meetConnected ||
                                       !zoomConnection.connected
                                         ? "sm:col-span-2"
                                         : ""
@@ -6483,7 +6567,7 @@ export default function TherapistDashboard() {
               </p>
 
               <div className="mt-6 grid gap-3">
-                {googleConnection.connected ? (
+                {googleConnection.meetConnected ? (
                   <button
                     type="button"
                     onClick={() =>

@@ -3,43 +3,27 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-export async function POST(
-  request: NextRequest,
-) {
-  try {
-    const authHeader =
-      request.headers.get(
-        "authorization",
-      );
+type GoogleService = "calendar" | "meet";
 
-    if (
-      !authHeader?.startsWith(
-        "Bearer ",
-      )
-    ) {
+export async function POST(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get("authorization");
+
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json(
-        {
-          error:
-            "Non autorisé.",
-        },
+        { error: "Non autorisé." },
         { status: 401 },
       );
     }
 
-    const token =
-      authHeader.substring(7);
+    const token = authHeader.substring(7);
 
     const supabaseUrl =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_URL;
-
+      process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const supabaseServiceRoleKey =
-      process.env
-        .SUPABASE_SERVICE_ROLE_KEY;
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -55,101 +39,208 @@ export async function POST(
       );
     }
 
-    const supabaseAuth =
-      createClient(
-        supabaseUrl,
-        supabaseAnonKey,
-        {
-          auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
-          },
+    const supabaseAuth = createClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
         },
-      );
+      },
+    );
 
     const {
-      data: {
-        user,
-      },
+      data: { user },
       error: userError,
-    } =
-      await supabaseAuth.auth.getUser(
-        token,
-      );
+    } = await supabaseAuth.auth.getUser(token);
 
-    if (
-      userError ||
-      !user
-    ) {
+    if (userError || !user) {
       return NextResponse.json(
-        {
-          error:
-            "Session invalide.",
-        },
+        { error: "Session invalide." },
         { status: 401 },
       );
     }
 
-    const supabaseAdmin =
-      createClient(
-        supabaseUrl,
-        supabaseServiceRoleKey,
+    let body: {
+      service?: GoogleService;
+    } = {};
+
+    try {
+      body = await request.json();
+    } catch {
+      // Compatibilité avec l'ancien dashboard :
+      // sans service explicite, on déconnecte tout Google.
+    }
+
+    const service = body.service;
+
+    if (
+      service !== undefined &&
+      service !== "calendar" &&
+      service !== "meet"
+    ) {
+      return NextResponse.json(
         {
-          auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
-          },
+          error:
+            "Service Google invalide.",
         },
+        { status: 400 },
       );
+    }
+
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      },
+    );
 
     const {
       data: connection,
       error: connectionError,
-    } =
-      await supabaseAdmin
-        .from(
-          "therapist_google_connections",
-        )
-        .select(
-          "access_token, refresh_token",
-        )
-        .eq(
-          "therapist_id",
-          user.id,
-        )
-        .maybeSingle();
+    } = await supabaseAdmin
+      .from("therapist_google_connections")
+      .select(
+        `
+          access_token,
+          refresh_token,
+          calendar_enabled,
+          meet_enabled
+        `,
+      )
+      .eq("therapist_id", user.id)
+      .maybeSingle();
 
     if (connectionError) {
       throw connectionError;
     }
 
+    if (!connection) {
+      return NextResponse.json({
+        success: true,
+        googleConnected: false,
+        calendarConnected: false,
+        meetConnected: false,
+      });
+    }
+
+    /*
+     * Nouveau fonctionnement :
+     *
+     * service = "calendar"
+     *   -> désactive uniquement Calendar.
+     *
+     * service = "meet"
+     *   -> désactive uniquement Meet.
+     *
+     * Aucun service
+     *   -> ancien comportement :
+     *      déconnexion Google complète.
+     */
+
+    if (service === "calendar") {
+      const { error: updateError } =
+        await supabaseAdmin
+          .from(
+            "therapist_google_connections",
+          )
+          .update({
+            calendar_enabled: false,
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "therapist_id",
+            user.id,
+          );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return NextResponse.json({
+        success: true,
+        googleConnected: true,
+        calendarConnected: false,
+        meetConnected:
+          connection.meet_enabled === true,
+      });
+    }
+
+    if (service === "meet") {
+      const { error: updateError } =
+        await supabaseAdmin
+          .from(
+            "therapist_google_connections",
+          )
+          .update({
+            meet_enabled: false,
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "therapist_id",
+            user.id,
+          );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      return NextResponse.json({
+        success: true,
+        googleConnected: true,
+        calendarConnected:
+          connection.calendar_enabled ===
+          true,
+        meetConnected: false,
+      });
+    }
+
+    /*
+     * Compatibilité temporaire avec
+     * l'ancien bouton "Déconnecter Google".
+     *
+     * Ici seulement, on révoque réellement
+     * l'autorisation Google et on supprime
+     * la connexion.
+     */
     const tokenToRevoke =
-      connection?.refresh_token ||
-      connection?.access_token ||
+      connection.refresh_token ||
+      connection.access_token ||
       null;
 
     if (tokenToRevoke) {
       try {
-        await fetch(
-          "https://oauth2.googleapis.com/revoke",
-          {
-            method:
-              "POST",
-            headers: {
-              "Content-Type":
-                "application/x-www-form-urlencoded",
+        const revokeResponse =
+          await fetch(
+            "https://oauth2.googleapis.com/revoke",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/x-www-form-urlencoded",
+              },
+              body:
+                new URLSearchParams({
+                  token:
+                    tokenToRevoke,
+                }),
             },
-            body:
-              new URLSearchParams({
-                token:
-                  tokenToRevoke,
-              }),
-          },
-        );
+          );
+
+        if (!revokeResponse.ok) {
+          console.error(
+            "Google revoke failed:",
+            revokeResponse.status,
+            await revokeResponse.text(),
+          );
+        }
       } catch (error) {
         console.error(
           "Google revoke request error:",
@@ -158,9 +249,7 @@ export async function POST(
       }
     }
 
-    const {
-      error: deleteError,
-    } =
+    const { error: deleteError } =
       await supabaseAdmin
         .from(
           "therapist_google_connections",
@@ -177,6 +266,9 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
+      googleConnected: false,
+      calendarConnected: false,
+      meetConnected: false,
     });
   } catch (error) {
     console.error(
@@ -187,7 +279,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "Impossible de déconnecter le compte Google.",
+          "Impossible de modifier la connexion Google.",
       },
       { status: 500 },
     );

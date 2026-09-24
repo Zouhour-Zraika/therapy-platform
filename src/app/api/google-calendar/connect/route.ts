@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 const GOOGLE_AUTH_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
 
+type GoogleService = "calendar" | "meet";
+
 type SpecialistRow = {
   id: string;
   work_status:
@@ -16,24 +18,15 @@ type SpecialistRow = {
     | null;
 };
 
-export async function GET(
-  request: NextRequest,
-) {
+export async function GET(request: NextRequest) {
   try {
     const authHeader =
-      request.headers.get(
-        "authorization",
-      );
+      request.headers.get("authorization");
 
-    if (
-      !authHeader?.startsWith(
-        "Bearer ",
-      )
-    ) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json(
         {
-          error:
-            "Non autorisé.",
+          error: "Non autorisé.",
         },
         { status: 401 },
       );
@@ -42,17 +35,48 @@ export async function GET(
     const token =
       authHeader.substring(7);
 
+    /*
+     * Service demandé par le dashboard.
+     *
+     * calendar = activation Google Calendar
+     * meet     = activation Google Meet
+     *
+     * Sans paramètre, on conserve temporairement
+     * le comportement historique en utilisant
+     * Calendar.
+     */
+    const requestedService =
+      request.nextUrl.searchParams.get(
+        "service",
+      );
+
+    const service: GoogleService =
+      requestedService === "meet"
+        ? "meet"
+        : "calendar";
+
+    if (
+      requestedService &&
+      requestedService !== "calendar" &&
+      requestedService !== "meet"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Service Google invalide.",
+        },
+        { status: 400 },
+      );
+    }
+
     const supabaseUrl =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_URL;
+      process.env.NEXT_PUBLIC_SUPABASE_URL;
 
     const supabaseAnonKey =
-      process.env
-        .NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     const supabaseServiceRoleKey =
-      process.env
-        .SUPABASE_SERVICE_ROLE_KEY;
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !supabaseUrl ||
@@ -69,8 +93,8 @@ export async function GET(
     }
 
     /*
-     * Vérifie le JWT Supabase envoyé
-     * par le dashboard.
+     * Vérification du JWT Supabase
+     * envoyé par le dashboard.
      */
     const supabaseAuth =
       createClient(
@@ -78,10 +102,8 @@ export async function GET(
         supabaseAnonKey,
         {
           auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
+            persistSession: false,
+            autoRefreshToken: false,
           },
         },
       );
@@ -94,39 +116,17 @@ export async function GET(
         token,
       );
 
-    if (
-      userError ||
-      !user
-    ) {
+    if (userError || !user) {
       return NextResponse.json(
         {
-          error:
-            "Session invalide.",
+          error: "Session invalide.",
         },
         { status: 401 },
       );
     }
 
     /*
-     * Lecture serveur du profil spécialiste.
-     *
-     * La Service Role ne quitte jamais
-     * cette route serveur.
-     *
-     * IMPORTANT :
-     * on ne dépend plus de
-     * profiles.role === "therapist"
-     * ni de profiles.role === "admin".
-     *
-     * Pour cette fonction clinique,
-     * la source de vérité est la présence
-     * de l'utilisateur dans public.therapists.
-     *
-     * Cela permet notamment à un compte
-     * admin + spécialiste d'utiliser
-     * Google Calendar, tandis qu'un admin
-     * purement administratif sans ligne
-     * dans therapists reste bloqué.
+     * Vérification serveur du spécialiste.
      */
     const supabaseAdmin =
       createClient(
@@ -134,10 +134,8 @@ export async function GET(
         supabaseServiceRoleKey,
         {
           auth: {
-            persistSession:
-              false,
-            autoRefreshToken:
-              false,
+            persistSession: false,
+            autoRefreshToken: false,
           },
         },
       );
@@ -151,10 +149,7 @@ export async function GET(
         .select(
           "id, work_status",
         )
-        .eq(
-          "id",
-          user.id,
-        )
+        .eq("id", user.id)
         .maybeSingle<SpecialistRow>();
 
     if (specialistError) {
@@ -182,16 +177,6 @@ export async function GET(
       );
     }
 
-    /*
-     * active
-     * → accès normal
-     *
-     * leaving
-     * → accès encore autorisé
-     *
-     * inactive
-     * → accès clinique refusé
-     */
     if (
       specialist.work_status ===
       "inactive"
@@ -206,17 +191,12 @@ export async function GET(
     }
 
     const clientId =
-      process.env
-        .GOOGLE_CLIENT_ID;
+      process.env.GOOGLE_CLIENT_ID;
 
     const redirectUri =
-      process.env
-        .GOOGLE_REDIRECT_URI;
+      process.env.GOOGLE_REDIRECT_URI;
 
-    if (
-      !clientId ||
-      !redirectUri
-    ) {
+    if (!clientId || !redirectUri) {
       return NextResponse.json(
         {
           error:
@@ -227,8 +207,7 @@ export async function GET(
     }
 
     /*
-     * State aléatoire pour protéger
-     * le retour OAuth.
+     * Protection OAuth contre les attaques CSRF.
      */
     const state =
       crypto
@@ -236,12 +215,18 @@ export async function GET(
         .toString("hex");
 
     /*
-     * openid + email + profile permettent
-     * au callback de récupérer l'adresse
-     * Google connectée.
+     * Calendar et Meet utilisent la même
+     * autorisation Google côté technique.
      *
-     * calendar.events permet à AAN de créer
-     * les événements Calendar et les liens Meet.
+     * calendar.events permet :
+     * - de créer les événements Calendar ;
+     * - de créer les conférences Google Meet.
+     *
+     * L'indépendance Calendar / Meet est donc
+     * gérée dans AAN avec :
+     *
+     * calendar_enabled
+     * meet_enabled
      */
     const scope = [
       "openid",
@@ -253,17 +238,12 @@ export async function GET(
     const authorizationUrl =
       `${GOOGLE_AUTH_URL}?${new URLSearchParams(
         {
-          client_id:
-            clientId,
-          redirect_uri:
-            redirectUri,
-          response_type:
-            "code",
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          response_type: "code",
           scope,
-          access_type:
-            "offline",
-          prompt:
-            "consent",
+          access_type: "offline",
+          prompt: "consent",
           include_granted_scopes:
             "true",
           state,
@@ -273,8 +253,12 @@ export async function GET(
     const response =
       NextResponse.json({
         authorizationUrl,
+        service,
       });
 
+    /*
+     * Le callback vérifiera ces cookies.
+     */
     response.cookies.set(
       "google_oauth_state",
       state,
@@ -290,6 +274,23 @@ export async function GET(
     response.cookies.set(
       "google_oauth_user",
       user.id,
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 600,
+        path: "/",
+      },
+    );
+
+    /*
+     * Nouveau :
+     * permet au callback de savoir
+     * quel service AAN doit activer.
+     */
+    response.cookies.set(
+      "google_oauth_service",
+      service,
       {
         httpOnly: true,
         secure: true,
