@@ -4729,6 +4729,15 @@ export async function POST(
       string | null =
       null;
 
+    /*
+     * Sert aussi de garde d'idempotence pour les e-mails.
+     * Si un autre endpoint a déjà marqué le booking "paid"
+     * juste avant le webhook Stripe, le nouveau reçu prouve
+     * que CE webhook traite le paiement pour la première fois.
+     */
+    let paymentReceiptWasCreated =
+      false;
+
     try {
       const {
         receipt:
@@ -4773,6 +4782,9 @@ export async function POST(
       paymentReceiptNumber =
         paymentReceipt
           .receipt_number;
+
+      paymentReceiptWasCreated =
+        paymentReceiptCreated;
 
       if (
         paymentReceiptCreated &&
@@ -4846,7 +4858,8 @@ export async function POST(
      */
 
     if (
-      !bookingWasAlreadyPaid &&
+      (!bookingWasAlreadyPaid ||
+        paymentReceiptWasCreated) &&
       customerEmail
     ) {
       const siteUrl =
@@ -4956,7 +4969,8 @@ export async function POST(
      * =======================================================
      */
     if (
-      !bookingWasAlreadyPaid &&
+      (!bookingWasAlreadyPaid ||
+        paymentReceiptWasCreated) &&
       updatedBooking.therapist_id
     ) {
       try {
