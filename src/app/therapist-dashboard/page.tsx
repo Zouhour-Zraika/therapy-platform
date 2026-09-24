@@ -4432,23 +4432,46 @@ export default function TherapistDashboard() {
                               : "Your new sessions are added automatically to Google Calendar, whether you use Google Meet or Zoom."}
                         </p>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            window.open(
-                              "https://calendar.google.com/",
-                              "_blank",
-                              "noopener,noreferrer",
-                            )
-                          }
-                          className="mt-2 text-[11px] font-bold text-aan-navy underline underline-offset-2 transition hover:text-aan-gold"
-                        >
-                          {language === "ar"
-                            ? "فتح Google Calendar ↗"
-                            : language === "fr"
-                              ? "Ouvrir Google Calendar ↗"
-                              : "Open Google Calendar ↗"}
-                        </button>
+                        <div className="mt-3 flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                "https://calendar.google.com/",
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                            className="text-left text-[11px] font-bold text-aan-navy underline underline-offset-2 transition hover:text-aan-gold"
+                          >
+                            {language === "ar"
+                              ? "فتح Google Calendar ↗"
+                              : language === "fr"
+                                ? "Ouvrir Google Calendar ↗"
+                                : "Open Google Calendar ↗"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void connectGoogleCalendar()
+                            }
+                            disabled={connectingGoogle}
+                            className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60"
+                          >
+                            {connectingGoogle
+                              ? language === "ar"
+                                ? "جارٍ إعادة الاتصال..."
+                                : language === "fr"
+                                  ? "Reconnexion..."
+                                  : "Reconnecting..."
+                              : language === "ar"
+                                ? "إعادة ربط Google Calendar"
+                                : language === "fr"
+                                  ? "Reconnecter Google Calendar"
+                                  : "Reconnect Google Calendar"}
+                          </button>
+                        </div>
                       </div>
 
                       <button
