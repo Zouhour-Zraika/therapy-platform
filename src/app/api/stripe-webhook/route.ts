@@ -1093,6 +1093,223 @@ async function sendPatientPackConfirmationEmail({
   return data;
 }
 
+
+async function sendTherapistBookingConfirmationEmail({
+  to,
+  therapistName,
+  patientEmail,
+  scheduledStart,
+  serviceType,
+  durationMinutes,
+  meetingProvider,
+  meetingUrl,
+  backupMeetingProvider,
+  backupMeetingUrl,
+  bookingId,
+}: {
+  to: string;
+  therapistName?: string | null;
+  patientEmail?: string | null;
+  scheduledStart?: string | null;
+  serviceType?: string | null;
+  durationMinutes?: number | null;
+  meetingProvider?: string | null;
+  meetingUrl?: string | null;
+  backupMeetingProvider?: string | null;
+  backupMeetingUrl?: string | null;
+  bookingId: string;
+}) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    throw new Error("RESEND_API_KEY is missing.");
+  }
+
+  const resend = new Resend(resendApiKey);
+
+  const safeTherapistName = escapeReceiptHtml(
+    therapistName || "Specialist",
+  );
+  const safePatientEmail = escapeReceiptHtml(
+    patientEmail || "—",
+  );
+  const safeBookingId = escapeReceiptHtml(bookingId);
+
+  const safeAppointment = scheduledStart
+    ? escapeReceiptHtml(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Beirut",
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date(scheduledStart)),
+      )
+    : "—";
+
+  const safeService = escapeReceiptHtml(
+    serviceType || "Session",
+  );
+
+  const safeDuration =
+    typeof durationMinutes === "number"
+      ? `${escapeReceiptHtml(durationMinutes)} min`
+      : "—";
+
+  const providerName =
+    meetingProvider === "zoom"
+      ? "Zoom"
+      : meetingProvider === "google_meet"
+        ? "Google Meet"
+        : "Session link";
+
+  const backupProviderName =
+    backupMeetingProvider === "zoom"
+      ? "Zoom"
+      : backupMeetingProvider === "google_meet"
+        ? "Google Meet"
+        : "Backup link";
+
+  const safeMeetingUrl = meetingUrl
+    ? escapeReceiptHtml(meetingUrl)
+    : "";
+
+  const safeBackupMeetingUrl = backupMeetingUrl
+    ? escapeReceiptHtml(backupMeetingUrl)
+    : "";
+
+  const meetingBlock =
+    safeMeetingUrl
+      ? `
+        <tr>
+          <td style="padding:0 36px 22px;text-align:center;">
+            <p style="margin:0 0 12px;color:#5f6f82;font-size:14px;">
+              Session platform: <strong>${escapeReceiptHtml(providerName)}</strong>
+            </p>
+            <a
+              href="${safeMeetingUrl}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display:inline-block;background:#61779d;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 22px;border-radius:12px;"
+            >
+              Start session with ${escapeReceiptHtml(providerName)}
+            </a>
+          </td>
+        </tr>
+      `
+      : "";
+
+  const backupBlock =
+    safeBackupMeetingUrl
+      ? `
+        <tr>
+          <td style="padding:0 36px 28px;text-align:center;">
+            <p style="margin:0 0 10px;color:#5f6f82;font-size:13px;">
+              Continuation link (${escapeReceiptHtml(backupProviderName)})
+            </p>
+            <a
+              href="${safeBackupMeetingUrl}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="color:#61779d;font-size:13px;word-break:break-all;"
+            >
+              ${safeBackupMeetingUrl}
+            </a>
+          </td>
+        </tr>
+      `
+      : "";
+
+  const html = `
+    <!doctype html>
+    <html lang="en">
+      <body style="margin:0;padding:0;background:#f3efe9;font-family:Arial,Helvetica,sans-serif;color:#24364b;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:680px;background:#ffffff;border-radius:22px;overflow:hidden;">
+                <tr>
+                  <td style="padding:34px 36px 20px;">
+                    <p style="margin:0;color:#b5965c;font-size:12px;font-weight:700;letter-spacing:2.5px;">
+                      AAN PSYCHOTHERAPY
+                    </p>
+                    <h1 style="margin:14px 0 0;color:#24364b;font-size:30px;line-height:1.25;">
+                      New confirmed booking
+                    </h1>
+                    <p style="margin:14px 0 0;color:#5f6f82;font-size:16px;line-height:1.7;">
+                      Hello ${safeTherapistName}, a patient has completed payment and the session is confirmed.
+                    </p>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:0 36px 28px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f9f6f1;border-radius:18px;padding:20px;">
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;">Patient</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safePatientEmail}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;">Appointment</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeAppointment}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;">Service</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeService}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;">Duration</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;">${safeDuration}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;font-weight:700;">Booking reference</td>
+                        <td style="padding:8px 0;text-align:right;color:#5f6f82;word-break:break-all;">${safeBookingId}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                ${meetingBlock}
+                ${backupBlock}
+
+                <tr>
+                  <td style="padding:20px 36px;background:#24364b;text-align:center;">
+                    <p style="margin:0;color:#ffffff;font-size:13px;line-height:1.7;">
+                      AAN Psychotherapy<br />
+                      New booking notification
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const { data, error } = await resend.emails.send({
+    from:
+      process.env.RESEND_FROM_EMAIL ||
+      "AAN Psychotherapy <onboarding@resend.dev>",
+    to,
+    subject: "AAN Psychotherapy — New confirmed booking",
+    html,
+  });
+
+  if (error) {
+    throw new Error(
+      error.message ||
+        "Unable to send therapist booking confirmation email.",
+    );
+  }
+
+  return data;
+}
+
 async function refundExpiredCheckoutPayment({
   stripe,
   session,
@@ -4668,6 +4885,94 @@ export async function POST(
         console.error(
           "Booking confirmation email request failed:",
           emailError,
+        );
+      }
+    }
+
+
+    /*
+     * =======================================================
+     * Prévenir le spécialiste une seule fois.
+     *
+     * L'adresse e-mail est lue directement depuis Supabase Auth
+     * avec le therapist_id du booking. Elle n'est jamais fournie
+     * par le navigateur/patient.
+     * =======================================================
+     */
+    if (
+      !bookingWasAlreadyPaid &&
+      updatedBooking.therapist_id
+    ) {
+      try {
+        const {
+          data: therapistAuthData,
+          error: therapistAuthError,
+        } =
+          await supabaseAdmin.auth.admin.getUserById(
+            updatedBooking.therapist_id,
+          );
+
+        if (therapistAuthError) {
+          throw therapistAuthError;
+        }
+
+        const therapistEmail =
+          therapistAuthData.user?.email?.trim() ||
+          "";
+
+        if (!therapistEmail) {
+          console.error(
+            "Therapist booking notification skipped: therapist email is missing.",
+            {
+              bookingId,
+              therapistId:
+                updatedBooking.therapist_id,
+            },
+          );
+        } else {
+          await sendTherapistBookingConfirmationEmail({
+            to: therapistEmail,
+            therapistName,
+            patientEmail:
+              customerEmail || null,
+            scheduledStart:
+              updatedBooking.scheduled_start,
+            serviceType:
+              updatedBooking.service_type,
+            durationMinutes:
+              updatedBooking.duration_minutes,
+            meetingProvider:
+              updatedBooking.meeting_provider,
+            meetingUrl:
+              updatedBooking.meeting_provider ===
+              "zoom"
+                ? updatedBooking.zoom_start_url
+                : updatedBooking.meeting_url,
+            backupMeetingProvider:
+              updatedBooking.backup_meeting_provider,
+            backupMeetingUrl:
+              updatedBooking.backup_host_url ||
+              updatedBooking.backup_join_url,
+            bookingId,
+          });
+        }
+      } catch (
+        therapistEmailError
+      ) {
+        /*
+         * Comme pour l'e-mail patient :
+         * un échec d'e-mail ne remet jamais en cause
+         * le paiement ou la réservation confirmée.
+         */
+        console.error(
+          "Therapist booking confirmation email failed:",
+          {
+            bookingId,
+            therapistId:
+              updatedBooking.therapist_id,
+            error:
+              therapistEmailError,
+          },
         );
       }
     }
