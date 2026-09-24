@@ -1590,7 +1590,7 @@ function PatientDashboardContent() {
                           </div>
 
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-extrabold capitalize text-aan-navy">
+                            <p className="text-sm font-extrabold capitalize leading-5 text-aan-navy">
                               {formatAppointmentDate(booking)}
                             </p>
                             <p className="mt-0.5 text-sm font-semibold text-aan-secondary">
