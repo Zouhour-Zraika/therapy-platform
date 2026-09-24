@@ -142,6 +142,11 @@ type TherapistAssignmentInfo = {
     | null;
 };
 
+type GoogleFeatureSettings = {
+  calendar_enabled: boolean;
+  meet_enabled: boolean;
+};
+
 type ZoomConnection = {
   access_token:
     | string
@@ -3685,21 +3690,36 @@ export async function POST(
 
     /*
      * =======================================================
-     * Charger la préférence de visioconférence du spécialiste.
+     * Charger la préférence de visioconférence du spécialiste
+     * ainsi que les connexions réellement activées.
      *
-     * Règle :
-     * - google_meet ou zoom sont les deux providers supportés ;
-     * - en l'absence de préférence explicite, Google Meet reste
-     *   le fallback pour compatibilité avec les réservations
-     *   existantes ;
-     * - la création du lien échoue sans jamais annuler un
-     *   paiement Stripe déjà confirmé.
+     * Google Calendar et Google Meet partagent le même OAuth,
+     * mais restent deux fonctionnalités indépendantes dans AAN.
+     *
+     * Règles :
+     * - calendar_enabled contrôle uniquement la synchronisation
+     *   Calendar des séances qui n'utilisent pas déjà Meet ;
+     * - meet_enabled contrôle la disponibilité de Google Meet ;
+     * - Zoom reste indépendant ;
+     * - la préférence du spécialiste est respectée lorsqu'elle
+     *   correspond à un provider disponible ;
+     * - si le provider préféré est indisponible mais que l'autre
+     *   provider vidéo est connecté, on utilise l'autre ;
+     * - aucun échec de création vidéo n'annule un paiement Stripe.
      * =======================================================
      */
 
     let therapistInfo:
       TherapistAssignmentInfo | null =
       null;
+
+    let googleFeatures:
+      GoogleFeatureSettings = {
+        calendar_enabled: false,
+        meet_enabled: false,
+      };
+
+    let zoomConnected = false;
 
     if (
       updatedBooking
@@ -3734,15 +3754,126 @@ export async function POST(
 
       therapistInfo =
         data;
+
+      const {
+        data:
+          googleConnection,
+        error:
+          googleConnectionError,
+      } =
+        await supabaseAdmin
+          .from(
+            "therapist_google_connections",
+          )
+          .select(
+            "calendar_enabled, meet_enabled",
+          )
+          .eq(
+            "therapist_id",
+            updatedBooking.therapist_id,
+          )
+          .maybeSingle<GoogleFeatureSettings>();
+
+      if (
+        googleConnectionError
+      ) {
+        throw googleConnectionError;
+      }
+
+      if (googleConnection) {
+        googleFeatures = {
+          calendar_enabled:
+            googleConnection.calendar_enabled ===
+            true,
+
+          meet_enabled:
+            googleConnection.meet_enabled ===
+            true,
+        };
+      }
+
+      const {
+        data:
+          zoomConnection,
+        error:
+          zoomConnectionError,
+      } =
+        await supabaseAdmin
+          .from(
+            "therapist_zoom_connections",
+          )
+          .select("therapist_id")
+          .eq(
+            "therapist_id",
+            updatedBooking.therapist_id,
+          )
+          .maybeSingle();
+
+      if (
+        zoomConnectionError
+      ) {
+        throw zoomConnectionError;
+      }
+
+      zoomConnected =
+        Boolean(zoomConnection);
     }
 
-    const preferredMeetingProvider:
-      MeetingProvider =
+    const preferredProvider =
       therapistInfo
         ?.preferred_meeting_provider ===
       "zoom"
         ? "zoom"
         : "google_meet";
+
+    let preferredMeetingProvider:
+      MeetingProvider | null =
+      null;
+
+    if (
+      preferredProvider === "zoom" &&
+      zoomConnected
+    ) {
+      preferredMeetingProvider =
+        "zoom";
+    } else if (
+      preferredProvider ===
+        "google_meet" &&
+      googleFeatures.meet_enabled
+    ) {
+      preferredMeetingProvider =
+        "google_meet";
+    } else if (
+      googleFeatures.meet_enabled
+    ) {
+      preferredMeetingProvider =
+        "google_meet";
+    } else if (
+      zoomConnected
+    ) {
+      preferredMeetingProvider =
+        "zoom";
+    }
+
+    console.log(
+      "BOOKING PROVIDER SETTINGS:",
+      {
+        bookingId,
+        therapistId:
+          updatedBooking
+            .therapist_id,
+        preferredProvider,
+        selectedProvider:
+          preferredMeetingProvider,
+        calendarEnabled:
+          googleFeatures
+            .calendar_enabled,
+        meetEnabled:
+          googleFeatures
+            .meet_enabled,
+        zoomConnected,
+      },
+    );
 
     /*
      * =======================================================
@@ -3813,7 +3944,10 @@ export async function POST(
             let calendarEventId =
               updatedBooking.calendar_event_id;
 
-            if (!calendarEventId) {
+            if (
+              !calendarEventId &&
+              googleFeatures.calendar_enabled
+            ) {
               try {
                 const calendarEvent =
                   await createGoogleCalendarEventForBooking({

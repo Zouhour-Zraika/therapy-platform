@@ -5,7 +5,11 @@ type GoogleConnection = {
   access_token: string | null;
   refresh_token: string | null;
   token_expires_at: string | null;
+  calendar_enabled: boolean;
+  meet_enabled: boolean;
 };
+
+type GoogleService = "calendar" | "meet";
 
 type CreateGoogleMeetParams = {
   therapistId: string;
@@ -124,10 +128,14 @@ async function refreshGoogleAccessToken(
   return data.access_token as string;
 }
 
-async function getGoogleAccessToken(therapistId: string) {
+async function getGoogleConnection(
+  therapistId: string,
+): Promise<GoogleConnection> {
   const { data, error } = await getSupabaseAdmin()
     .from("therapist_google_connections")
-    .select("access_token, refresh_token, token_expires_at")
+    .select(
+      "access_token, refresh_token, token_expires_at, calendar_enabled, meet_enabled",
+    )
     .eq("therapist_id", therapistId)
     .maybeSingle<GoogleConnection>();
 
@@ -138,6 +146,34 @@ async function getGoogleAccessToken(therapistId: string) {
   if (!data) {
     throw new Error("The specialist has not connected a Google account.");
   }
+
+  return data;
+}
+
+function assertGoogleServiceEnabled(
+  connection: GoogleConnection,
+  service: GoogleService,
+) {
+  if (service === "calendar" && connection.calendar_enabled !== true) {
+    throw new Error(
+      "Google Calendar is not enabled for this specialist.",
+    );
+  }
+
+  if (service === "meet" && connection.meet_enabled !== true) {
+    throw new Error(
+      "Google Meet is not enabled for this specialist.",
+    );
+  }
+}
+
+async function getGoogleAccessToken(
+  therapistId: string,
+  service: GoogleService,
+) {
+  const data = await getGoogleConnection(therapistId);
+
+  assertGoogleServiceEnabled(data, service);
 
   const expiresAt = data.token_expires_at
     ? new Date(data.token_expires_at).getTime()
@@ -183,7 +219,15 @@ async function createGoogleMeetEvent({
   attendeeEmail?: string | null;
   sendUpdates: "all" | "none";
 }) {
-  const accessToken = await getGoogleAccessToken(therapistId);
+  /*
+   * Google Meet links are created through the Google Calendar API.
+   * The AAN "meet_enabled" flag controls whether Meet may be created.
+   * Calendar synchronization remains a separate AAN feature.
+   */
+  const accessToken = await getGoogleAccessToken(
+    therapistId,
+    "meet",
+  );
 
   const response = await fetch(
     `${GOOGLE_CALENDAR_EVENTS_URL}?conferenceDataVersion=1&sendUpdates=${sendUpdates}`,
@@ -225,8 +269,8 @@ async function createGoogleMeetEvent({
     (await response.json()) as GoogleCalendarEventResponse;
 
   if (!response.ok || !event.id) {
-    console.error("Google Calendar event creation failed:", event);
-    throw new Error("Unable to create the Google Calendar event.");
+    console.error("Google Meet event creation failed:", event);
+    throw new Error("Unable to create the Google Meet event.");
   }
 
   const meetingUrl = extractGoogleMeetUrl(event);
@@ -309,7 +353,14 @@ export async function createGoogleCalendarEventForBooking({
   attendeeEmail,
   location,
 }: CreateGoogleCalendarEventParams) {
-  const accessToken = await getGoogleAccessToken(therapistId);
+  /*
+   * Plain Calendar synchronization is allowed only when the specialist
+   * explicitly enabled Google Calendar. This is independent from Meet.
+   */
+  const accessToken = await getGoogleAccessToken(
+    therapistId,
+    "calendar",
+  );
 
   const response = await fetch(
     `${GOOGLE_CALENDAR_EVENTS_URL}?sendUpdates=all`,
@@ -361,7 +412,14 @@ export async function deleteGoogleCalendarEventForBooking({
   therapistId: string;
   calendarEventId: string;
 }) {
-  const accessToken = await getGoogleAccessToken(therapistId);
+  /*
+   * Deletion belongs to Calendar synchronization. If Calendar has been
+   * disabled, callers should not remove Calendar events through AAN.
+   */
+  const accessToken = await getGoogleAccessToken(
+    therapistId,
+    "calendar",
+  );
 
   const response = await fetch(
     `${GOOGLE_CALENDAR_EVENTS_URL}/${encodeURIComponent(
