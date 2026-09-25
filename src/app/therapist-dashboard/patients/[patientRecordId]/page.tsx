@@ -78,6 +78,7 @@ type PatientDocument = {
     | "history"
     | "goal"
     | "report"
+    | "document"
     | null;
   related_item_id: string | null;
   created_at: string;
@@ -192,6 +193,9 @@ export default function PatientRecordPage() {
     useState<File | null>(null);
 
   const [reportPdf, setReportPdf] =
+    useState<File | null>(null);
+
+  const [generalDocument, setGeneralDocument] =
     useState<File | null>(null);
 
   const ITEMS_PREVIEW_LIMIT = 3;
@@ -1434,6 +1438,87 @@ export default function PatientRecordPage() {
       }
     };
 
+
+  const uploadGeneralDocument = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!generalDocument || !record || !patientRecordId) {
+      return;
+    }
+
+    const isPdf =
+      generalDocument.type === "application/pdf" ||
+      generalDocument.name.toLowerCase().endsWith(".pdf");
+
+    if (!isPdf) {
+      window.alert(
+        language === "ar"
+          ? "يرجى اختيار ملف PDF فقط."
+          : language === "fr"
+            ? "Veuillez sélectionner uniquement un fichier PDF."
+            : "Please select a PDF file only.",
+      );
+      return;
+    }
+
+    if (generalDocument.size > 15 * 1024 * 1024) {
+      window.alert(
+        language === "ar"
+          ? "حجم ملف PDF يجب ألا يتجاوز 15 ميغابايت."
+          : language === "fr"
+            ? "Le PDF ne doit pas dépasser 15 Mo."
+            : "The PDF must not exceed 15 MB.",
+      );
+      return;
+    }
+
+    setUploadingDocument(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const safeName = generalDocument.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${user.id}/${patientRecordId}/document/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("patient-documents")
+        .upload(storagePath, generalDocument, {
+          upsert: false,
+          contentType: "application/pdf",
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: rowError } = await supabase
+        .from("patient_documents")
+        .insert({
+          patient_record_id: patientRecordId,
+          file_name: generalDocument.name,
+          storage_path: storagePath,
+          mime_type: "application/pdf",
+          section: "document",
+          related_item_id: null,
+        });
+
+      if (rowError) {
+        await supabase.storage.from("patient-documents").remove([storagePath]);
+        throw rowError;
+      }
+
+      setGeneralDocument(null);
+      await loadClinicalData();
+    } catch (uploadError) {
+      console.error("Patient document upload error:", uploadError);
+      window.alert(text.documentError);
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  const standaloneDocuments = documents.filter(
+    (document) => document.section === "document" || document.section === null,
+  );
 
   const openDocument =
     async (
@@ -2706,6 +2791,89 @@ export default function PatientRecordPage() {
                           : `${showMoreLabel} (${reports.length - ITEMS_PREVIEW_LIMIT})`}
                       </button>
                     ) : null}
+                  </section>
+
+                  <section className="aan-card p-6 sm:p-7 xl:col-span-2">
+                    <SectionTitle>{text.documents}</SectionTitle>
+
+                    <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                      {text.pdfHint}
+                    </p>
+
+                    <form
+                      onSubmit={uploadGeneralDocument}
+                      className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4"
+                    >
+                      <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-semibold text-aan-secondary transition hover:text-aan-navy">
+                        <span>+ {text.uploadPdf}</span>
+                        <span className="max-w-[60%] truncate text-xs font-normal">
+                          {generalDocument ? generalDocument.name : ""}
+                        </span>
+                        <input
+                          type="file"
+                          accept="application/pdf,.pdf"
+                          className="hidden"
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            setGeneralDocument(event.target.files?.[0] || null)
+                          }
+                        />
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={uploadingDocument || !generalDocument}
+                        className="aan-button mt-3 px-5 py-2.5 disabled:opacity-60"
+                      >
+                        + {text.uploadDocument}
+                      </button>
+                    </form>
+
+                    <div className="mt-5 grid gap-3">
+                      {standaloneDocuments.length === 0 ? (
+                        <p className="rounded-2xl border border-aan-border bg-white p-4 text-aan-secondary">
+                          {text.noDocuments}
+                        </p>
+                      ) : (
+                        standaloneDocuments.map((document) => (
+                          <article
+                            key={document.id}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-aan-border bg-white p-4"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-bold text-aan-navy">
+                                📄 {document.file_name}
+                              </p>
+                              <p className="mt-1 text-xs text-aan-secondary">
+                                {formatDate(document.created_at)}
+                              </p>
+                            </div>
+
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() => void openDocument(document.storage_path)}
+                                className="text-xs font-bold text-aan-navy"
+                              >
+                                {text.openDocument}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void deleteItem(
+                                    "patient_documents",
+                                    document.id,
+                                    document.storage_path,
+                                  )
+                                }
+                                className="text-xs font-bold text-red-700"
+                              >
+                                {text.delete}
+                              </button>
+                            </div>
+                          </article>
+                        ))
+                      )}
+                    </div>
                   </section>
                 </div>
 
