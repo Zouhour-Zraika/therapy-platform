@@ -46,12 +46,22 @@ type PatientProfile = {
   full_name: string | null;
   photo_url: string | null;
   role: string | null;
-  phone_number: string | null;
-  date_of_birth: string | null;
+  phone: string | null;
+  birth_date: string | null;
   occupation: string | null;
   education_level: string | null;
   preferred_timezone: string | null;
+  profile_content_language: "en" | "fr" | "ar" | null;
+  profile_translations: ProfileTranslations | null;
 };
+
+type ProfileTranslation = {
+  full_name: string;
+  occupation: string;
+  education_level: string;
+};
+
+type ProfileTranslations = Partial<Record<"en" | "fr" | "ar", ProfileTranslation>>;
 
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 const PATIENT_CHANGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
@@ -91,6 +101,8 @@ function PatientDashboardContent() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState("");
+  const [profileContentLanguage, setProfileContentLanguage] = useState<"en" | "fr" | "ar" | null>(null);
+  const [profileTranslations, setProfileTranslations] = useState<ProfileTranslations | null>(null);
 
   const { language, isArabic } = useLanguage();
   const searchParams = useSearchParams();
@@ -496,7 +508,7 @@ function PatientDashboardContent() {
 
         supabase
           .from("profiles")
-          .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level, preferred_timezone")
+          .select("id, email, full_name, photo_url, role, phone, birth_date, occupation, education_level, preferred_timezone, profile_content_language, profile_translations")
           .eq("id", user.id)
           .single(),
       ]);
@@ -527,10 +539,12 @@ function PatientDashboardContent() {
         setProfileName(loadedProfile.full_name || "");
         setProfileEmail(loadedProfile.email || user.email || "");
         setProfilePhotoUrl(loadedProfile.photo_url || "");
-        setProfilePhone(loadedProfile.phone_number || "");
-        setProfileDateOfBirth(loadedProfile.date_of_birth || "");
+        setProfilePhone(loadedProfile.phone || "");
+        setProfileDateOfBirth(loadedProfile.birth_date || "");
         setProfileOccupation(loadedProfile.occupation || "");
         setProfileEducationLevel(loadedProfile.education_level || "");
+        setProfileContentLanguage(loadedProfile.profile_content_language || null);
+        setProfileTranslations(loadedProfile.profile_translations || null);
         setProfilePhotoPreview("");
         setProfilePhotoFile(null);
       }
@@ -641,6 +655,22 @@ function PatientDashboardContent() {
     }
   };
 
+  useEffect(() => {
+    if (!patientProfile) return;
+
+    const translated = profileTranslations?.[language];
+    if (translated) {
+      setProfileName(translated.full_name || patientProfile.full_name || "");
+      setProfileOccupation(translated.occupation || patientProfile.occupation || "");
+      setProfileEducationLevel(translated.education_level || patientProfile.education_level || "");
+      return;
+    }
+
+    setProfileName(patientProfile.full_name || "");
+    setProfileOccupation(patientProfile.occupation || "");
+    setProfileEducationLevel(patientProfile.education_level || "");
+  }, [language, patientProfile, profileTranslations]);
+
   const handleProfilePhotoChange = (
     event: ChangeEvent<HTMLInputElement>,
   ) => {
@@ -697,6 +727,29 @@ function PatientDashboardContent() {
         return;
       }
 
+      const translationResponse = await fetch("/api/profile/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
+        },
+        body: JSON.stringify({
+          sourceLanguage: language,
+          fullName: trimmedName,
+          occupation: profileOccupation.trim(),
+          educationLevel: profileEducationLevel.trim(),
+        }),
+      });
+
+      if (!translationResponse.ok) {
+        throw new Error("PROFILE_TRANSLATION_FAILED");
+      }
+
+      const translationResult = (await translationResponse.json()) as {
+        translations: ProfileTranslations;
+      };
+      const nextTranslations = translationResult.translations;
+
       let nextPhotoUrl = profilePhotoUrl || null;
 
       if (profilePhotoFile) {
@@ -730,13 +783,15 @@ function PatientDashboardContent() {
         .update({
           full_name: trimmedName,
           photo_url: nextPhotoUrl,
-          phone_number: profilePhone.trim() || null,
-          date_of_birth: profileDateOfBirth || null,
+          phone: profilePhone.trim() || null,
+          birth_date: profileDateOfBirth || null,
           occupation: profileOccupation.trim() || null,
           education_level: profileEducationLevel.trim() || null,
+          profile_content_language: language,
+          profile_translations: nextTranslations,
         })
         .eq("id", user.id)
-        .select("id, email, full_name, photo_url, role, phone_number, date_of_birth, occupation, education_level")
+        .select("id, email, full_name, photo_url, role, phone, birth_date, occupation, education_level, preferred_timezone, profile_content_language, profile_translations")
         .single();
 
       if (updateError) throw updateError;
@@ -747,10 +802,12 @@ function PatientDashboardContent() {
       setProfileName(savedProfile.full_name || "");
       setProfileEmail(savedProfile.email || user.email || "");
       setProfilePhotoUrl(savedProfile.photo_url || "");
-      setProfilePhone(savedProfile.phone_number || "");
-      setProfileDateOfBirth(savedProfile.date_of_birth || "");
+      setProfilePhone(savedProfile.phone || "");
+      setProfileDateOfBirth(savedProfile.birth_date || "");
       setProfileOccupation(savedProfile.occupation || "");
       setProfileEducationLevel(savedProfile.education_level || "");
+      setProfileContentLanguage(savedProfile.profile_content_language || language);
+      setProfileTranslations(savedProfile.profile_translations || nextTranslations);
 
       if (profilePhotoPreview.startsWith("blob:")) {
         URL.revokeObjectURL(profilePhotoPreview);
