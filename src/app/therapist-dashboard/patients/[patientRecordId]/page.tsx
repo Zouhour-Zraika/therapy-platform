@@ -82,6 +82,9 @@ type PatientDocument = {
     | null;
   related_item_id: string | null;
   created_at: string;
+  visible_to_patient: boolean;
+  shared_with_patient_at: string | null;
+  uploaded_by_patient: boolean | null;
 };
 
 export default function PatientRecordPage() {
@@ -195,8 +198,8 @@ export default function PatientRecordPage() {
   const [reportPdf, setReportPdf] =
     useState<File | null>(null);
 
-  const [generalDocument, setGeneralDocument] =
-    useState<File | null>(null);
+  const [generalDocuments, setGeneralDocuments] =
+    useState<File[]>([]);
 
   const ITEMS_PREVIEW_LIMIT = 3;
 
@@ -268,9 +271,9 @@ export default function PatientRecordPage() {
             addNote:
               "إضافة ملاحظة",
             attachPdf:
-              "إرفاق PDF",
+              "إرفاق ملف",
             pdfSelected:
-              "تم اختيار PDF",
+              "تم اختيار الملف",
             noNotes:
               "لا توجد ملاحظات سريرية بعد.",
             history:
@@ -303,12 +306,24 @@ export default function PatientRecordPage() {
               "لا توجد تقارير بعد.",
             documents:
               "الوثائق",
+            documentsToPatient:
+              "وثائق لإرسالها إلى المريض",
+            documentsToPatientHint:
+              "أضف هنا الوثائق التي تريد الاحتفاظ بها في الملف أو مشاركتها مع المريض.",
+            documentsFromPatient:
+              "وثائق مستلمة من المريض",
+            documentsFromPatientHint:
+              "الملفات والمستندات التي أرسلها المريض.",
+            sentByPatient:
+              "أرسله المريض",
+            noPatientDocuments:
+              "لم يرسل المريض أي ملف بعد.",
             uploadDocument:
               "رفع وثيقة",
             uploadPdf:
-              "إضافة ملف PDF",
+              "إضافة ملف",
             pdfHint:
-              "يمكنك إضافة ملفات PDF سريرية أو إدارية مرتبطة بمتابعة هذا المريض.",
+              "يمكنك إضافة ملفات مرتبطة بمتابعة هذا المريض (PDF، Word، PowerPoint، Excel، صور وغيرها).",
             noDocuments:
               "لا توجد وثائق بعد.",
             openDocument:
@@ -346,9 +361,9 @@ export default function PatientRecordPage() {
               addNote:
                 "Ajouter une note",
               attachPdf:
-                "Joindre un PDF",
+                "Joindre un fichier",
               pdfSelected:
-                "PDF sélectionné",
+                "Fichier sélectionné",
               noNotes:
                 "Aucune note clinique pour le moment.",
               history:
@@ -380,12 +395,24 @@ export default function PatientRecordPage() {
                 "Aucun compte rendu pour le moment.",
               documents:
                 "Documents",
+              documentsToPatient:
+                "Documents à envoyer au patient",
+              documentsToPatientHint:
+                "Ajoutez ici les documents que vous souhaitez conserver dans le dossier ou partager avec le patient.",
+              documentsFromPatient:
+                "Documents reçus du patient",
+              documentsFromPatientHint:
+                "Fichiers et documents transmis par le patient.",
+              sentByPatient:
+                "Envoyé par le patient",
+              noPatientDocuments:
+                "Le patient n’a encore envoyé aucun fichier.",
               uploadDocument:
                 "Ajouter un document",
               uploadPdf:
-                "Ajouter un PDF",
+                "Ajouter un fichier",
               pdfHint:
-                "Vous pouvez ajouter des PDF cliniques ou administratifs liés au suivi de ce patient.",
+                "Vous pouvez ajouter des fichiers liés au suivi de ce patient : PDF, Word, PowerPoint, Excel, images ou autres formats.",
               noDocuments:
                 "Aucun document pour le moment.",
               openDocument:
@@ -420,9 +447,9 @@ export default function PatientRecordPage() {
                 "Note content",
               addNote: "Add note",
               attachPdf:
-                "Attach PDF",
+                "Attach file",
               pdfSelected:
-                "PDF selected",
+                "File selected",
               noNotes:
                 "No clinical notes yet.",
               history:
@@ -452,12 +479,24 @@ export default function PatientRecordPage() {
               noReports:
                 "No reports yet.",
               documents: "Documents",
+              documentsToPatient:
+                "Documents to send to the patient",
+              documentsToPatientHint:
+                "Add documents here to keep them in the record or share them with the patient.",
+              documentsFromPatient:
+                "Documents received from the patient",
+              documentsFromPatientHint:
+                "Files and documents sent by the patient.",
+              sentByPatient:
+                "Sent by the patient",
+              noPatientDocuments:
+                "The patient has not sent any files yet.",
               uploadDocument:
                 "Upload document",
               uploadPdf:
-                "Add PDF",
+                "Add file",
               pdfHint:
-                "You can add clinical or administrative PDF files related to this patient's care.",
+                "You can add files related to this patient's care: PDF, Word, PowerPoint, Excel, images, or other formats.",
               noDocuments:
                 "No documents yet.",
               openDocument: "Open",
@@ -956,6 +995,32 @@ export default function PatientRecordPage() {
       }
     };
 
+  const togglePatientDocumentSharing = async (document: PatientDocument) => {
+    setSaving(true);
+
+    try {
+      const nextVisible = !document.visible_to_patient;
+      const { error: shareError } = await supabase
+        .from("patient_documents")
+        .update({
+          visible_to_patient: nextVisible,
+          shared_with_patient_at: nextVisible ? new Date().toISOString() : null,
+        })
+        .eq("id", document.id);
+
+      if (shareError) {
+        throw shareError;
+      }
+
+      await loadClinicalData();
+    } catch (shareError) {
+      console.error("patient document sharing error:", shareError);
+      window.alert(text.saveError);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const updateItem = async (
     table:
       | "clinical_notes"
@@ -1006,7 +1071,7 @@ export default function PatientRecordPage() {
       content:
         editingNoteContent.trim() ||
         (editingNotePdf
-          ? `PDF : ${editingNotePdf.name}`
+          ? `Fichier : ${editingNotePdf.name}`
           : ""),
     });
 
@@ -1039,7 +1104,7 @@ export default function PatientRecordPage() {
       summary:
         editingHistorySummary.trim() ||
         (editingHistoryPdf
-          ? `PDF : ${editingHistoryPdf.name}`
+          ? `Fichier : ${editingHistoryPdf.name}`
           : null),
       session_date: editingHistoryDate.trim() || null,
     });
@@ -1072,7 +1137,7 @@ export default function PatientRecordPage() {
       goal:
         editingGoalText.trim() ||
         editingGoalPdf?.name ||
-        "Document PDF",
+        "Document",
     });
 
     if (editingGoalPdf) {
@@ -1104,7 +1169,7 @@ export default function PatientRecordPage() {
       title:
         editingReportTitle.trim() ||
         editingReportPdf?.name ||
-        "Compte rendu PDF",
+        "Compte rendu",
       content: editingReportContent.trim() || null,
     });
 
@@ -1144,7 +1209,7 @@ export default function PatientRecordPage() {
           content:
             noteContent.trim() ||
             (notePdf
-              ? `PDF : ${notePdf.name}`
+              ? `Fichier : ${notePdf.name}`
               : ""),
           note_date:
             new Date()
@@ -1188,7 +1253,7 @@ export default function PatientRecordPage() {
           goal:
             goalText.trim() ||
             goalPdf?.name ||
-            "Document PDF",
+            "Document",
           status: "active",
         },
       );
@@ -1229,7 +1294,7 @@ export default function PatientRecordPage() {
           summary:
             historySummary.trim() ||
             (historyPdf
-              ? `PDF : ${historyPdf.name}`
+              ? `Fichier : ${historyPdf.name}`
               : null),
         },
       );
@@ -1269,7 +1334,7 @@ export default function PatientRecordPage() {
           title:
             reportTitle.trim() ||
             reportPdf?.name ||
-            "Compte rendu PDF",
+            "Compte rendu",
           content:
             reportContent.trim() ||
             null,
@@ -1309,36 +1374,18 @@ export default function PatientRecordPage() {
         return false;
       }
 
-      const isPdf =
-        file.type ===
-          "application/pdf" ||
-        file.name
-          .toLowerCase()
-          .endsWith(".pdf");
-
-      if (!isPdf) {
-        window.alert(
-          language === "ar"
-            ? "يرجى اختيار ملف PDF فقط."
-            : language === "fr"
-              ? "Veuillez sélectionner uniquement un fichier PDF."
-              : "Please select a PDF file only.",
-        );
-        return false;
-      }
-
-      const maxPdfSize =
+      const maxFileSize =
         15 * 1024 * 1024;
 
       if (
-        file.size > maxPdfSize
+        file.size > maxFileSize
       ) {
         window.alert(
           language === "ar"
-            ? "حجم ملف PDF يجب ألا يتجاوز 15 ميغابايت."
+            ? "يجب ألا يتجاوز حجم الملف 15 ميغابايت."
             : language === "fr"
-              ? "Le PDF ne doit pas dépasser 15 Mo."
-              : "The PDF must not exceed 15 MB.",
+              ? "Le fichier ne doit pas dépasser 15 Mo."
+              : "The file must not exceed 15 MB.",
         );
         return false;
       }
@@ -1381,7 +1428,7 @@ export default function PatientRecordPage() {
               {
                 upsert: false,
                 contentType:
-                  "application/pdf",
+                  file.type || "application/octet-stream",
               },
             );
 
@@ -1403,7 +1450,7 @@ export default function PatientRecordPage() {
             storage_path:
               storagePath,
             mime_type:
-              "application/pdf",
+              file.type || "application/octet-stream",
             section,
             related_item_id:
               relatedItemId,
@@ -1424,7 +1471,7 @@ export default function PatientRecordPage() {
         return true;
       } catch (uploadError) {
         console.error(
-          "Patient PDF upload error:",
+          "Patient file upload error:",
           uploadError,
         );
         window.alert(
@@ -1442,32 +1489,21 @@ export default function PatientRecordPage() {
   const uploadGeneralDocument = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!generalDocument || !record || !patientRecordId) {
+    if (generalDocuments.length === 0 || !record || !patientRecordId) {
       return;
     }
 
-    const isPdf =
-      generalDocument.type === "application/pdf" ||
-      generalDocument.name.toLowerCase().endsWith(".pdf");
+    const oversizedFile = generalDocuments.find(
+      (file) => file.size > 15 * 1024 * 1024,
+    );
 
-    if (!isPdf) {
+    if (oversizedFile) {
       window.alert(
         language === "ar"
-          ? "يرجى اختيار ملف PDF فقط."
+          ? `حجم الملف ${oversizedFile.name} يجب ألا يتجاوز 15 ميغابايت.`
           : language === "fr"
-            ? "Veuillez sélectionner uniquement un fichier PDF."
-            : "Please select a PDF file only.",
-      );
-      return;
-    }
-
-    if (generalDocument.size > 15 * 1024 * 1024) {
-      window.alert(
-        language === "ar"
-          ? "حجم ملف PDF يجب ألا يتجاوز 15 ميغابايت."
-          : language === "fr"
-            ? "Le PDF ne doit pas dépasser 15 Mo."
-            : "The PDF must not exceed 15 MB.",
+            ? `Le fichier ${oversizedFile.name} ne doit pas dépasser 15 Mo.`
+            : `${oversizedFile.name} must not exceed 15 MB.`,
       );
       return;
     }
@@ -1478,46 +1514,84 @@ export default function PatientRecordPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const safeName = generalDocument.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const storagePath = `${user.id}/${patientRecordId}/document/${Date.now()}-${safeName}`;
+      for (const file of generalDocuments) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `${user.id}/${patientRecordId}/document/${crypto.randomUUID()}-${safeName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("patient-documents")
-        .upload(storagePath, generalDocument, {
-          upsert: false,
-          contentType: "application/pdf",
-        });
+        const { error: uploadError } = await supabase.storage
+          .from("patient-documents")
+          .upload(storagePath, file, {
+            upsert: false,
+            contentType: file.type || "application/octet-stream",
+          });
 
-      if (uploadError) throw uploadError;
+        if (uploadError) throw uploadError;
 
-      const { error: rowError } = await supabase
-        .from("patient_documents")
-        .insert({
-          patient_record_id: patientRecordId,
-          file_name: generalDocument.name,
-          storage_path: storagePath,
-          mime_type: "application/pdf",
-          section: "document",
-          related_item_id: null,
-        });
+        const { error: rowError } = await supabase
+          .from("patient_documents")
+          .insert({
+            patient_record_id: patientRecordId,
+            file_name: file.name,
+            storage_path: storagePath,
+            mime_type: file.type || "application/octet-stream",
+            section: "document",
+            related_item_id: null,
+          });
 
-      if (rowError) {
-        await supabase.storage.from("patient-documents").remove([storagePath]);
-        throw rowError;
+        if (rowError) {
+          await supabase.storage.from("patient-documents").remove([storagePath]);
+          throw rowError;
+        }
       }
 
-      setGeneralDocument(null);
+      setGeneralDocuments([]);
       await loadClinicalData();
-    } catch (uploadError) {
+    } catch (uploadError: unknown) {
       console.error("Patient document upload error:", uploadError);
-      window.alert(text.documentError);
+
+      const errorObject =
+        uploadError && typeof uploadError === "object"
+          ? (uploadError as Record<string, unknown>)
+          : null;
+
+      const errorMessage =
+        uploadError instanceof Error
+          ? uploadError.message
+          : typeof uploadError === "string"
+            ? uploadError
+            : errorObject
+              ? [
+                  errorObject.message,
+                  errorObject.error,
+                  errorObject.statusCode
+                    ? `status ${String(errorObject.statusCode)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .map(String)
+                  .join(" — ")
+              : "";
+
+      window.alert(
+        errorMessage
+          ? `${text.documentError}\n\n${errorMessage}`
+          : text.documentError,
+      );
     } finally {
       setUploadingDocument(false);
     }
   };
 
   const standaloneDocuments = documents.filter(
-    (document) => document.section === "document" || document.section === null,
+    (document) =>
+      (document.section === "document" || document.section === null) &&
+      document.uploaded_by_patient !== true,
+  );
+
+  const patientSubmittedDocuments = documents.filter(
+    (document) =>
+      (document.section === "document" || document.section === null) &&
+      document.uploaded_by_patient === true,
   );
 
   const openDocument =
@@ -1744,7 +1818,7 @@ export default function PatientRecordPage() {
                 </section>
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-2">
-                  <section className="aan-card p-6 sm:p-7">
+                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
                     <SectionTitle>
                       {text.notes}
                     </SectionTitle>
@@ -1797,8 +1871,7 @@ export default function PatientRecordPage() {
 
                         <input
                           type="file"
-                          accept="application/pdf,.pdf"
-                          className="hidden"
+                                                    className="hidden"
                           onChange={(
                             event,
                           ) =>
@@ -1837,11 +1910,11 @@ export default function PatientRecordPage() {
                               key={
                                 note.id
                               }
-                              className="rounded-2xl border border-aan-border bg-white p-4"
+                              className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-aan-border bg-white p-4"
                             >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-bold text-aan-navy">
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="break-all font-bold text-aan-navy">
                                     {note.title ||
                                       text.notes}
                                   </p>
@@ -1853,7 +1926,7 @@ export default function PatientRecordPage() {
                                   </p>
                                 </div>
 
-                                <div className="flex items-center gap-3">
+                                <div className="flex shrink-0 items-center gap-3">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1917,8 +1990,7 @@ export default function PatientRecordPage() {
 
                                     <input
                                       type="file"
-                                      accept="application/pdf,.pdf"
-                                      className="hidden"
+                                                                            className="hidden"
                                       onChange={(event) =>
                                         setEditingNotePdf(
                                           event.target.files?.[0] || null,
@@ -1957,9 +2029,9 @@ export default function PatientRecordPage() {
                                     key={
                                       document.id
                                     }
-                                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
+                                    className="mt-3 flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3 overflow-hidden rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
                                   >
-                                    <span className="min-w-0 truncate text-sm font-semibold text-aan-navy">
+                                    <span className="min-w-0 max-w-full flex-1 break-words text-sm font-semibold text-aan-navy">
                                       📄 {document.file_name}
                                     </span>
 
@@ -1974,6 +2046,29 @@ export default function PatientRecordPage() {
                                         className="text-xs font-bold text-aan-navy"
                                       >
                                         {text.openDocument}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => void togglePatientDocumentSharing(document)}
+                                        className={`text-xs font-bold ${
+                                          document.visible_to_patient
+                                            ? "text-aan-secondary"
+                                            : "text-aan-gold"
+                                        }`}
+                                      >
+                                        {document.visible_to_patient
+                                          ? language === "ar"
+                                            ? "إلغاء المشاركة مع المريض"
+                                            : language === "fr"
+                                              ? "Retirer au patient"
+                                              : "Remove from patient"
+                                          : language === "ar"
+                                            ? "إرسال إلى المريض"
+                                            : language === "fr"
+                                              ? "Envoyer au patient"
+                                              : "Send to patient"}
                                       </button>
 
                                       <button
@@ -2015,7 +2110,7 @@ export default function PatientRecordPage() {
                     ) : null}
                   </section>
 
-                  <section className="aan-card p-6 sm:p-7">
+                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
                     <SectionTitle>
                       {text.history}
                     </SectionTitle>
@@ -2067,8 +2162,7 @@ export default function PatientRecordPage() {
 
                         <input
                           type="file"
-                          accept="application/pdf,.pdf"
-                          className="hidden"
+                                                    className="hidden"
                           onChange={(
                             event,
                           ) =>
@@ -2107,9 +2201,9 @@ export default function PatientRecordPage() {
                               key={
                                 item.id
                               }
-                              className="rounded-2xl border border-aan-border bg-white p-4"
+                              className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-aan-border bg-white p-4"
                             >
-                              <div className="flex items-start justify-between gap-3">
+                              <div className="flex min-w-0 items-start justify-between gap-3">
                                 <p className="font-bold text-aan-navy">
                                   {formatDate(
                                     item.session_date ||
@@ -2117,7 +2211,7 @@ export default function PatientRecordPage() {
                                   )}
                                 </p>
 
-                                <div className="flex items-center gap-3">
+                                <div className="flex shrink-0 items-center gap-3">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -2181,8 +2275,7 @@ export default function PatientRecordPage() {
 
                                     <input
                                       type="file"
-                                      accept="application/pdf,.pdf"
-                                      className="hidden"
+                                                                            className="hidden"
                                       onChange={(event) =>
                                         setEditingHistoryPdf(
                                           event.target.files?.[0] || null,
@@ -2221,9 +2314,9 @@ export default function PatientRecordPage() {
                                     key={
                                       document.id
                                     }
-                                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
+                                    className="mt-3 flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3 overflow-hidden rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
                                   >
-                                    <span className="min-w-0 truncate text-sm font-semibold text-aan-navy">
+                                    <span className="min-w-0 max-w-full flex-1 break-words text-sm font-semibold text-aan-navy">
                                       📄 {document.file_name}
                                     </span>
 
@@ -2238,6 +2331,29 @@ export default function PatientRecordPage() {
                                         className="text-xs font-bold text-aan-navy"
                                       >
                                         {text.openDocument}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => void togglePatientDocumentSharing(document)}
+                                        className={`text-xs font-bold ${
+                                          document.visible_to_patient
+                                            ? "text-aan-secondary"
+                                            : "text-aan-gold"
+                                        }`}
+                                      >
+                                        {document.visible_to_patient
+                                          ? language === "ar"
+                                            ? "إلغاء المشاركة مع المريض"
+                                            : language === "fr"
+                                              ? "Retirer au patient"
+                                              : "Remove from patient"
+                                          : language === "ar"
+                                            ? "إرسال إلى المريض"
+                                            : language === "fr"
+                                              ? "Envoyer au patient"
+                                              : "Send to patient"}
                                       </button>
 
                                       <button
@@ -2279,7 +2395,7 @@ export default function PatientRecordPage() {
                     ) : null}
                   </section>
 
-                  <section className="aan-card p-6 sm:p-7">
+                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
                     <SectionTitle>
                       {text.goals}
                     </SectionTitle>
@@ -2317,8 +2433,7 @@ export default function PatientRecordPage() {
 
                         <input
                           type="file"
-                          accept="application/pdf,.pdf"
-                          className="hidden"
+                                                    className="hidden"
                           onChange={(
                             event,
                           ) =>
@@ -2394,8 +2509,7 @@ export default function PatientRecordPage() {
 
                                     <input
                                       type="file"
-                                      accept="application/pdf,.pdf"
-                                      className="hidden"
+                                                                            className="hidden"
                                       onChange={(event) =>
                                         setEditingGoalPdf(
                                           event.target.files?.[0] || null,
@@ -2434,9 +2548,9 @@ export default function PatientRecordPage() {
                                     key={
                                       document.id
                                     }
-                                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
+                                    className="mt-3 flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3 overflow-hidden rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
                                   >
-                                    <span className="min-w-0 truncate text-sm font-semibold text-aan-navy">
+                                    <span className="min-w-0 max-w-full flex-1 break-words text-sm font-semibold text-aan-navy">
                                       📄 {document.file_name}
                                     </span>
 
@@ -2451,6 +2565,29 @@ export default function PatientRecordPage() {
                                         className="text-xs font-bold text-aan-navy"
                                       >
                                         {text.openDocument}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => void togglePatientDocumentSharing(document)}
+                                        className={`text-xs font-bold ${
+                                          document.visible_to_patient
+                                            ? "text-aan-secondary"
+                                            : "text-aan-gold"
+                                        }`}
+                                      >
+                                        {document.visible_to_patient
+                                          ? language === "ar"
+                                            ? "إلغاء المشاركة مع المريض"
+                                            : language === "fr"
+                                              ? "Retirer au patient"
+                                              : "Remove from patient"
+                                          : language === "ar"
+                                            ? "إرسال إلى المريض"
+                                            : language === "fr"
+                                              ? "Envoyer au patient"
+                                              : "Send to patient"}
                                       </button>
 
                                       <button
@@ -2518,7 +2655,7 @@ export default function PatientRecordPage() {
                     ) : null}
                   </section>
 
-                  <section className="aan-card p-6 sm:p-7">
+                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
                     <SectionTitle>
                       {text.reports}
                     </SectionTitle>
@@ -2573,8 +2710,7 @@ export default function PatientRecordPage() {
 
                         <input
                           type="file"
-                          accept="application/pdf,.pdf"
-                          className="hidden"
+                                                    className="hidden"
                           onChange={(
                             event,
                           ) =>
@@ -2613,10 +2749,10 @@ export default function PatientRecordPage() {
                               key={
                                 report.id
                               }
-                              className="rounded-2xl border border-aan-border bg-white p-4"
+                              className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-aan-border bg-white p-4"
                             >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
                                   <p className="font-bold text-aan-navy">
                                     {report.title}
                                   </p>
@@ -2628,7 +2764,7 @@ export default function PatientRecordPage() {
                                   </p>
                                 </div>
 
-                                <div className="flex items-center gap-3">
+                                <div className="flex shrink-0 items-center gap-3">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -2695,8 +2831,7 @@ export default function PatientRecordPage() {
 
                                     <input
                                       type="file"
-                                      accept="application/pdf,.pdf"
-                                      className="hidden"
+                                                                            className="hidden"
                                       onChange={(event) =>
                                         setEditingReportPdf(
                                           event.target.files?.[0] || null,
@@ -2735,9 +2870,9 @@ export default function PatientRecordPage() {
                                     key={
                                       document.id
                                     }
-                                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
+                                    className="mt-3 flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3 overflow-hidden rounded-xl border border-aan-border bg-[#fbf8f3] px-3 py-2"
                                   >
-                                    <span className="min-w-0 truncate text-sm font-semibold text-aan-navy">
+                                    <span className="min-w-0 max-w-full flex-1 break-words text-sm font-semibold text-aan-navy">
                                       📄 {document.file_name}
                                     </span>
 
@@ -2752,6 +2887,29 @@ export default function PatientRecordPage() {
                                         className="text-xs font-bold text-aan-navy"
                                       >
                                         {text.openDocument}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => void togglePatientDocumentSharing(document)}
+                                        className={`text-xs font-bold ${
+                                          document.visible_to_patient
+                                            ? "text-aan-secondary"
+                                            : "text-aan-gold"
+                                        }`}
+                                      >
+                                        {document.visible_to_patient
+                                          ? language === "ar"
+                                            ? "إلغاء المشاركة مع المريض"
+                                            : language === "fr"
+                                              ? "Retirer au patient"
+                                              : "Remove from patient"
+                                          : language === "ar"
+                                            ? "إرسال إلى المريض"
+                                            : language === "fr"
+                                              ? "Envoyer au patient"
+                                              : "Send to patient"}
                                       </button>
 
                                       <button
@@ -2794,10 +2952,10 @@ export default function PatientRecordPage() {
                   </section>
 
                   <section className="aan-card p-6 sm:p-7 xl:col-span-2">
-                    <SectionTitle>{text.documents}</SectionTitle>
+                    <SectionTitle>{text.documentsToPatient}</SectionTitle>
 
                     <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                      {text.pdfHint}
+                      {text.documentsToPatientHint}
                     </p>
 
                     <form
@@ -2807,24 +2965,77 @@ export default function PatientRecordPage() {
                       <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-semibold text-aan-secondary transition hover:text-aan-navy">
                         <span>+ {text.uploadPdf}</span>
                         <span className="max-w-[60%] truncate text-xs font-normal">
-                          {generalDocument ? generalDocument.name : ""}
+                          {generalDocuments.length > 0
+                            ? `${generalDocuments.length} ${language === "ar" ? "ملف" : language === "fr" ? "fichier(s)" : "file(s)"}`
+                            : ""}
                         </span>
                         <input
                           type="file"
-                          accept="application/pdf,.pdf"
+                                                    multiple
                           className="hidden"
-                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                            setGeneralDocument(event.target.files?.[0] || null)
-                          }
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                            const selectedFiles = Array.from(event.target.files || []);
+                            if (selectedFiles.length > 0) {
+                              setGeneralDocuments((current) => {
+                                const known = new Set(
+                                  current.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+                                );
+                                return [
+                                  ...current,
+                                  ...selectedFiles.filter(
+                                    (file) => !known.has(`${file.name}:${file.size}:${file.lastModified}`),
+                                  ),
+                                ];
+                              });
+                            }
+                            event.target.value = "";
+                          }}
                         />
                       </label>
 
+                      {generalDocuments.length > 0 ? (
+                        <div className="mt-3 grid gap-2">
+                          {generalDocuments.map((file, index) => (
+                            <div
+                              key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                              className="flex items-center justify-between gap-3 rounded-xl border border-aan-border bg-white px-3 py-2"
+                            >
+                              <span className="min-w-0 truncate text-xs font-semibold text-aan-navy">
+                                📄 {file.name}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={uploadingDocument}
+                                onClick={() =>
+                                  setGeneralDocuments((current) =>
+                                    current.filter((_, currentIndex) => currentIndex !== index),
+                                  )
+                                }
+                                className="text-xs font-bold text-red-700 disabled:opacity-60"
+                              >
+                                {text.delete}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
                       <button
                         type="submit"
-                        disabled={uploadingDocument || !generalDocument}
+                        disabled={uploadingDocument || generalDocuments.length === 0}
                         className="aan-button mt-3 px-5 py-2.5 disabled:opacity-60"
                       >
-                        + {text.uploadDocument}
+                        {uploadingDocument
+                          ? language === "ar"
+                            ? "جارٍ الإرسال..."
+                            : language === "fr"
+                              ? "Envoi..."
+                              : "Uploading..."
+                          : language === "ar"
+                            ? "إرسال المستندات"
+                            : language === "fr"
+                              ? "Ajouter au dossier"
+                              : "Send documents"}
                       </button>
                     </form>
 
@@ -2840,7 +3051,7 @@ export default function PatientRecordPage() {
                             className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-aan-border bg-white p-4"
                           >
                             <div className="min-w-0">
-                              <p className="truncate font-bold text-aan-navy">
+                              <p className="max-w-full break-words font-bold text-aan-navy">
                                 📄 {document.file_name}
                               </p>
                               <p className="mt-1 text-xs text-aan-secondary">
@@ -2858,6 +3069,29 @@ export default function PatientRecordPage() {
                               </button>
                               <button
                                 type="button"
+                                disabled={saving}
+                                onClick={() => void togglePatientDocumentSharing(document)}
+                                className={`text-xs font-bold ${
+                                  document.visible_to_patient
+                                    ? "text-aan-secondary"
+                                    : "text-aan-gold"
+                                }`}
+                              >
+                                {document.visible_to_patient
+                                  ? language === "ar"
+                                    ? "إلغاء المشاركة مع المريض"
+                                    : language === "fr"
+                                      ? "Retirer au patient"
+                                      : "Remove from patient"
+                                  : language === "ar"
+                                    ? "إرسال إلى المريض"
+                                    : language === "fr"
+                                      ? "Envoyer au patient"
+                                      : "Send to patient"}
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() =>
                                   void deleteItem(
                                     "patient_documents",
@@ -2873,6 +3107,49 @@ export default function PatientRecordPage() {
                           </article>
                         ))
                       )}
+                    </div>
+
+                    <div className="mt-8 border-t border-aan-border pt-7">
+                      <SectionTitle>{text.documentsFromPatient}</SectionTitle>
+
+                      <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                        {text.documentsFromPatientHint}
+                      </p>
+
+                      <div className="mt-5 grid gap-3">
+                        {patientSubmittedDocuments.length === 0 ? (
+                          <p className="rounded-2xl border border-aan-border bg-white p-4 text-aan-secondary">
+                            {text.noPatientDocuments}
+                          </p>
+                        ) : (
+                          patientSubmittedDocuments.map((document) => (
+                            <article
+                              key={document.id}
+                              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-aan-border bg-white p-4"
+                            >
+                              <div className="min-w-0">
+                                <p className="max-w-full break-words font-bold text-aan-navy">
+                                  📄 {document.file_name}
+                                </p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-aan-secondary">
+                                  <span>{formatDate(document.created_at)}</span>
+                                  <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-2 py-1 font-bold text-aan-secondary">
+                                    {text.sentByPatient}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => void openDocument(document.storage_path)}
+                                className="text-xs font-bold text-aan-navy"
+                              >
+                                {text.openDocument}
+                              </button>
+                            </article>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </section>
                 </div>

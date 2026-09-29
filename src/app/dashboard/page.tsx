@@ -63,6 +63,37 @@ type ProfileTranslation = {
 
 type ProfileTranslations = Partial<Record<"en" | "fr" | "ar", ProfileTranslation>>;
 
+type PatientDocument = {
+  id: string;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  created_at: string | null;
+  shared_with_patient_at: string | null;
+  uploaded_by_patient?: boolean | null;
+};
+
+type PatientDocumentRecipient = {
+  patient_record_id: string;
+  therapist_id: string;
+  therapist_name: string;
+};
+
+type PaymentReceipt = {
+  id: string;
+  receipt_number: string;
+  receipt_type: string;
+  source_type: string;
+  therapist_name: string | null;
+  service_type: string | null;
+  amount: number;
+  currency: string;
+  payment_provider: string | null;
+  payment_method: string | null;
+  status: string;
+  issued_at: string | null;
+};
+
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 const PATIENT_CHANGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
@@ -103,6 +134,17 @@ function PatientDashboardContent() {
   const [profileError, setProfileError] = useState("");
   const [profileContentLanguage, setProfileContentLanguage] = useState<"en" | "fr" | "ar" | null>(null);
   const [profileTranslations, setProfileTranslations] = useState<ProfileTranslations | null>(null);
+  const [patientDocuments, setPatientDocuments] = useState<PatientDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState("");
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
+  const [patientUploadFile, setPatientUploadFile] = useState<File | null>(null);
+  const [patientUploading, setPatientUploading] = useState(false);
+  const [patientUploadMessage, setPatientUploadMessage] = useState("");
+  const [patientSentDocuments, setPatientSentDocuments] = useState<PatientDocument[]>([]);
+  const [patientDocumentRecipients, setPatientDocumentRecipients] = useState<PatientDocumentRecipient[]>([]);
+  const [selectedPatientRecordId, setSelectedPatientRecordId] = useState("");
+  const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
 
   const { language, isArabic } = useLanguage();
   const searchParams = useSearchParams();
@@ -822,6 +864,233 @@ function PatientDashboardContent() {
     } finally {
       setProfileSaving(false);
     }
+  };
+
+  const loadPatientDocuments = async () => {
+    setDocumentsLoading(true);
+    setDocumentsError("");
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) throw authError || new Error("AUTH_REQUIRED");
+
+      const [
+        { data: received, error: receivedError },
+        { data: sent, error: sentError },
+        { data: records, error: recordsError },
+        { data: receipts, error: receiptsError },
+      ] = await Promise.all([
+        supabase
+          .from("patient_documents")
+          .select("id, file_name, storage_path, mime_type, created_at, shared_with_patient_at, uploaded_by_patient")
+          .eq("visible_to_patient", true)
+          .eq("uploaded_by_patient", false)
+          .order("shared_with_patient_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("patient_documents")
+          .select("id, file_name, storage_path, mime_type, created_at, shared_with_patient_at, uploaded_by_patient")
+          .eq("uploaded_by_patient", true)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("patient_records")
+          .select("id, therapist_id, created_at")
+          .eq("patient_id", authData.user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("payment_receipts")
+          .select("id, receipt_number, receipt_type, source_type, therapist_name, service_type, amount, currency, payment_provider, payment_method, status, issued_at")
+          .eq("patient_id", authData.user.id)
+          .order("issued_at", { ascending: false }),
+      ]);
+
+      if (receivedError) throw receivedError;
+      if (sentError) throw sentError;
+      if (recordsError) throw recordsError;
+      if (receiptsError) throw receiptsError;
+
+      const patientRecords = (records || []) as Array<{
+        id: string;
+        therapist_id: string;
+        created_at: string;
+      }>;
+
+      let therapistNames = new Map<string, string>();
+
+      if (patientRecords.length > 0) {
+        const therapistIds = Array.from(
+          new Set(patientRecords.map((record) => record.therapist_id)),
+        );
+
+        const { data: therapists, error: therapistsError } = await supabase
+          .from("therapists")
+          .select("id, full_name")
+          .in("id", therapistIds);
+
+        if (therapistsError) {
+          console.error("Unable to load document recipient names:", therapistsError);
+        } else {
+          therapistNames = new Map(
+            (therapists || []).map((therapist) => [
+              therapist.id,
+              therapist.full_name || therapist.id,
+            ]),
+          );
+        }
+      }
+
+      const recipients = patientRecords.map((record, index) => ({
+        patient_record_id: record.id,
+        therapist_id: record.therapist_id,
+        therapist_name:
+          therapistNames.get(record.therapist_id) ||
+          (language === "ar"
+            ? `الأخصائي ${index + 1}`
+            : language === "fr"
+              ? `Spécialiste ${index + 1}`
+              : `Specialist ${index + 1}`),
+      }));
+
+      setPatientDocuments((received || []) as PatientDocument[]);
+      setPatientSentDocuments((sent || []) as PatientDocument[]);
+      setPaymentReceipts((receipts || []) as PaymentReceipt[]);
+      setPatientDocumentRecipients(recipients);
+      setSelectedPatientRecordId((current) => {
+        if (current && recipients.some((item) => item.patient_record_id === current)) {
+          return current;
+        }
+        return recipients.length === 1 ? recipients[0].patient_record_id : "";
+      });
+    } catch (error) {
+      console.error("Unable to load patient documents:", error);
+      setDocumentsError(
+        language === "ar"
+          ? "تعذر تحميل مستنداتك."
+          : language === "fr"
+            ? "Impossible de charger vos documents."
+            : "Unable to load your documents.",
+      );
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection === "documents") {
+      void loadPatientDocuments();
+    }
+  }, [activeSection]);
+
+  const openPatientDocument = async (document: PatientDocument) => {
+    setOpeningDocumentId(document.id);
+    setDocumentsError("");
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("patient-documents")
+        .createSignedUrl(document.storage_path, 60 * 5);
+
+      if (error || !data?.signedUrl) throw error || new Error("SIGNED_URL_FAILED");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      console.error("Unable to open patient document:", error);
+      setDocumentsError(
+        language === "ar"
+          ? "تعذر فتح هذا المستند."
+          : language === "fr"
+            ? "Impossible d’ouvrir ce document."
+            : "Unable to open this document.",
+      );
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
+  const uploadPatientDocument = async () => {
+    if (!patientUploadFile) return;
+
+    setPatientUploading(true);
+    setDocumentsError("");
+    setPatientUploadMessage("");
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) throw authError || new Error("AUTH_REQUIRED");
+
+      if (!selectedPatientRecordId) {
+        throw new Error("PATIENT_RECORD_REQUIRED");
+      }
+
+      const { data: record, error: recordError } = await supabase
+        .from("patient_records")
+        .select("id, therapist_id")
+        .eq("id", selectedPatientRecordId)
+        .eq("patient_id", authData.user.id)
+        .single();
+
+      if (recordError || !record) throw recordError || new Error("PATIENT_RECORD_NOT_FOUND");
+
+      const safeName = patientUploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${record.therapist_id}/${record.id}/patient-uploads/${authData.user.id}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("patient-documents")
+        .upload(storagePath, patientUploadFile, {
+          contentType: patientUploadFile.type || undefined,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await supabase.from("patient_documents").insert({
+        patient_record_id: record.id,
+        file_name: patientUploadFile.name,
+        storage_path: storagePath,
+        mime_type: patientUploadFile.type || null,
+        section: "document",
+        visible_to_patient: false,
+        uploaded_by_patient: true,
+      });
+
+      if (insertError) {
+        await supabase.storage.from("patient-documents").remove([storagePath]);
+        throw insertError;
+      }
+
+      setPatientUploadFile(null);
+      const input = document.getElementById("patient-document-upload") as HTMLInputElement | null;
+      if (input) input.value = "";
+      setPatientUploadMessage(
+        language === "ar"
+          ? "تم إرسال الملف إلى الأخصائي."
+          : language === "fr"
+            ? "Le fichier a été envoyé à votre spécialiste."
+            : "The file has been sent to your specialist.",
+      );
+      await loadPatientDocuments();
+    } catch (error) {
+      console.error("Unable to upload patient document:", error);
+      setDocumentsError(
+        language === "ar"
+          ? "تعذر إرسال الملف إلى الأخصائي."
+          : language === "fr"
+            ? "Impossible d’envoyer le fichier à votre spécialiste."
+            : "Unable to send the file to your specialist.",
+      );
+    } finally {
+      setPatientUploading(false);
+    }
+  };
+
+  const formatDocumentDate = (value: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(getLocale(), {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
   };
 
   const isExpiredPendingBooking = (booking: Booking) => {
@@ -2112,6 +2381,321 @@ function PatientDashboardContent() {
                 <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
                   {copy.documentsDescription}
                 </p>
+
+                <div className="mt-8">
+                  <h2 className="text-xl font-bold text-aan-navy">
+                    {language === "ar"
+                      ? "المستندات المرسلة من الأخصائي"
+                      : language === "fr"
+                        ? "Documents envoyés par votre spécialiste"
+                        : "Documents sent by your specialist"}
+                  </h2>
+
+                  {documentsError && (
+                    <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700">
+                      {documentsError}
+                    </div>
+                  )}
+
+                  {documentsLoading ? (
+                    <div className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-8 text-center">
+                      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
+                    </div>
+                  ) : patientDocuments.length === 0 ? (
+                    <div className="mt-5 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-8 text-center text-aan-secondary">
+                      {language === "ar"
+                        ? "لم يرسل لك الأخصائي أي مستند حتى الآن."
+                        : language === "fr"
+                          ? "Votre spécialiste ne vous a encore envoyé aucun document."
+                          : "Your specialist has not sent you any documents yet."}
+                    </div>
+                  ) : (
+                    <div className="mt-5 grid gap-4">
+                      {patientDocuments.map((document) => (
+                        <article
+                          key={document.id}
+                          className="flex min-w-0 flex-col gap-4 rounded-2xl border border-aan-border bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="break-words font-bold text-aan-navy">
+                              {document.file_name}
+                            </p>
+                            {(document.shared_with_patient_at || document.created_at) && (
+                              <p className="mt-1 text-sm text-aan-secondary">
+                                {formatDocumentDate(
+                                  document.shared_with_patient_at || document.created_at,
+                                )}
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => void openPatientDocument(document)}
+                            disabled={openingDocumentId === document.id}
+                            className="shrink-0 rounded-xl border border-aan-border bg-white px-5 py-3 text-sm font-bold text-aan-navy transition hover:border-aan-gold hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {openingDocumentId === document.id
+                              ? language === "ar"
+                                ? "جارٍ الفتح..."
+                                : language === "fr"
+                                  ? "Ouverture..."
+                                  : "Opening..."
+                              : language === "ar"
+                                ? "فتح"
+                                : language === "fr"
+                                  ? "Ouvrir"
+                                  : "Open"}
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-10 border-t border-aan-border pt-8">
+                  <h2 className="text-xl font-bold text-aan-navy">
+                    {language === "ar"
+                      ? "إيصالات الدفع"
+                      : language === "fr"
+                        ? "Reçus de paiement"
+                        : "Payment receipts"}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                    {language === "ar"
+                      ? "سجل إيصالات المدفوعات والمبالغ المستردة المرتبطة بحسابك."
+                      : language === "fr"
+                        ? "Historique des reçus de paiement et de remboursement liés à votre compte."
+                        : "History of payment and refund receipts linked to your account."}
+                  </p>
+
+                  {documentsLoading ? (
+                    <div className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-8 text-center">
+                      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
+                    </div>
+                  ) : paymentReceipts.length === 0 ? (
+                    <div className="mt-5 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-8 text-center text-aan-secondary">
+                      {language === "ar"
+                        ? "لا توجد إيصالات دفع حتى الآن."
+                        : language === "fr"
+                          ? "Aucun reçu de paiement pour le moment."
+                          : "No payment receipts yet."}
+                    </div>
+                  ) : (
+                    <div className="mt-5 grid gap-4">
+                      {paymentReceipts.map((receipt) => {
+                        const isRefund = receipt.receipt_type === "refund" || receipt.status === "refunded";
+                        const sourceLabel =
+                          receipt.source_type === "patient_pack"
+                            ? language === "ar"
+                              ? "باقة المريض"
+                              : language === "fr"
+                                ? "Pack Patient"
+                                : "Patient Pack"
+                            : language === "ar"
+                              ? "جلسة"
+                              : language === "fr"
+                                ? "Séance"
+                                : "Session";
+                        const statusLabel = isRefund
+                          ? language === "ar"
+                            ? "مسترد"
+                            : language === "fr"
+                              ? "Remboursé"
+                              : "Refunded"
+                          : language === "ar"
+                            ? "مدفوع"
+                            : language === "fr"
+                              ? "Payé"
+                              : "Paid";
+
+                        return (
+                          <article
+                            key={receipt.id}
+                            className="rounded-2xl border border-aan-border bg-white p-5"
+                          >
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="break-words font-bold text-aan-navy">
+                                  {language === "ar" ? "إيصال" : language === "fr" ? "Reçu" : "Receipt"} {receipt.receipt_number}
+                                </p>
+                                <p className="mt-1 text-sm text-aan-secondary">
+                                  {[sourceLabel, receipt.therapist_name, receipt.service_type]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                                {receipt.issued_at && (
+                                  <p className="mt-1 text-sm text-aan-secondary">
+                                    {formatDocumentDate(receipt.issued_at)}
+                                  </p>
+                                )}
+                              </div>
+                              <div className={isArabic ? "text-right sm:text-left" : "text-left sm:text-right"}>
+                                <p className="text-lg font-extrabold text-aan-navy">
+                                  {new Intl.NumberFormat(getLocale(), {
+                                    style: "currency",
+                                    currency: receipt.currency || "USD",
+                                  }).format(Number(receipt.amount || 0))}
+                                </p>
+                                <span className="mt-2 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-navy">
+                                  {statusLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-10 border-t border-aan-border pt-8">
+                  <h2 className="text-xl font-bold text-aan-navy">
+                    {language === "ar"
+                      ? "إرسال ملف إلى الأخصائي"
+                      : language === "fr"
+                        ? "Envoyer un fichier à votre spécialiste"
+                        : "Send a file to your specialist"}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                    {language === "ar"
+                      ? "يمكنك إرسال ملف أو مستند إلى الأخصائي."
+                      : language === "fr"
+                        ? "Vous pouvez envoyer un fichier ou un document à votre spécialiste."
+                        : "You can send a file or document to your specialist."}
+                  </p>
+
+                  <div className="mt-5">
+                    <label
+                      htmlFor="patient-document-recipient"
+                      className="text-sm font-bold text-aan-navy"
+                    >
+                      {language === "ar"
+                        ? "الأخصائي المستلم"
+                        : language === "fr"
+                          ? "Spécialiste destinataire"
+                          : "Recipient specialist"}
+                    </label>
+                    <select
+                      id="patient-document-recipient"
+                      value={selectedPatientRecordId}
+                      onChange={(event) => {
+                        setSelectedPatientRecordId(event.target.value);
+                        setPatientUploadMessage("");
+                        setDocumentsError("");
+                      }}
+                      className="mt-2 w-full rounded-xl border border-aan-border bg-white px-4 py-3 text-sm text-aan-navy outline-none transition focus:border-aan-gold focus:ring-2 focus:ring-aan-gold/15"
+                    >
+                      <option value="">
+                        {language === "ar"
+                          ? "اختر الأخصائي"
+                          : language === "fr"
+                            ? "Choisir le spécialiste"
+                            : "Choose the specialist"}
+                      </option>
+                      {patientDocumentRecipients.map((recipient) => (
+                        <option
+                          key={recipient.patient_record_id}
+                          value={recipient.patient_record_id}
+                        >
+                          {recipient.therapist_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      id="patient-document-upload"
+                      type="file"
+                      onChange={(event) => {
+                        setPatientUploadFile(event.target.files?.[0] || null);
+                        setPatientUploadMessage("");
+                      }}
+                      className="min-w-0 flex-1 rounded-xl border border-aan-border bg-white px-4 py-3 text-sm text-aan-navy file:mr-4 file:rounded-lg file:border-0 file:bg-[#f4efe7] file:px-4 file:py-2 file:font-bold file:text-aan-navy"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void uploadPatientDocument()}
+                      disabled={!patientUploadFile || !selectedPatientRecordId || patientUploading}
+                      className="shrink-0 rounded-xl bg-aan-button px-5 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {patientUploading
+                        ? language === "ar"
+                          ? "جارٍ الإرسال..."
+                          : language === "fr"
+                            ? "Envoi..."
+                            : "Sending..."
+                        : language === "ar"
+                          ? "إرسال إلى الأخصائي"
+                          : language === "fr"
+                            ? "Envoyer au spécialiste"
+                            : "Send to specialist"}
+                    </button>
+                  </div>
+
+                  {patientUploadFile && (
+                    <p className="mt-2 break-words text-sm text-aan-secondary">{patientUploadFile.name}</p>
+                  )}
+                  {patientUploadMessage && (
+                    <div className="mt-4 rounded-xl border border-aan-border bg-[#fbf8f3] px-4 py-3 text-sm text-aan-navy">
+                      {patientUploadMessage}
+                    </div>
+                  )}
+
+                  <h3 className="mt-8 text-base font-bold text-aan-navy">
+                    {language === "ar"
+                      ? "الملفات التي أرسلتها"
+                      : language === "fr"
+                        ? "Fichiers que vous avez envoyés"
+                        : "Files you have sent"}
+                  </h3>
+                  {patientSentDocuments.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-6 text-center text-aan-secondary">
+                      {language === "ar"
+                        ? "لم ترسل أي ملف بعد."
+                        : language === "fr"
+                          ? "Vous n’avez encore envoyé aucun fichier."
+                          : "You have not sent any files yet."}
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-4">
+                      {patientSentDocuments.map((document) => (
+                        <article
+                          key={document.id}
+                          className="flex min-w-0 flex-col gap-4 rounded-2xl border border-aan-border bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="break-words font-bold text-aan-navy">{document.file_name}</p>
+                            {document.created_at && (
+                              <p className="mt-1 text-sm text-aan-secondary">
+                                {formatDocumentDate(document.created_at)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void openPatientDocument(document)}
+                            disabled={openingDocumentId === document.id}
+                            className="shrink-0 rounded-xl border border-aan-border bg-white px-5 py-3 text-sm font-bold text-aan-navy transition hover:border-aan-gold hover:bg-[#fbf8f3] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {openingDocumentId === document.id
+                              ? language === "ar"
+                                ? "جارٍ الفتح..."
+                                : language === "fr"
+                                  ? "Ouverture..."
+                                  : "Opening..."
+                              : language === "ar"
+                                ? "فتح"
+                                : language === "fr"
+                                  ? "Ouvrir"
+                                  : "Open"}
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </section>
             )}
 
