@@ -2382,14 +2382,15 @@ function PatientDashboardContent() {
                   {copy.documentsDescription}
                 </p>
 
-                <div className="mt-8">
-                  <h2 className="text-xl font-bold text-aan-navy">
+                <details className="group mt-8 rounded-2xl border border-aan-border bg-white px-5 py-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-xl font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
                     {language === "ar"
                       ? "المستندات المرسلة من الأخصائي"
                       : language === "fr"
                         ? "Documents envoyés par votre spécialiste"
                         : "Documents sent by your specialist"}
-                  </h2>
+                    <span className="shrink-0 text-sm font-semibold text-aan-secondary">({patientDocuments.length})</span>
+                  </summary>
 
                   {documentsError && (
                     <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700">
@@ -2451,103 +2452,7 @@ function PatientDashboardContent() {
                       ))}
                     </div>
                   )}
-                </div>
-
-                <div className="mt-10 border-t border-aan-border pt-8">
-                  <h2 className="text-xl font-bold text-aan-navy">
-                    {language === "ar"
-                      ? "إيصالات الدفع"
-                      : language === "fr"
-                        ? "Reçus de paiement"
-                        : "Payment receipts"}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                    {language === "ar"
-                      ? "سجل إيصالات المدفوعات والمبالغ المستردة المرتبطة بحسابك."
-                      : language === "fr"
-                        ? "Historique des reçus de paiement et de remboursement liés à votre compte."
-                        : "History of payment and refund receipts linked to your account."}
-                  </p>
-
-                  {documentsLoading ? (
-                    <div className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-8 text-center">
-                      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
-                    </div>
-                  ) : paymentReceipts.length === 0 ? (
-                    <div className="mt-5 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-8 text-center text-aan-secondary">
-                      {language === "ar"
-                        ? "لا توجد إيصالات دفع حتى الآن."
-                        : language === "fr"
-                          ? "Aucun reçu de paiement pour le moment."
-                          : "No payment receipts yet."}
-                    </div>
-                  ) : (
-                    <div className="mt-5 grid gap-4">
-                      {paymentReceipts.map((receipt) => {
-                        const isRefund = receipt.receipt_type === "refund" || receipt.status === "refunded";
-                        const sourceLabel =
-                          receipt.source_type === "patient_pack"
-                            ? language === "ar"
-                              ? "باقة المريض"
-                              : language === "fr"
-                                ? "Pack Patient"
-                                : "Patient Pack"
-                            : language === "ar"
-                              ? "جلسة"
-                              : language === "fr"
-                                ? "Séance"
-                                : "Session";
-                        const statusLabel = isRefund
-                          ? language === "ar"
-                            ? "مسترد"
-                            : language === "fr"
-                              ? "Remboursé"
-                              : "Refunded"
-                          : language === "ar"
-                            ? "مدفوع"
-                            : language === "fr"
-                              ? "Payé"
-                              : "Paid";
-
-                        return (
-                          <article
-                            key={receipt.id}
-                            className="rounded-2xl border border-aan-border bg-white p-5"
-                          >
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="min-w-0">
-                                <p className="break-words font-bold text-aan-navy">
-                                  {language === "ar" ? "إيصال" : language === "fr" ? "Reçu" : "Receipt"} {receipt.receipt_number}
-                                </p>
-                                <p className="mt-1 text-sm text-aan-secondary">
-                                  {[sourceLabel, receipt.therapist_name, receipt.service_type]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
-                                {receipt.issued_at && (
-                                  <p className="mt-1 text-sm text-aan-secondary">
-                                    {formatDocumentDate(receipt.issued_at)}
-                                  </p>
-                                )}
-                              </div>
-                              <div className={isArabic ? "text-right sm:text-left" : "text-left sm:text-right"}>
-                                <p className="text-lg font-extrabold text-aan-navy">
-                                  {new Intl.NumberFormat(getLocale(), {
-                                    style: "currency",
-                                    currency: receipt.currency || "USD",
-                                  }).format(Number(receipt.amount || 0))}
-                                </p>
-                                <span className="mt-2 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-navy">
-                                  {statusLabel}
-                                </span>
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                </details>
 
                 <div className="mt-10 border-t border-aan-border pt-8">
                   <h2 className="text-xl font-bold text-aan-navy">
@@ -2643,13 +2548,19 @@ function PatientDashboardContent() {
                     </div>
                   )}
 
-                  <h3 className="mt-8 text-base font-bold text-aan-navy">
-                    {language === "ar"
-                      ? "الملفات التي أرسلتها"
-                      : language === "fr"
-                        ? "Fichiers que vous avez envoyés"
-                        : "Files you have sent"}
-                  </h3>
+                  <details className="group/sent mt-8 rounded-2xl border border-aan-border bg-[#fbf8f3] px-5 py-1">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-base font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
+                      <span>
+                        {language === "ar"
+                          ? "الملفات التي أرسلتها"
+                          : language === "fr"
+                            ? "Fichiers que vous avez envoyés"
+                            : "Files you have sent"}
+                      </span>
+                      <span className="shrink-0 text-sm font-semibold text-aan-secondary">
+                        ({patientSentDocuments.length})
+                      </span>
+                    </summary>
                   {patientSentDocuments.length === 0 ? (
                     <div className="mt-4 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-6 text-center text-aan-secondary">
                       {language === "ar"
@@ -2695,7 +2606,105 @@ function PatientDashboardContent() {
                       ))}
                     </div>
                   )}
+                  </details>
                 </div>
+                <details className="group mt-6 rounded-2xl border border-aan-border bg-white px-5 py-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-xl font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
+                    {language === "ar"
+                      ? "إيصالات الدفع"
+                      : language === "fr"
+                        ? "Reçus de paiement"
+                        : "Payment receipts"}
+                    <span className="shrink-0 text-sm font-semibold text-aan-secondary">({paymentReceipts.length})</span>
+                  </summary>
+                  <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                    {language === "ar"
+                      ? "سجل إيصالات المدفوعات والمبالغ المستردة المرتبطة بحسابك."
+                      : language === "fr"
+                        ? "Historique des reçus de paiement et de remboursement liés à votre compte."
+                        : "History of payment and refund receipts linked to your account."}
+                  </p>
+
+                  {documentsLoading ? (
+                    <div className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-8 text-center">
+                      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-aan-border border-t-aan-button" />
+                    </div>
+                  ) : paymentReceipts.length === 0 ? (
+                    <div className="mt-5 rounded-2xl border border-dashed border-aan-border bg-[#fbf8f3] p-8 text-center text-aan-secondary">
+                      {language === "ar"
+                        ? "لا توجد إيصالات دفع حتى الآن."
+                        : language === "fr"
+                          ? "Aucun reçu de paiement pour le moment."
+                          : "No payment receipts yet."}
+                    </div>
+                  ) : (
+                    <div className="mt-5 grid gap-4">
+                      {paymentReceipts.map((receipt) => {
+                        const isRefund = receipt.receipt_type === "refund" || receipt.status === "refunded";
+                        const sourceLabel =
+                          receipt.source_type === "patient_pack"
+                            ? language === "ar"
+                              ? "باقة المريض"
+                              : language === "fr"
+                                ? "Pack Patient"
+                                : "Patient Pack"
+                            : language === "ar"
+                              ? "جلسة"
+                              : language === "fr"
+                                ? "Séance"
+                                : "Session";
+                        const statusLabel = isRefund
+                          ? language === "ar"
+                            ? "مسترد"
+                            : language === "fr"
+                              ? "Remboursé"
+                              : "Refunded"
+                          : language === "ar"
+                            ? "مدفوع"
+                            : language === "fr"
+                              ? "Payé"
+                              : "Paid";
+
+                        return (
+                          <article
+                            key={receipt.id}
+                            className="rounded-2xl border border-aan-border bg-white p-5"
+                          >
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="break-words font-bold text-aan-navy">
+                                  {language === "ar" ? "إيصال" : language === "fr" ? "Reçu" : "Receipt"} {receipt.receipt_number}
+                                </p>
+                                <p className="mt-1 text-sm text-aan-secondary">
+                                  {[sourceLabel, receipt.therapist_name, receipt.service_type]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                                {receipt.issued_at && (
+                                  <p className="mt-1 text-sm text-aan-secondary">
+                                    {formatDocumentDate(receipt.issued_at)}
+                                  </p>
+                                )}
+                              </div>
+                              <div className={isArabic ? "text-right sm:text-left" : "text-left sm:text-right"}>
+                                <p className="text-lg font-extrabold text-aan-navy">
+                                  {new Intl.NumberFormat(getLocale(), {
+                                    style: "currency",
+                                    currency: receipt.currency || "USD",
+                                  }).format(Number(receipt.amount || 0))}
+                                </p>
+                                <span className="mt-2 inline-flex rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-navy">
+                                  {statusLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </details>
+
               </section>
             )}
 
