@@ -67,28 +67,6 @@ type ClinicalReport = {
   updated_at: string;
 };
 
-type PatientActivity = {
-  id: string;
-  patient_record_id: string;
-  therapist_id: string;
-  patient_id: string;
-  activity_type: "exercise" | "questionnaire" | "homework";
-  title: string;
-  instructions: string | null;
-  due_date: string | null;
-  status: "todo" | "submitted" | "completed";
-  therapist_file_name: string | null;
-  therapist_file_path: string | null;
-  patient_file_name: string | null;
-  patient_file_path: string | null;
-  patient_response: string | null;
-  assigned_at: string;
-  submitted_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 type PatientDocument = {
   id: string;
   patient_record_id: string;
@@ -162,15 +140,6 @@ export default function PatientRecordPage() {
   ] = useState<PatientDocument[]>(
     [],
   );
-
-  const [activities, setActivities] = useState<PatientActivity[]>([]);
-  const [activityType, setActivityType] =
-    useState<PatientActivity["activity_type"]>("exercise");
-  const [activityTitle, setActivityTitle] = useState("");
-  const [activityInstructions, setActivityInstructions] = useState("");
-  const [activityDueDate, setActivityDueDate] = useState("");
-  const [activityFile, setActivityFile] = useState<File | null>(null);
-  const [savingActivity, setSavingActivity] = useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -590,7 +559,6 @@ export default function PatientRecordPage() {
         historyResult,
         reportsResult,
         documentsResult,
-        activitiesResult,
       ] = await Promise.all([
         supabase
           .from("clinical_notes")
@@ -673,12 +641,6 @@ export default function PatientRecordPage() {
               ascending: false,
             },
           ),
-
-        supabase
-          .from("patient_activities")
-          .select("*")
-          .eq("patient_record_id", patientRecordId)
-          .order("created_at", { ascending: false }),
       ]);
 
       const firstError =
@@ -686,8 +648,7 @@ export default function PatientRecordPage() {
         goalsResult.error ||
         historyResult.error ||
         reportsResult.error ||
-        documentsResult.error ||
-        activitiesResult.error;
+        documentsResult.error;
 
       if (firstError) {
         throw firstError;
@@ -716,11 +677,6 @@ export default function PatientRecordPage() {
       setDocuments(
         (documentsResult.data ||
           []) as PatientDocument[],
-      );
-
-      setActivities(
-        (activitiesResult.data ||
-          []) as PatientActivity[],
       );
     };
 
@@ -1626,137 +1582,6 @@ export default function PatientRecordPage() {
     }
   };
 
-  const addActivity = async (event: FormEvent) => {
-    event.preventDefault();
-
-    if (!record || !patientRecordId || !activityTitle.trim()) return;
-
-    if (activityFile && activityFile.size > 15 * 1024 * 1024) {
-      window.alert(
-        language === "ar"
-          ? "يجب ألا يتجاوز حجم الملف 15 ميغابايت."
-          : language === "fr"
-            ? "Le fichier ne doit pas dépasser 15 Mo."
-            : "The file must not exceed 15 MB.",
-      );
-      return;
-    }
-
-    setSavingActivity(true);
-    let uploadedPath: string | null = null;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || user.id !== record.therapist_id) throw new Error("Not authenticated");
-
-      if (activityFile) {
-        const safeName = activityFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        uploadedPath = `activities/${user.id}/${patientRecordId}/${crypto.randomUUID()}-${safeName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("patient-documents")
-          .upload(uploadedPath, activityFile, {
-            upsert: false,
-            contentType: activityFile.type || "application/octet-stream",
-          });
-
-        if (uploadError) throw uploadError;
-      }
-
-      const { error: insertError } = await supabase
-        .from("patient_activities")
-        .insert({
-          patient_record_id: patientRecordId,
-          therapist_id: record.therapist_id,
-          patient_id: record.patient_id,
-          activity_type: activityType,
-          title: activityTitle.trim(),
-          instructions: activityInstructions.trim() || null,
-          due_date: activityDueDate || null,
-          status: "todo",
-          therapist_file_name: activityFile?.name || null,
-          therapist_file_path: uploadedPath,
-        });
-
-      if (insertError) {
-        if (uploadedPath) {
-          await supabase.storage.from("patient-documents").remove([uploadedPath]);
-        }
-        throw insertError;
-      }
-
-      setActivityType("exercise");
-      setActivityTitle("");
-      setActivityInstructions("");
-      setActivityDueDate("");
-      setActivityFile(null);
-      await loadClinicalData();
-    } catch (activityError) {
-      console.error("Patient activity create error:", activityError);
-      window.alert(
-        language === "ar"
-          ? "تعذر إرسال النشاط إلى المريض."
-          : language === "fr"
-            ? "Impossible d’envoyer l’activité au patient."
-            : "Unable to send the activity to the patient.",
-      );
-    } finally {
-      setSavingActivity(false);
-    }
-  };
-
-  const completeActivity = async (activity: PatientActivity) => {
-    setSavingActivity(true);
-    try {
-      const { error: updateError } = await supabase
-        .from("patient_activities")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", activity.id);
-
-      if (updateError) throw updateError;
-      await loadClinicalData();
-    } catch (activityError) {
-      console.error("Patient activity complete error:", activityError);
-      window.alert(text.saveError);
-    } finally {
-      setSavingActivity(false);
-    }
-  };
-
-  const deleteActivity = async (activity: PatientActivity) => {
-    if (!window.confirm(text.deleteConfirm)) return;
-
-    setSavingActivity(true);
-    try {
-      const paths = [activity.therapist_file_path, activity.patient_file_path]
-        .filter((value): value is string => Boolean(value));
-
-      if (paths.length > 0) {
-        const { error: storageError } = await supabase.storage
-          .from("patient-documents")
-          .remove(paths);
-        if (storageError) throw storageError;
-      }
-
-      const { error: deleteError } = await supabase
-        .from("patient_activities")
-        .delete()
-        .eq("id", activity.id);
-
-      if (deleteError) throw deleteError;
-      await loadClinicalData();
-    } catch (activityError) {
-      console.error("Patient activity delete error:", activityError);
-      window.alert(text.saveError);
-    } finally {
-      setSavingActivity(false);
-    }
-  };
-
   const standaloneDocuments = documents.filter(
     (document) =>
       (document.section === "document" || document.section === null) &&
@@ -1993,10 +1818,11 @@ export default function PatientRecordPage() {
                 </section>
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-2">
-                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
-                    <SectionTitle>
-                      {text.notes}
-                    </SectionTitle>
+                  <details className="group aan-card min-w-0 overflow-hidden p-6 sm:p-7">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                      <SectionTitle>{text.notes}</SectionTitle>
+                      <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                    </summary>
 
                     <form
                       onSubmit={addNote}
@@ -2283,12 +2109,13 @@ export default function PatientRecordPage() {
                           : `${showMoreLabel} (${notes.length - ITEMS_PREVIEW_LIMIT})`}
                       </button>
                     ) : null}
-                  </section>
+                  </details>
 
-                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
-                    <SectionTitle>
-                      {text.history}
-                    </SectionTitle>
+                  <details className="group aan-card min-w-0 overflow-hidden p-6 sm:p-7">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                      <SectionTitle>{text.history}</SectionTitle>
+                      <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                    </summary>
 
                     <form
                       onSubmit={addHistory}
@@ -2568,12 +2395,13 @@ export default function PatientRecordPage() {
                           : `${showMoreLabel} (${history.length - ITEMS_PREVIEW_LIMIT})`}
                       </button>
                     ) : null}
-                  </section>
+                  </details>
 
-                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
-                    <SectionTitle>
-                      {text.goals}
-                    </SectionTitle>
+                  <details className="group aan-card min-w-0 overflow-hidden p-6 sm:p-7">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                      <SectionTitle>{text.goals}</SectionTitle>
+                      <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                    </summary>
 
                     <form
                       onSubmit={addGoal}
@@ -2828,12 +2656,13 @@ export default function PatientRecordPage() {
                           : `${showMoreLabel} (${goals.length - ITEMS_PREVIEW_LIMIT})`}
                       </button>
                     ) : null}
-                  </section>
+                  </details>
 
-                  <section className="aan-card min-w-0 overflow-hidden p-6 sm:p-7">
-                    <SectionTitle>
-                      {text.reports}
-                    </SectionTitle>
+                  <details className="group aan-card min-w-0 overflow-hidden p-6 sm:p-7">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                      <SectionTitle>{text.reports}</SectionTitle>
+                      <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                    </summary>
 
                     <form
                       onSubmit={addReport}
@@ -3124,162 +2953,18 @@ export default function PatientRecordPage() {
                           : `${showMoreLabel} (${reports.length - ITEMS_PREVIEW_LIMIT})`}
                       </button>
                     ) : null}
-                  </section>
+                  </details>
 
                   <section className="aan-card p-6 sm:p-7 xl:col-span-2">
-                    <SectionTitle>
-                      {language === "ar"
-                        ? "الأنشطة والتمارين"
-                        : language === "fr"
-                          ? "Activités / Exercices / Questionnaires"
-                          : "Activities / Exercises / Questionnaires"}
-                    </SectionTitle>
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                        <SectionTitle>{text.documentsToPatient}</SectionTitle>
+                        <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                      </summary>
 
-                    <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                      {language === "ar"
-                        ? "أنشئ نشاطاً للمريض مع التعليمات وموعد اختياري وملف عند الحاجة."
-                        : language === "fr"
-                          ? "Créez une activité pour le patient avec des consignes, une échéance facultative et éventuellement un fichier."
-                          : "Create an activity for the patient with instructions, an optional due date, and an optional file."}
-                    </p>
-
-                    <form onSubmit={addActivity} className="mt-5 rounded-2xl border border-aan-border bg-[#fbf8f3] p-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <select
-                          value={activityType}
-                          onChange={(event) => setActivityType(event.target.value as PatientActivity["activity_type"])}
-                          className="aan-field w-full p-3"
-                        >
-                          <option value="exercise">{language === "ar" ? "تمرين" : language === "fr" ? "Exercice" : "Exercise"}</option>
-                          <option value="questionnaire">{language === "ar" ? "استبيان" : "Questionnaire"}</option>
-                          <option value="homework">{language === "ar" ? "واجب" : language === "fr" ? "Devoir" : "Homework"}</option>
-                        </select>
-
-                        <input
-                          type="date"
-                          value={activityDueDate}
-                          onChange={(event) => setActivityDueDate(event.target.value)}
-                          className="aan-field w-full p-3"
-                          aria-label={language === "ar" ? "تاريخ الاستحقاق" : language === "fr" ? "Échéance" : "Due date"}
-                        />
-                      </div>
-
-                      <input
-                        type="text"
-                        value={activityTitle}
-                        onChange={(event) => setActivityTitle(event.target.value)}
-                        placeholder={language === "ar" ? "عنوان النشاط" : language === "fr" ? "Titre de l’activité" : "Activity title"}
-                        className="aan-field mt-3 w-full p-3"
-                      />
-
-                      <textarea
-                        value={activityInstructions}
-                        onChange={(event) => setActivityInstructions(event.target.value)}
-                        placeholder={language === "ar" ? "التعليمات" : language === "fr" ? "Consignes pour le patient" : "Instructions for the patient"}
-                        className="aan-field mt-3 min-h-28 w-full resize-y p-3"
-                      />
-
-                      <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-aan-border bg-white px-4 py-3 text-sm font-semibold text-aan-secondary transition hover:text-aan-navy">
-                        <span>+ {language === "ar" ? "إرفاق ملف" : language === "fr" ? "Joindre un fichier" : "Attach file"}</span>
-                        <span className="max-w-[55%] truncate text-xs font-normal">{activityFile?.name || ""}</span>
-                        <input type="file" className="hidden" onChange={(event) => setActivityFile(event.target.files?.[0] || null)} />
-                      </label>
-
-                      <button
-                        type="submit"
-                        disabled={savingActivity || !activityTitle.trim()}
-                        className="aan-button mt-3 px-5 py-2.5 disabled:opacity-60"
-                      >
-                        {savingActivity
-                          ? language === "ar" ? "جارٍ الإرسال..." : language === "fr" ? "Envoi..." : "Sending..."
-                          : language === "ar" ? "إرسال إلى المريض" : language === "fr" ? "Envoyer au patient" : "Send to patient"}
-                      </button>
-                    </form>
-
-                    <div className="mt-5 grid gap-3">
-                      {activities.length === 0 ? (
-                        <p className="rounded-2xl border border-aan-border bg-white p-4 text-aan-secondary">
-                          {language === "ar" ? "لا توجد أنشطة للمريض حالياً." : language === "fr" ? "Aucune activité pour le moment." : "No activities yet."}
-                        </p>
-                      ) : activities.map((activity) => (
-                        <article key={activity.id} className="min-w-0 rounded-2xl border border-aan-border bg-white p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full border border-aan-border bg-[#fbf8f3] px-3 py-1 text-xs font-bold text-aan-secondary">
-                                  {activity.activity_type === "exercise"
-                                    ? language === "ar" ? "تمرين" : language === "fr" ? "Exercice" : "Exercise"
-                                    : activity.activity_type === "questionnaire"
-                                      ? language === "ar" ? "استبيان" : "Questionnaire"
-                                      : language === "ar" ? "واجب" : language === "fr" ? "Devoir" : "Homework"}
-                                </span>
-                                <span className="rounded-full border border-aan-border px-3 py-1 text-xs font-bold text-aan-secondary">
-                                  {activity.status === "todo"
-                                    ? language === "ar" ? "للإنجاز" : language === "fr" ? "À faire" : "To do"
-                                    : activity.status === "submitted"
-                                      ? language === "ar" ? "تم الإرسال" : language === "fr" ? "Envoyé" : "Submitted"
-                                      : language === "ar" ? "مكتمل" : language === "fr" ? "Terminé" : "Completed"}
-                                </span>
-                              </div>
-
-                              <p className="mt-3 break-words font-bold text-aan-navy">{activity.title}</p>
-
-                              {activity.instructions ? (
-                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-aan-secondary">{activity.instructions}</p>
-                              ) : null}
-
-                              {activity.due_date ? (
-                                <p className="mt-2 text-xs font-semibold text-aan-secondary">
-                                  {language === "ar" ? "الموعد: " : language === "fr" ? "Échéance : " : "Due: "}
-                                  {formatDate(activity.due_date)}
-                                </p>
-                              ) : null}
-
-                              {activity.patient_response ? (
-                                <div className="mt-3 rounded-xl border border-aan-border bg-[#fbf8f3] p-3">
-                                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-aan-gold">
-                                    {language === "ar" ? "رد المريض" : language === "fr" ? "Réponse du patient" : "Patient response"}
-                                  </p>
-                                  <p className="mt-2 whitespace-pre-wrap text-sm text-aan-secondary">{activity.patient_response}</p>
-                                </div>
-                              ) : null}
-
-                              <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold">
-                                {activity.therapist_file_path ? (
-                                  <button type="button" onClick={() => void openDocument(activity.therapist_file_path!)} className="text-aan-navy">
-                                    {language === "ar" ? "فتح الملف المرفق" : language === "fr" ? "Ouvrir la pièce jointe" : "Open attachment"}
-                                  </button>
-                                ) : null}
-                                {activity.patient_file_path ? (
-                                  <button type="button" onClick={() => void openDocument(activity.patient_file_path!)} className="text-aan-navy">
-                                    {language === "ar" ? "فتح ملف المريض" : language === "fr" ? "Ouvrir le fichier du patient" : "Open patient file"}
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div className="flex shrink-0 flex-wrap gap-3">
-                              {activity.status === "submitted" ? (
-                                <button type="button" disabled={savingActivity} onClick={() => void completeActivity(activity)} className="text-xs font-bold text-aan-gold disabled:opacity-60">
-                                  {language === "ar" ? "وضع علامة مكتمل" : language === "fr" ? "Marquer terminé" : "Mark completed"}
-                                </button>
-                              ) : null}
-                              <button type="button" disabled={savingActivity} onClick={() => void deleteActivity(activity)} className="text-xs font-bold text-red-700 disabled:opacity-60">
-                                {text.delete}
-                              </button>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="aan-card p-6 sm:p-7 xl:col-span-2">
-                    <SectionTitle>{text.documentsToPatient}</SectionTitle>
-
-                    <p className="mt-2 text-sm leading-6 text-aan-secondary">
-                      {text.documentsToPatientHint}
-                    </p>
+                      <p className="mt-2 text-sm leading-6 text-aan-secondary">
+                        {text.documentsToPatientHint}
+                      </p>
 
                     <form
                       onSubmit={uploadGeneralDocument}
@@ -3432,8 +3117,13 @@ export default function PatientRecordPage() {
                       )}
                     </div>
 
-                    <div className="mt-8 border-t border-aan-border pt-7">
-                      <SectionTitle>{text.documentsFromPatient}</SectionTitle>
+                    </details>
+
+                    <details className="group mt-8 border-t border-aan-border pt-7">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                        <SectionTitle>{text.documentsFromPatient}</SectionTitle>
+                        <span className="text-xl font-bold text-aan-gold transition-transform group-open:rotate-180">⌄</span>
+                      </summary>
 
                       <p className="mt-2 text-sm leading-6 text-aan-secondary">
                         {text.documentsFromPatientHint}
@@ -3473,7 +3163,7 @@ export default function PatientRecordPage() {
                           ))
                         )}
                       </div>
-                    </div>
+                    </details>
                   </section>
                 </div>
 
