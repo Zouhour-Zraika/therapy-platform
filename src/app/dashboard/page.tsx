@@ -1634,6 +1634,125 @@ function PatientDashboardContent() {
   };
 
 
+  const faqItems =
+    language === "ar"
+      ? [
+          {
+            question: "كيف أحجز جلسة؟",
+            answer: "اختر الأخصائي والخدمة والموعد المناسب من صفحة الحجز، ثم أكمل الدفع لتأكيد الجلسة.",
+          },
+          {
+            question: "أين أجد جلساتي ومواعيدي؟",
+            answer: "من قسم «جلساتي» يمكنك الاطلاع على باقة المريض ومواعيدك وحالة كل جلسة وتفاصيلها.",
+          },
+          {
+            question: "كيف أنضم إلى جلسة عبر الإنترنت؟",
+            answer: "عندما يكون رابط الجلسة متاحاً، يظهر زر الانضمام مباشرة في «جلساتي». استخدم هذا الزر للدخول إلى Zoom أو خدمة الاتصال المرتبطة بموعدك.",
+          },
+          {
+            question: "هل يمكنني تغيير موعد الجلسة أو إلغاءها؟",
+            answer: "للجلسة الفردية المدفوعة، يمكن طلب تغيير الموعد أو الإلغاء عندما يبقى أكثر من 24 ساعة على الجلسة. خلال آخر 24 ساعة لا يعود التغيير أو الإلغاء متاحاً. لجلسات الباقة، يمكن تغيير الموعد ضمن المهلة نفسها، لكن الإلغاء والاسترداد غير متاحين.",
+          },
+          {
+            question: "كيف تعمل باقة المريض؟",
+            answer: "تعرض «جلساتي» عدد الجلسات المتبقية وتاريخ صلاحية الباقة. يمكنك حجز جلسة من الرصيد المتبقي من دون دفع جديد لكل جلسة.",
+          },
+          {
+            question: "أين أجد إيصالات الدفع؟",
+            answer: "تجد إيصالات الدفع والاسترداد في «مستنداتي» ضمن قسم إيصالات الدفع.",
+          },
+          {
+            question: "أين أجد المستندات التي أرسلها الأخصائي؟",
+            answer: "تظهر في «مستنداتي» فقط المستندات التي اختار الأخصائي مشاركتها معك. تبقى بقية محتويات الملف السريري خاصة.",
+          },
+          {
+            question: "كيف أرسل ملفاً إلى الأخصائي؟",
+            answer: "من «مستنداتي»، اختر الأخصائي المستلم عند الحاجة، ثم اختر الملف وأرسله. يمكنك بعد ذلك العثور على الملفات التي أرسلتها في القسم المخصص لها.",
+          },
+          {
+            question: "هل يمكنني تغيير معلومات ملفي الشخصي؟",
+            answer: "نعم. من «ملفي الشخصي» يمكنك تحديث معلوماتك الشخصية وصورتك. يبقى البريد الإلكتروني مرتبطاً بحسابك ولا يتم تغييره من هذه الصفحة.",
+          },
+        ]
+      : language === "fr"
+        ? [
+            {
+              question: "Comment réserver une séance ?",
+              answer: "Choisissez votre spécialiste, le service et le créneau souhaité depuis la réservation, puis finalisez le paiement pour confirmer la séance.",
+            },
+            {
+              question: "Où retrouver mes séances et mes rendez-vous ?",
+              answer: "Dans « Mes séances », vous retrouvez votre Pack Patient, vos rendez-vous, le statut de chaque séance et ses informations principales.",
+            },
+            {
+              question: "Comment rejoindre une séance en ligne ?",
+              answer: "Lorsque le lien de visioconférence est disponible, un bouton pour rejoindre la séance apparaît directement dans « Mes séances ». Il vous permet d’ouvrir Zoom ou le service de visioconférence associé au rendez-vous.",
+            },
+            {
+              question: "Puis-je changer ou annuler une séance ?",
+              answer: "Pour une séance individuelle payée, le changement de créneau ou l’annulation peuvent être demandés lorsqu’il reste plus de 24 h avant la séance. Dans les dernières 24 h, ces actions ne sont plus disponibles. Pour une séance du Pack, le changement de créneau suit le même délai, mais l’annulation et le remboursement ne sont pas disponibles.",
+            },
+            {
+              question: "Comment fonctionne mon Pack Patient ?",
+              answer: "Dans « Mes séances », votre Pack indique le nombre de séances restantes et sa date de validité. Vous pouvez réserver une séance avec le crédit restant sans effectuer un nouveau paiement pour chaque séance.",
+            },
+            {
+              question: "Où trouver mes reçus de paiement ?",
+              answer: "Vos reçus de paiement et de remboursement sont disponibles dans « Mes documents », dans la section « Reçus de paiement ».",
+            },
+            {
+              question: "Où trouver les documents envoyés par mon spécialiste ?",
+              answer: "Dans « Mes documents », seuls les documents que votre spécialiste a choisi de partager avec vous sont visibles. Les autres éléments du dossier clinique restent privés.",
+            },
+            {
+              question: "Comment envoyer un fichier à mon spécialiste ?",
+              answer: "Dans « Mes documents », choisissez si nécessaire le spécialiste destinataire, sélectionnez votre fichier puis envoyez-le. Vos fichiers envoyés restent ensuite accessibles dans la section prévue à cet effet.",
+            },
+            {
+              question: "Puis-je modifier les informations de mon profil ?",
+              answer: "Oui. Dans « Mon profil », vous pouvez mettre à jour vos informations personnelles et votre photo. Votre adresse e-mail reste liée à votre compte et ne se modifie pas depuis cette page.",
+            },
+          ]
+        : [
+            {
+              question: "How do I book a session?",
+              answer: "Choose your specialist, service and preferred time from the booking page, then complete payment to confirm the session.",
+            },
+            {
+              question: "Where can I find my sessions and appointments?",
+              answer: "In “My sessions”, you can find your Patient Pack, appointments, each session’s status and its main details.",
+            },
+            {
+              question: "How do I join an online session?",
+              answer: "When the video-call link is available, a button to join the session appears directly in “My sessions”. Use it to open Zoom or the video service linked to your appointment.",
+            },
+            {
+              question: "Can I change or cancel a session?",
+              answer: "For a paid individual session, a time change or cancellation can be requested when more than 24 hours remain before the session. These actions are no longer available during the final 24 hours. For Pack sessions, the same time-change deadline applies, but cancellation and refunds are not available.",
+            },
+            {
+              question: "How does my Patient Pack work?",
+              answer: "In “My sessions”, your Pack shows the number of sessions remaining and its validity date. You can book using your remaining credit without making a new payment for each session.",
+            },
+            {
+              question: "Where can I find my payment receipts?",
+              answer: "Your payment and refund receipts are available in “My documents”, under the payment receipts section.",
+            },
+            {
+              question: "Where can I find documents sent by my specialist?",
+              answer: "In “My documents”, you only see documents your specialist has explicitly chosen to share with you. Other clinical-record content remains private.",
+            },
+            {
+              question: "How do I send a file to my specialist?",
+              answer: "In “My documents”, select the receiving specialist when needed, choose your file and send it. Files you have sent remain available in the dedicated section.",
+            },
+            {
+              question: "Can I update my profile information?",
+              answer: "Yes. In “My profile”, you can update your personal information and photo. Your email address remains linked to your account and cannot be changed from that page.",
+            },
+          ];
+
+
 
   return (
     <ProtectedRoute allowedRoles={["patient"]}>
@@ -2709,17 +2828,43 @@ function PatientDashboardContent() {
             )}
 
             {activeSection === "help" && (
-              <section className="rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
-                  AAN Psychotherapy
-                </p>
-                <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
-                  {copy.helpTitle}
-                </h1>
-                <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
-                  {copy.helpDescription}
-                </p>
-              </section>
+              <div className="space-y-6">
+                <section className="rounded-[2.25rem] border border-aan-border bg-white p-8 shadow-[var(--aan-shadow-md)] sm:p-10">
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-aan-gold">
+                    AAN Psychotherapy
+                  </p>
+                  <h1 className="aan-heading mt-2 text-3xl sm:text-4xl">
+                    {copy.helpTitle}
+                  </h1>
+                  <p className="mt-5 max-w-2xl text-base leading-7 text-aan-secondary">
+                    {copy.helpDescription}
+                  </p>
+                </section>
+
+                <section className="rounded-[2.25rem] border border-aan-border bg-white p-5 shadow-[var(--aan-shadow-md)] sm:p-8">
+                  <div className="space-y-3">
+                    {faqItems.map((item, index) => (
+                      <details
+                        key={item.question}
+                        className="group rounded-2xl border border-aan-border bg-white px-5 py-1 open:bg-[#fbf8f3]"
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-base font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
+                          <span>{item.question}</span>
+                          <span
+                            aria-hidden="true"
+                            className="shrink-0 text-lg font-bold text-aan-gold transition-transform group-open:rotate-180"
+                          >
+                           ⌄
+                          </span>
+                        </summary>
+                        <div className="border-t border-aan-border pb-5 pt-4 text-sm leading-7 text-aan-secondary sm:text-base">
+                          {item.answer}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </section>
+              </div>
             )}
             </section>
           </main>
