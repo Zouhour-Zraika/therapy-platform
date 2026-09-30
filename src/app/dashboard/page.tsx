@@ -1673,6 +1673,26 @@ function PatientDashboardContent() {
             question: "هل يمكنني تغيير معلومات ملفي الشخصي؟",
             answer: "نعم. من «ملفي الشخصي» يمكنك تحديث معلوماتك الشخصية وصورتك. يبقى البريد الإلكتروني مرتبطاً بحسابك ولا يتم تغييره من هذه الصفحة.",
           },
+          {
+            question: "كيف تسير الجلسة الأولى؟",
+            answer: "تتيح الجلسة الأولى عادةً التعارف والتحدث عما دفعك إلى طلب المساعدة والبدء في تحديد احتياجاتك وأهدافك. وقد يختلف سير الجلسة بحسب حالتك والمنهج الذي يتبعه الأخصائي.",
+          },
+          {
+            question: "كيف أعرف ما إذا كان العلاج النفسي يمكن أن يساعدني؟",
+            answer: "يمكن أن يوفر العلاج النفسي مساحة لفهم ما تمر به بشكل أفضل، والعمل على الصعوبات أو التغييرات، وتحديد أهداف مع الأخصائي. وقد تساعدك الاستشارة الأولى على معرفة ما إذا كان هذا النوع من الدعم مناسباً لاحتياجاتك.",
+          },
+          {
+            question: "لا أعرف إن كان ما أمرّ به اكتئاباً أو توتراً أو شيئاً آخر. أي نوع من الأخصائيين أختار؟",
+            answer: "ليس عليك أن تعرف التشخيص أو أن تحدد بنفسك ما الذي تمرّ به قبل حجز موعد. يمكنك اختيار أخصائي بحسب الصعوبة التي تشعر بها ومجالات عمله الموضحة في ملفه. وإذا لم تكن متأكداً، يمكن أن تساعد الجلسة الأولى الأخصائي على فهم احتياجاتك بشكل أفضل ومناقشة نوع المتابعة الأنسب، وتوجيهك إلى نوع آخر من الأخصائيين عند الحاجة.",
+          },
+          {
+            question: "كم عدد الجلسات التي أحتاج إليها عادةً؟",
+            answer: "لا يوجد عدد محدد من الجلسات يناسب الجميع. تعتمد المدة على احتياجاتك وأهدافك وظروفك والمنهج العلاجي المتبع. ويمكنك مناقشة ذلك مع الأخصائي خلال المتابعة.",
+          },
+          {
+            question: "هل يمكنني التحدث عن كل شيء مع الأخصائي؟",
+            answer: "صُمم العلاج النفسي ليكون مساحة سرية يمكنك فيها التحدث بحرية عما يشغلك. ويمكن للأخصائي أن يشرح لك منذ البداية إطار السرية وأي حدود أو التزامات قد تنطبق في بعض الحالات.",
+          },
         ]
       : language === "fr"
         ? [
@@ -1712,6 +1732,26 @@ function PatientDashboardContent() {
               question: "Puis-je modifier les informations de mon profil ?",
               answer: "Oui. Dans « Mon profil », vous pouvez mettre à jour vos informations personnelles et votre photo. Votre adresse e-mail reste liée à votre compte et ne se modifie pas depuis cette page.",
             },
+            {
+              question: "Comment se déroule une première séance ?",
+              answer: "La première séance permet généralement de faire connaissance, de parler de ce qui vous amène à consulter et de commencer à préciser vos besoins et vos objectifs. Le déroulement peut varier selon votre situation et l’approche du spécialiste.",
+            },
+            {
+              question: "Comment savoir si la psychothérapie peut m’aider ?",
+              answer: "La psychothérapie peut offrir un espace pour mieux comprendre ce que vous vivez, travailler sur des difficultés ou des changements, et définir des objectifs avec un spécialiste. Une première consultation peut vous aider à déterminer si cet accompagnement correspond à vos besoins.",
+            },
+            {
+              question: "Je ne sais pas si ce que je traverse est une dépression, du stress ou autre chose. Quel type de spécialiste choisir ?",
+              answer: "Vous n’avez pas besoin de connaître votre diagnostic ni de déterminer seul ce que vous traversez avant de prendre rendez-vous. Vous pouvez choisir un spécialiste en fonction de vos difficultés et des domaines de prise en charge indiqués dans son profil. Si vous hésitez, une première consultation peut permettre au spécialiste de mieux comprendre vos besoins, de discuter avec vous du type d’accompagnement adapté et, si nécessaire, de vous orienter vers un autre type de professionnel.",
+            },
+            {
+              question: "Combien de séances sont généralement nécessaires ?",
+              answer: "Il n’existe pas de nombre de séances valable pour tout le monde. La durée dépend notamment de vos besoins, de vos objectifs, de votre situation et de l’approche thérapeutique. Votre spécialiste pourra en discuter avec vous au fil du suivi.",
+            },
+            {
+              question: "Puis-je parler de tout avec mon spécialiste ?",
+              answer: "La psychothérapie est conçue comme un espace confidentiel où vous pouvez parler librement de ce qui vous préoccupe. Votre spécialiste peut vous expliquer dès le début le cadre de confidentialité ainsi que les éventuelles limites ou obligations applicables à certaines situations.",
+            },
           ]
         : [
             {
@@ -1749,6 +1789,26 @@ function PatientDashboardContent() {
             {
               question: "Can I update my profile information?",
               answer: "Yes. In “My profile”, you can update your personal information and photo. Your email address remains linked to your account and cannot be changed from that page.",
+            },
+            {
+              question: "What happens during a first therapy session?",
+              answer: "A first session generally gives you and your specialist time to get acquainted, discuss what brings you to therapy, and begin identifying your needs and goals. The exact process can vary depending on your situation and the specialist’s therapeutic approach.",
+            },
+            {
+              question: "How do I know whether psychotherapy could help me?",
+              answer: "Psychotherapy can provide a space to better understand what you are experiencing, work through difficulties or changes, and define goals with a specialist. An initial consultation can help you explore whether this kind of support fits your needs.",
+            },
+            {
+              question: "I’m not sure whether what I’m experiencing is depression, stress, or something else. What type of specialist should I choose?",
+              answer: "You do not need to know your diagnosis or work out on your own what you are experiencing before booking an appointment. You can choose a specialist based on the difficulties you are facing and the areas of care listed in their profile. If you are unsure, an initial consultation can help the specialist better understand your needs, discuss the type of support that may be appropriate, and, when needed, guide you toward another type of professional.",
+            },
+            {
+              question: "How many therapy sessions are usually needed?",
+              answer: "There is no single number of sessions that applies to everyone. The duration depends on factors such as your needs, goals, circumstances, and therapeutic approach. Your specialist can discuss this with you as therapy progresses.",
+            },
+            {
+              question: "Can I talk about anything with my specialist?",
+              answer: "Psychotherapy is intended to provide a confidential space where you can speak openly about what concerns you. Your specialist can explain the confidentiality framework at the beginning, including any limits or obligations that may apply in certain situations.",
             },
           ];
 
