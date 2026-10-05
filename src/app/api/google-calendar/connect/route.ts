@@ -153,10 +153,7 @@ export async function GET(request: NextRequest) {
         .maybeSingle<SpecialistRow>();
 
     if (specialistError) {
-      console.error(
-        "Google connect specialist error:",
-        specialistError,
-      );
+      console.error("Google connect specialist error.");
 
       return NextResponse.json(
         {
@@ -302,10 +299,7 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error(
-      "Google connect error:",
-      error,
-    );
+    console.error("Google connect error.");
 
     return NextResponse.json(
       {

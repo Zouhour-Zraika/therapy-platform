@@ -97,7 +97,11 @@ export async function GET(request: NextRequest) {
     const tokenData = (await tokenResponse.json()) as ZoomTokenResponse;
 
     if (!tokenResponse.ok || !tokenData.access_token || !tokenData.refresh_token) {
-      console.error("Zoom token exchange failed:", tokenData);
+      console.error("Zoom token exchange failed:", {
+        status: tokenResponse.status,
+        error: tokenData.error,
+        reason: tokenData.reason,
+      });
       throw new Error("Zoom token exchange failed.");
     }
 
@@ -167,7 +171,7 @@ export async function GET(request: NextRequest) {
 
     return redirectWithZoomStatus(request, "connected");
   } catch (error) {
-    console.error("Zoom callback error:", error);
+    console.error("Zoom callback error.");
     return redirectWithZoomStatus(request, "error");
   }
 }

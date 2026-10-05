@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Zoom connect error:", error);
+    console.error("Zoom connect error.");
 
     return NextResponse.json(
       { error: "Erreur lors de la connexion Zoom." },

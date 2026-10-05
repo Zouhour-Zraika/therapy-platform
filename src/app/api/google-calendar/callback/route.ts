@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
 
     return redirectWithGoogleStatus(request, "connected");
   } catch (error) {
-    console.error("Google callback error:", error);
+    console.error("Google callback error.");
 
     return redirectWithGoogleStatus(request, "error");
   }

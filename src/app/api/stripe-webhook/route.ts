@@ -1472,19 +1472,7 @@ async function refreshZoomAccessToken({
     !response.ok ||
     !data.access_token
   ) {
-    console.error(
-      "Zoom access token refresh failed:",
-      {
-        status:
-          response.status,
-
-        error:
-          data.error,
-
-        reason:
-          data.reason,
-      },
-    );
+    console.error('Zoom access token refresh failed:');
 
     throw new Error(
       "Unable to refresh Zoom access token.",
@@ -1721,19 +1709,7 @@ async function createZoomMeetingForBooking({
     !meeting.join_url ||
     !meeting.start_url
   ) {
-    console.error(
-      "Zoom meeting creation failed:",
-      {
-        status:
-          response.status,
-
-        code:
-          meeting.code,
-
-        message:
-          meeting.message,
-      },
-    );
+    console.error('Zoom meeting creation failed:');
 
     throw new Error(
       meeting.message ||
@@ -1881,10 +1857,7 @@ export async function POST(
         webhookSecret,
       );
   } catch (error) {
-    console.error(
-      "Stripe webhook signature error:",
-      error,
-    );
+    console.error('Stripe webhook signature error:');
 
     return NextResponse.json(
       {
@@ -1934,11 +1907,7 @@ export async function POST(
       session.payment_status !==
       "paid"
     ) {
-      console.log(
-        "Stripe session received but not paid:",
-        session.id,
-        session.payment_status,
-      );
+      
 
       return NextResponse.json({
         received: true,
@@ -1973,10 +1942,7 @@ export async function POST(
           ?.trim();
 
       if (!packId) {
-        console.error(
-          "Stripe Patient Pack session does not contain packId:",
-          session.id,
-        );
+        console.error('Stripe Patient Pack session does not contain packId:');
 
         return NextResponse.json(
           {
@@ -2075,10 +2041,7 @@ export async function POST(
       }
 
       if (!existingPack) {
-        console.error(
-          "Patient Pack not found:",
-          packId,
-        );
+        console.error('Patient Pack not found:');
 
         return NextResponse.json(
           {
@@ -2106,15 +2069,7 @@ export async function POST(
         metadataPatientId !==
           existingPack.patient_id
       ) {
-        console.error(
-          "Patient Pack ownership mismatch:",
-          {
-            packId,
-            metadataPatientId,
-            packPatientId:
-              existingPack.patient_id,
-          },
-        );
+        console.error('Patient Pack ownership mismatch:');
 
         return NextResponse.json(
           {
@@ -2155,18 +2110,7 @@ export async function POST(
             packPrice,
         ) > 0.001
       ) {
-        console.error(
-          "Stripe Patient Pack amount mismatch:",
-          {
-            packId,
-            expectedAmount:
-              packPrice,
-            paidAmount:
-              amount,
-            sessionId:
-              session.id,
-          },
-        );
+        console.error('Stripe Patient Pack amount mismatch:');
 
         return NextResponse.json(
           {
@@ -2579,20 +2523,7 @@ export async function POST(
               updatedPack
                 .therapist_id
             ) {
-              console.error(
-                "CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:",
-                {
-                  packId,
-                  patientId:
-                    updatedPack.patient_id,
-                  paidTherapistId:
-                    updatedPack.therapist_id,
-                  activeTherapistId:
-                    assignmentAfterInsert
-                      .therapist_id,
-                  careDomain,
-                },
-              );
+              console.error('CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:');
             }
           }
         } else if (
@@ -2601,20 +2532,7 @@ export async function POST(
           updatedPack
             .therapist_id
         ) {
-          console.error(
-            "CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:",
-            {
-              packId,
-              patientId:
-                updatedPack.patient_id,
-              paidTherapistId:
-                updatedPack.therapist_id,
-              activeTherapistId:
-                activeAssignment
-                  .therapist_id,
-              careDomain,
-            },
-          );
+          console.error('CLINICAL ASSIGNMENT CONFLICT AFTER PACK PAYMENT:');
         }
       }
 
@@ -2732,19 +2650,7 @@ export async function POST(
           } catch (
             packReceiptEmailError
           ) {
-            console.error(
-              "Patient Pack payment receipt email failed:",
-              {
-                packId,
-                receiptNumber:
-                  packReceipt
-                    .receipt_number,
-                email:
-                  packCustomerEmail,
-                error:
-                  packReceiptEmailError,
-              },
-            );
+            console.error('Patient Pack payment receipt email failed:');
           }
 
         }
@@ -2755,15 +2661,7 @@ export async function POST(
          * Le paiement Stripe est déjà confirmé.
          * On journalise l'échec du reçu sans annuler le Pack.
          */
-        console.error(
-          "Patient Pack payment receipt creation failed:",
-          {
-            packId,
-            transactionId,
-            error:
-              packReceiptError,
-          },
-        );
+        console.error('Patient Pack payment receipt creation failed:');
       }
 
       /*
@@ -2798,60 +2696,11 @@ export async function POST(
         } catch (
           packConfirmationEmailError
         ) {
-          console.error(
-            "Patient Pack confirmation email failed:",
-            {
-              packId,
-              email:
-                packCustomerEmail,
-              error:
-                packConfirmationEmailError,
-            },
-          );
+          console.error('Patient Pack confirmation email failed:');
         }
       }
 
-      console.log(
-        "STRIPE PATIENT PACK PAYMENT CONFIRMED:",
-        {
-          packId,
-
-          patientId:
-            updatedPack.patient_id,
-
-          therapistId:
-            updatedPack.therapist_id,
-
-          transactionId,
-
-          amount,
-
-          currency,
-
-          sessionsTotal:
-            updatedPack.sessions_total,
-
-          sessionsRemaining:
-            updatedPack.sessions_remaining,
-
-          purchasedAt:
-            updatedPack.purchased_at,
-
-          validUntil:
-            updatedPack.valid_until,
-
-          aanCommissionRate,
-
-          aanCommissionAmount,
-
-          specialistRate,
-
-          specialistAmount,
-
-          alreadyProcessed:
-            packWasAlreadyActive,
-        },
-      );
+      
 
       return NextResponse.json({
         received:
@@ -2920,10 +2769,7 @@ export async function POST(
         ?.trim();
 
     if (!bookingId) {
-      console.error(
-        "Stripe session does not contain bookingId:",
-        session.id,
-      );
+      console.error('Stripe session does not contain bookingId:');
 
       return NextResponse.json(
         {
@@ -3023,13 +2869,7 @@ export async function POST(
        * encaissé, on le rembourse immédiatement et on répond 200
        * pour éviter les retries du webhook.
        */
-      console.error(
-        "Paid Stripe Checkout received for missing booking:",
-        {
-          bookingId,
-          sessionId: session.id,
-        },
-      );
+      console.error('Paid Stripe Checkout received for missing booking:');
 
       try {
         const lateRefund =
@@ -3049,14 +2889,7 @@ export async function POST(
           refundStatus: lateRefund.status,
         });
       } catch (lateRefundError) {
-        console.error(
-          "CRITICAL: paid Stripe Checkout references a missing booking and automatic refund failed:",
-          {
-            bookingId,
-            sessionId: session.id,
-            error: lateRefundError,
-          },
-        );
+        console.error('CRITICAL: paid Stripe Checkout references a missing booking and automatic refund failed:');
 
         /*
          * 500 est volontaire ici : Stripe réessaiera le webhook.
@@ -3099,19 +2932,7 @@ export async function POST(
         stripeCompletedAtMs >
           holdExpiresAtMs
       ) {
-        console.warn(
-          "Late Stripe payment received after booking hold expired:",
-          {
-            bookingId,
-            sessionId: session.id,
-            holdExpiresAt:
-              existingBooking.hold_expires_at,
-            stripeCompletedAt:
-              new Date(
-                stripeCompletedAtMs,
-              ).toISOString(),
-          },
-        );
+        console.warn('Late Stripe payment received after booking hold expired:');
 
         const lateRefund =
           await refundExpiredCheckoutPayment({
@@ -3151,15 +2972,7 @@ export async function POST(
           .eq("status", "pending");
 
         if (expiredBookingUpdateError) {
-          console.error(
-            "Late payment was refunded but expired booking update failed:",
-            {
-              bookingId,
-              refundId: lateRefund.id,
-              error:
-                expiredBookingUpdateError,
-            },
-          );
+          console.error('Late payment was refunded but expired booking update failed:');
         }
 
         /*
@@ -3187,16 +3000,7 @@ export async function POST(
             .limit(1);
 
           if (competingBookingError) {
-            console.error(
-              "Unable to verify slot ownership after late payment refund:",
-              {
-                bookingId,
-                slotId:
-                  existingBooking.slot_id,
-                error:
-                  competingBookingError,
-              },
-            );
+            console.error('Unable to verify slot ownership after late payment refund:');
           } else if (
             !competingBookings ||
             competingBookings.length === 0
@@ -3218,16 +3022,7 @@ export async function POST(
               );
 
             if (slotReleaseError) {
-              console.error(
-                "Expired slot release warning after late Stripe payment refund:",
-                {
-                  bookingId,
-                  slotId:
-                    existingBooking.slot_id,
-                  error:
-                    slotReleaseError,
-                },
-              );
+              console.error('Expired slot release warning after late Stripe payment refund:');
             }
           }
         }
@@ -3253,15 +3048,7 @@ export async function POST(
       existingBooking.status !== "pending" &&
       existingBooking.status !== "paid"
     ) {
-      console.warn(
-        "Stripe payment ignored because booking is no longer payable:",
-        {
-          bookingId,
-          bookingStatus:
-            existingBooking.status,
-          sessionId: session.id,
-        },
-      );
+      console.warn('Stripe payment ignored because booking is no longer payable:');
 
       return NextResponse.json({
         received: true,
@@ -3387,14 +3174,7 @@ export async function POST(
       ) ||
       bookingPrice <= 0
     ) {
-      console.error(
-        "Invalid booking price:",
-        {
-          bookingId,
-          bookingPrice:
-            existingBooking.price,
-        },
-      );
+      console.error('Invalid booking price:');
 
       return NextResponse.json(
         {
@@ -3413,21 +3193,7 @@ export async function POST(
           bookingPrice,
       ) > 0.001
     ) {
-      console.error(
-        "Stripe payment amount mismatch:",
-        {
-          bookingId,
-
-          expectedAmount:
-            bookingPrice,
-
-          paidAmount:
-            amount,
-
-          sessionId:
-            session.id,
-        },
-      );
+      console.error('Stripe payment amount mismatch:');
 
       return NextResponse.json(
         {
@@ -3855,25 +3621,7 @@ export async function POST(
         "zoom";
     }
 
-    console.log(
-      "BOOKING PROVIDER SETTINGS:",
-      {
-        bookingId,
-        therapistId:
-          updatedBooking
-            .therapist_id,
-        preferredProvider,
-        selectedProvider:
-          preferredMeetingProvider,
-        calendarEnabled:
-          googleFeatures
-            .calendar_enabled,
-        meetEnabled:
-          googleFeatures
-            .meet_enabled,
-        zoomConnected,
-      },
-    );
+    
 
     /*
      * =======================================================
@@ -3984,16 +3732,7 @@ export async function POST(
                 calendarEventId =
                   calendarEvent.calendarEventId;
               } catch (calendarError) {
-                console.error(
-                  "Google Calendar event creation failed for Zoom booking:",
-                  {
-                    bookingId,
-                    therapistId:
-                      updatedBooking.therapist_id,
-                    error:
-                      calendarError,
-                  },
-                );
+                console.error('Google Calendar event creation failed for Zoom booking:');
               }
             }
 
@@ -4066,34 +3805,11 @@ export async function POST(
                   .calendar_event_id;
             }
 
-            console.log(
-              "ZOOM MEETING CREATED:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking
-                    .therapist_id,
-                meetingProvider:
-                  zoomMeeting.provider,
-                calendarEventId:
-                  updatedBooking
-                    .calendar_event_id,
-              },
-            );
+            
           } catch (
             zoomMeetingError
           ) {
-            console.error(
-              "Zoom meeting creation failed after successful payment:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking
-                    .therapist_id,
-                error:
-                  zoomMeetingError,
-              },
-            );
+            console.error('Zoom meeting creation failed after successful payment:');
           }
         }
 
@@ -4200,14 +3916,7 @@ export async function POST(
                   .backup_calendar_event_id;
             }
 
-            console.log(
-              "ZOOM CONTINUATION MEETING CREATED:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking.therapist_id,
-              },
-            );
+            
           } catch (
             zoomContinuationError
           ) {
@@ -4215,16 +3924,7 @@ export async function POST(
              * Le paiement et la réunion principale restent valides
              * même si la salle de continuité échoue.
              */
-            console.error(
-              "Zoom continuation meeting creation failed:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking.therapist_id,
-                error:
-                  zoomContinuationError,
-              },
-            );
+            console.error('Zoom continuation meeting creation failed:');
           }
         }
       } else if (
@@ -4324,34 +4024,11 @@ export async function POST(
                   .calendar_event_id;
             }
 
-            console.log(
-              "GOOGLE MEET CREATED:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking
-                    .therapist_id,
-                meetingProvider:
-                  googleMeeting.provider,
-                calendarEventId:
-                  googleMeeting
-                    .calendarEventId,
-              },
-            );
+            
           } catch (
             googleMeetingError
           ) {
-            console.error(
-              "Google Meet creation failed after successful payment:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking
-                    .therapist_id,
-                error:
-                  googleMeetingError,
-              },
-            );
+            console.error('Google Meet creation failed after successful payment:');
           }
         }
 
@@ -4467,16 +4144,7 @@ export async function POST(
                   .backup_calendar_event_id;
             }
 
-            console.log(
-              "GOOGLE MEET CONTINUATION CREATED:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking.therapist_id,
-                serviceType:
-                  updatedBooking.service_type,
-              },
-            );
+            
           } catch (
             googleContinuationError
           ) {
@@ -4484,18 +4152,7 @@ export async function POST(
              * Comme pour Zoom, l'échec du lien de continuité
              * n'annule jamais le paiement ni le Meet principal.
              */
-            console.error(
-              "Google Meet continuation creation failed:",
-              {
-                bookingId,
-                therapistId:
-                  updatedBooking.therapist_id,
-                serviceType:
-                  updatedBooking.service_type,
-                error:
-                  googleContinuationError,
-              },
-            );
+            console.error('Google Meet continuation creation failed:');
           }
         }
       }
@@ -4655,26 +4312,7 @@ export async function POST(
               updatedBooking
                 .therapist_id
             ) {
-              console.error(
-                "CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:",
-                {
-                  bookingId,
-
-                  patientId:
-                    updatedBooking
-                      .patient_id,
-
-                  paidTherapistId:
-                    updatedBooking
-                      .therapist_id,
-
-                  activeTherapistId:
-                    assignmentAfterInsert
-                      .therapist_id,
-
-                  careDomain,
-                },
-              );
+              console.error('CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:');
             }
           }
         } else if (
@@ -4689,58 +4327,17 @@ export async function POST(
            * Stripe. On logue fortement le conflit sans
            * annuler rétroactivement un paiement déjà réussi.
            */
-          console.error(
-            "CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:",
-            {
-              bookingId,
-
-              patientId:
-                updatedBooking
-                  .patient_id,
-
-              paidTherapistId:
-                updatedBooking
-                  .therapist_id,
-
-              activeTherapistId:
-                activeAssignment
-                  .therapist_id,
-
-              careDomain,
-            },
-          );
+          console.error('CLINICAL ASSIGNMENT CONFLICT AFTER PAYMENT:');
         }
       } else {
         /*
          * Tant que care_domain n'est pas défini pour ce
          * spécialiste, aucun verrou de domaine n'est créé.
          */
-        console.warn(
-          "Therapist care_domain is missing; clinical assignment was not created:",
-          {
-            bookingId,
-
-            therapistId:
-              updatedBooking
-                .therapist_id,
-          },
-        );
+        console.warn('Therapist care_domain is missing; clinical assignment was not created:');
       }
     } else {
-      console.warn(
-        "Booking patient_id or therapist_id is missing; clinical assignment was not created:",
-        {
-          bookingId,
-
-          patientId:
-            updatedBooking
-              .patient_id,
-
-          therapistId:
-            updatedBooking
-              .therapist_id,
-        },
-      );
+      console.warn('Booking patient_id or therapist_id is missing; clinical assignment was not created:');
     }
 
     /*
@@ -4952,19 +4549,7 @@ export async function POST(
         } catch (
           paymentReceiptEmailError
         ) {
-          console.error(
-            "Booking payment receipt email failed:",
-            {
-              bookingId,
-              receiptNumber:
-                paymentReceipt
-                  .receipt_number,
-              email:
-                customerEmail,
-              error:
-                paymentReceiptEmailError,
-            },
-          );
+          console.error('Booking payment receipt email failed:');
         }
       }
     } catch (
@@ -4974,15 +4559,7 @@ export async function POST(
        * Le paiement est déjà confirmé et le booking est déjà paid.
        * Un problème de reçu ne doit donc jamais invalider la séance.
        */
-      console.error(
-        "Booking payment receipt creation failed:",
-        {
-          bookingId,
-          transactionId,
-          error:
-            paymentReceiptError,
-        },
-      );
+      console.error('Booking payment receipt creation failed:');
     }
 
     /*
@@ -5070,11 +4647,7 @@ export async function POST(
         if (
           !emailResponse.ok
         ) {
-          console.error(
-            "Booking confirmation email failed:",
-            emailResponse.status,
-            await emailResponse.text(),
-          );
+          console.error('Booking confirmation email failed:');
         }
       } catch (
         emailError
@@ -5085,10 +4658,7 @@ export async function POST(
          * ne remet jamais en cause
          * un paiement réussi.
          */
-        console.error(
-          "Booking confirmation email request failed:",
-          emailError,
-        );
+        console.error('Booking confirmation email request failed:');
       }
     }
 
@@ -5142,14 +4712,7 @@ export async function POST(
                 : language;
 
         if (!therapistEmail) {
-          console.error(
-            "Therapist booking notification skipped: therapist email is missing.",
-            {
-              bookingId,
-              therapistId:
-                updatedBooking.therapist_id,
-            },
-          );
+          console.error('Therapist booking notification skipped: therapist email is missing.');
         } else {
           await sendTherapistBookingConfirmationEmail({
             to: therapistEmail,
@@ -5186,16 +4749,7 @@ export async function POST(
          * un échec d'e-mail ne remet jamais en cause
          * le paiement ou la réservation confirmée.
          */
-        console.error(
-          "Therapist booking confirmation email failed:",
-          {
-            bookingId,
-            therapistId:
-              updatedBooking.therapist_id,
-            error:
-              therapistEmailError,
-          },
-        );
+        console.error('Therapist booking confirmation email failed:');
       }
     }
 
@@ -5205,38 +4759,7 @@ export async function POST(
      * =======================================================
      */
 
-    console.log(
-      "STRIPE PAYMENT CONFIRMED:",
-      {
-        bookingId,
-
-        patientId:
-          updatedBooking
-            .patient_id,
-
-        therapistId:
-          updatedBooking
-            .therapist_id,
-
-        transactionId,
-
-        amount,
-
-        currency,
-
-        aanCommissionRate,
-        aanCommissionAmount,
-        specialistRate,
-        specialistAmount,
-
-        alreadyProcessed:
-          bookingWasAlreadyPaid,
-
-        meetingProvider:
-          updatedBooking
-            .meeting_provider,
-      },
-    );
+    
 
     return NextResponse.json({
       received: true,
@@ -5286,10 +4809,7 @@ export async function POST(
               .meeting_url,
     });
   } catch (error) {
-    console.error(
-      "Stripe webhook processing error:",
-      error,
-    );
+    console.error('Stripe webhook processing error:');
 
     /*
      * HTTP 500 demande à Stripe

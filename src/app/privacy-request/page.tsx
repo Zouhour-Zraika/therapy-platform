@@ -20,6 +20,7 @@ type FormData = {
   requestType: RequestType;
   message: string;
   confirmation: boolean;
+  website: string;
 };
 
 const initialForm: FormData = {
@@ -28,6 +29,7 @@ const initialForm: FormData = {
   requestType: "access",
   message: "",
   confirmation: false,
+  website: "",
 };
 
 export default function PrivacyRequestPage() {
@@ -241,6 +243,7 @@ export default function PrivacyRequestPage() {
           email: form.email.trim().toLowerCase(),
           requestType: form.requestType,
           message: form.message.trim(),
+          website: form.website,
         }),
       });
 
@@ -250,12 +253,7 @@ export default function PrivacyRequestPage() {
 
       setSuccess(true);
       setForm(initialForm);
-    } catch (submitError) {
-      console.error(
-        "Privacy request submission error:",
-        submitError,
-      );
-
+    } catch {
       setError(copy.errorGeneric);
     } finally {
       setSubmitting(false);
@@ -517,6 +515,29 @@ export default function PrivacyRequestPage() {
                 )}
 
                 {/* Submit */}
+               <div
+                  aria-hidden="true"
+                  className="absolute left-[-9999px] h-px w-px overflow-hidden"
+                >
+                  <label htmlFor="privacy-website">
+                    Website
+                  </label>
+
+                  <input
+                    id="privacy-website"
+                    type="text"
+                    name="website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={form.website}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        website: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
 
                 <div className="flex justify-end">
                   <button

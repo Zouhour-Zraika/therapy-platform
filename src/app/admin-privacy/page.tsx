@@ -152,12 +152,7 @@ export default function AdminPrivacyPage() {
       }
 
       setRequests((data ?? []) as PrivacyRequest[]);
-    } catch (error) {
-      console.error(
-        "Privacy request load error:",
-        error,
-      );
-
+    } catch {
       setErrorMessage(copy.loadError);
     } finally {
       setLoading(false);
@@ -199,12 +194,7 @@ export default function AdminPrivacyPage() {
             : item,
         ),
       );
-    } catch (error) {
-      console.error(
-        "Privacy request status update error:",
-        error,
-      );
-
+    } catch {
       setErrorMessage(copy.updateError);
     } finally {
       setUpdatingId(null);

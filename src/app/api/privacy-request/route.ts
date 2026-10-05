@@ -15,6 +15,7 @@ type PrivacyRequestBody = {
     | "objection"
     | "other";
   message?: string;
+  website?: string;
 };
 
 const allowedRequestTypes = [
@@ -60,6 +61,16 @@ export async function POST(
   try {
     const body =
       (await request.json()) as PrivacyRequestBody;
+    if (body.website?.trim()) {
+    return NextResponse.json(
+      {
+        success: true,
+      },
+      {
+        status: 201,
+      },
+    );
+   }  
 
     const fullName =
       body.fullName?.trim();
@@ -193,23 +204,17 @@ export async function POST(
         status: 201,
       },
     );
-  } catch (error) {
-    console.error(
-      "Privacy request API error:",
-      error,
-    );
+  } catch {
+  console.error("Privacy request API error");
 
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to submit privacy request.",
-      },
-      {
-        status: 500,
-      },
-    );
-  }
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Unable to submit privacy request.",
+    },
+    {
+      status: 500,
+    },
+  );
+ }
 }
