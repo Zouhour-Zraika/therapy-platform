@@ -116,6 +116,11 @@ export async function GET(
       "status",
       "pending",
     )
+    .is(
+      "manual_payment_status",
+      null,
+    )
+    
     .not(
       "hold_expires_at",
       "is",
@@ -294,6 +299,10 @@ export async function GET(
         "status",
         "pending",
       )
+      .is(
+        "manual_payment_status",
+        null,
+    )
       .lt(
         "hold_expires_at",
         nowIso,

@@ -48,6 +48,7 @@ type BookingRow = {
   price: number | null;
   status: string | null;
   payment_provider: string | null;
+  manual_payment_status: string | null;
   payment_transaction_id: string | null;
   patient_pack_id?: string | null;
   payment_source?: string | null;
@@ -545,6 +546,7 @@ export async function POST(
           price,
           status,
           payment_provider,
+          manual_payment_status,
           payment_transaction_id,
           patient_pack_id,
           payment_source,
@@ -622,29 +624,81 @@ export async function POST(
         );
       }
 
-      if (booking.slot_id) {
-        const { error: slotReleaseError } = await supabaseAdmin
-          .from("availability_slots")
-          .update({
-            is_booked: false,
-          })
-          .eq("id", booking.slot_id)
-          .eq("therapist_id", booking.therapist_id);
-
-        if (slotReleaseError) {
-          throw slotReleaseError;
-        }
+      // A declared manual transfer must never be removed by the patient.
+      if (booking.manual_payment_status !== null) {
+        return NextResponse.json(
+          {
+            error:
+              language === "ar"
+                ? "هذا الحجز مرتبط بعملية دفع يدوي. يرجى التواصل مع دعم AAN."
+                : language === "fr"
+                  ? "Cette réservation est liée à un paiement manuel. Veuillez contacter le support AAN."
+                  : "This booking is linked to a manual payment. Please contact AAN support.",
+            code: "MANUAL_PAYMENT_REVIEW_PROTECTED",
+          },
+          { status: 409 },
+        );
       }
 
-      const { error: deleteError } = await supabaseAdmin
+      // Check the manual-payment state again in the DELETE itself.
+      // A transfer declaration submitted concurrently must prevent deletion.
+      const { data: deletedBooking, error: deleteError } = await supabaseAdmin
         .from("bookings")
         .delete()
         .eq("id", booking.id)
         .eq("patient_id", patientUser.id)
-        .eq("status", "pending");
+        .eq("status", "pending")
+        .is("manual_payment_status", null)
+        .select("id, slot_id, therapist_id")
+        .maybeSingle<{
+          id: string;
+          slot_id: string | null;
+          therapist_id: string | null;
+        }>();
 
       if (deleteError) {
         throw deleteError;
+      }
+
+      if (!deletedBooking) {
+        return NextResponse.json(
+          {
+            error:
+              language === "ar"
+                ? "تغيرت حالة الحجز. يرجى تحديث الصفحة."
+                : language === "fr"
+                  ? "L’état de la réservation a changé. Veuillez actualiser la page."
+                  : "The booking state has changed. Please refresh the page.",
+            code: "BOOKING_STATE_CHANGED",
+          },
+          { status: 409 },
+        );
+      }
+
+      // Release only after deletion, and never if another active booking
+      // already holds the same slot.
+      if (deletedBooking.slot_id) {
+        const { data: competingBookings, error: competingError } =
+          await supabaseAdmin
+            .from("bookings")
+            .select("id")
+            .eq("slot_id", deletedBooking.slot_id)
+            .in("status", ["pending", "paid"])
+            .limit(1);
+
+        if (competingError) {
+          console.error("Pending cancellation slot check failed:", competingError);
+        } else if (!competingBookings?.length) {
+          const { error: slotReleaseError } = await supabaseAdmin
+            .from("availability_slots")
+            .update({ is_booked: false })
+            .eq("id", deletedBooking.slot_id)
+            .eq("therapist_id", deletedBooking.therapist_id);
+
+          if (slotReleaseError) {
+            console.error("Pending cancellation slot release failed:", slotReleaseError);
+          }
+        }
       }
 
       return NextResponse.json({

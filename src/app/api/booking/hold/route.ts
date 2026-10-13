@@ -1,20 +1,15 @@
 import {
   createClient,
 } from "@supabase/supabase-js";
-
 import {
   NextResponse,
 } from "next/server";
-
 import Stripe from "stripe";
-
 export const runtime =
   "nodejs";
-
 const HOLD_MINUTES = 10;
 const TIME_ZONE =
   "Asia/Beirut";
-
 type SlotRow = {
   id: string;
   therapist_id:
@@ -35,7 +30,6 @@ type SlotRow = {
     | boolean
     | null;
 };
-
 type TherapistRow = {
   id: string;
   full_name:
@@ -55,14 +49,12 @@ type TherapistRow = {
   care_domain:
     | string
     | null;
-
   work_status:
     | "active"
     | "leaving"
     | "inactive"
     | null;
 };
-
 type TherapistServiceRow = {
   id: string;
   therapist_id: string;
@@ -74,25 +66,21 @@ type TherapistServiceRow = {
   max_participants: number | null;
   is_active: boolean;
 };
-
 type ActiveAssignmentRow = {
   id: string;
   therapist_id: string;
   care_domain: string;
   status: string;
 };
-
 function createSupabaseAdmin() {
   const supabaseUrl =
     process.env
       .NEXT_PUBLIC_SUPABASE_URL;
-
   const serviceRoleKey =
     process.env
       .SUPABASE_SERVICE_ROLE_KEY ||
     process.env
       .SUPABASE_SECRET_KEY;
-
   if (
     !supabaseUrl ||
     !serviceRoleKey
@@ -101,7 +89,6 @@ function createSupabaseAdmin() {
       "Supabase server configuration is missing.",
     );
   }
-
   return createClient(
     supabaseUrl,
     serviceRoleKey,
@@ -109,17 +96,14 @@ function createSupabaseAdmin() {
       auth: {
         autoRefreshToken:
           false,
-
         persistSession:
           false,
-
         detectSessionInUrl:
           false,
       },
     },
   );
 }
-
 async function getAuthenticatedPatient(
   request: Request,
   supabaseAdmin:
@@ -131,7 +115,6 @@ async function getAuthenticatedPatient(
     request.headers.get(
       "authorization",
     );
-
   if (
     !authorization?.startsWith(
       "Bearer ",
@@ -139,18 +122,15 @@ async function getAuthenticatedPatient(
   ) {
     return null;
   }
-
   const accessToken =
     authorization
       .slice(
         "Bearer ".length,
       )
       .trim();
-
   if (!accessToken) {
     return null;
   }
-
   const {
     data: {
       user,
@@ -161,14 +141,12 @@ async function getAuthenticatedPatient(
     await supabaseAdmin.auth.getUser(
       accessToken,
     );
-
   if (
     userError ||
     !user
   ) {
     return null;
   }
-
   const {
     data: profile,
     error:
@@ -185,7 +163,6 @@ async function getAuthenticatedPatient(
         | string
         | null;
     }>();
-
   if (
     profileError ||
     !profile ||
@@ -194,10 +171,8 @@ async function getAuthenticatedPatient(
   ) {
     return null;
   }
-
   return user;
 }
-
 function parseSlotTime(
   time: string,
 ) {
@@ -205,27 +180,21 @@ function parseSlotTime(
     time
       .trim()
       .toUpperCase();
-
   const match =
     normalized.match(
       /^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/,
     );
-
   if (!match) {
     return null;
   }
-
   let hour =
     Number(match[1]);
-
   const minute =
     Number(
       match[2] || "0",
     );
-
   const period =
     match[3];
-
   if (
     Number.isNaN(hour) ||
     Number.isNaN(minute) ||
@@ -234,7 +203,6 @@ function parseSlotTime(
   ) {
     return null;
   }
-
   if (period) {
     if (
       hour < 1 ||
@@ -242,14 +210,12 @@ function parseSlotTime(
     ) {
       return null;
     }
-
     if (
       period === "PM" &&
       hour < 12
     ) {
       hour += 12;
     }
-
     if (
       period === "AM" &&
       hour === 12
@@ -262,13 +228,11 @@ function parseSlotTime(
   ) {
     return null;
   }
-
   return {
     hour,
     minute,
   };
 }
-
 function getTimeZoneOffsetMs(
   date: Date,
   timeZone: string,
@@ -294,12 +258,10 @@ function getTimeZoneOffsetMs(
           "h23",
       },
     );
-
   const parts =
     formatter.formatToParts(
       date,
     );
-
   const values =
     Object.fromEntries(
       parts
@@ -315,7 +277,6 @@ function getTimeZoneOffsetMs(
           ],
         ),
     );
-
   const asUtc =
     Date.UTC(
       Number(values.year),
@@ -326,13 +287,11 @@ function getTimeZoneOffsetMs(
       Number(values.minute),
       Number(values.second),
     );
-
   return (
     asUtc -
     date.getTime()
   );
 }
-
 function buildScheduledStart(
   slot: SlotRow,
 ) {
@@ -345,7 +304,6 @@ function buildScheduledStart(
       new Date(
         slot.starts_at,
       );
-
     if (
       !Number.isNaN(
         existing.getTime(),
@@ -354,7 +312,6 @@ function buildScheduledStart(
       return existing;
     }
   }
-
   /*
    * Compatibilité avec les anciens créneaux
    * de la base qui ont starts_at = NULL.
@@ -365,16 +322,13 @@ function buildScheduledStart(
   ) {
     return null;
   }
-
   const parsedTime =
     parseSlotTime(
       slot.time,
     );
-
   if (!parsedTime) {
     return null;
   }
-
   const [
     year,
     month,
@@ -383,7 +337,6 @@ function buildScheduledStart(
     slot.slot_date
       .split("-")
       .map(Number);
-
   if (
     !year ||
     !month ||
@@ -391,7 +344,6 @@ function buildScheduledStart(
   ) {
     return null;
   }
-
   const utcGuess =
     new Date(
       Date.UTC(
@@ -403,42 +355,35 @@ function buildScheduledStart(
         0,
       ),
     );
-
   let offset =
     getTimeZoneOffsetMs(
       utcGuess,
       TIME_ZONE,
     );
-
   let result =
     new Date(
       utcGuess.getTime() -
         offset,
     );
-
   const correctedOffset =
     getTimeZoneOffsetMs(
       result,
       TIME_ZONE,
     );
-
   if (
     correctedOffset !==
     offset
   ) {
     offset =
       correctedOffset;
-
     result =
       new Date(
         utcGuess.getTime() -
           offset,
       );
   }
-
   return result;
 }
-
 function buildScheduledEnd(
   slot: SlotRow,
   start: Date,
@@ -448,7 +393,6 @@ function buildScheduledEnd(
       new Date(
         slot.ends_at,
       );
-
     if (
       !Number.isNaN(
         existingEnd.getTime(),
@@ -457,7 +401,6 @@ function buildScheduledEnd(
       return existingEnd;
     }
   }
-
   /*
    * Le système actuel réserve une fenêtre
    * maximale de 2 heures pour la séance.
@@ -470,7 +413,6 @@ function buildScheduledEnd(
         1000,
   );
 }
-
 async function cleanupExpiredHolds(
   supabaseAdmin:
     ReturnType<
@@ -480,7 +422,6 @@ async function cleanupExpiredHolds(
 ) {
   const nowIso =
     new Date().toISOString();
-
   const {
     data:
       expiredBookings,
@@ -495,6 +436,10 @@ async function cleanupExpiredHolds(
       "status",
       "pending",
     )
+    .is(
+      "manual_payment_status",
+      null,
+    )
     .not(
       "hold_expires_at",
       "is",
@@ -504,7 +449,6 @@ async function cleanupExpiredHolds(
       "hold_expires_at",
       nowIso,
     );
-
   if (expiredError) {
     /*
      * Un échec du nettoyage ne doit pas
@@ -514,10 +458,8 @@ async function cleanupExpiredHolds(
       "Expired booking cleanup lookup error:",
       expiredError,
     );
-
     return;
   }
-
   for (
     const expiredBooking
     of expiredBookings || []
@@ -543,6 +485,11 @@ async function cleanupExpiredHolds(
         ? expiredBooking
             .payment_transaction_id
         : null;
+    if (checkoutSessionId && !stripe) {
+      // Never delete a booking while its Stripe Checkout cannot be verified.
+      console.error("Stripe unavailable; retaining expired booking:", expiredBooking.id);
+      continue;
+    }
 
     if (
       checkoutSessionId &&
@@ -553,7 +500,6 @@ async function cleanupExpiredHolds(
           await stripe.checkout.sessions.retrieve(
             checkoutSessionId,
           );
-
         if (
           checkoutSession.status ===
           "open"
@@ -561,7 +507,6 @@ async function cleanupExpiredHolds(
           await stripe.checkout.sessions.expire(
             checkoutSessionId,
           );
-
           console.log(
             "Expired Stripe Checkout Session for booking hold:",
             {
@@ -590,7 +535,6 @@ async function cleanupExpiredHolds(
                 checkoutSession.payment_status,
             },
           );
-
           continue;
         }
       } catch (
@@ -612,11 +556,9 @@ async function cleanupExpiredHolds(
               checkoutExpireError,
           },
         );
-
         continue;
       }
     }
-
     /*
      * La page Stripe est maintenant expirée (ou aucune session
      * Stripe n'était encore attachée). On peut supprimer le pending.
@@ -637,6 +579,14 @@ async function cleanupExpiredHolds(
         "status",
         "pending",
       )
+      .is(
+        "manual_payment_status",
+        null,
+      )
+      .lt(
+        "hold_expires_at",
+        nowIso,
+      )
       .select(
         "id, slot_id",
       )
@@ -646,23 +596,19 @@ async function cleanupExpiredHolds(
           | string
           | null;
       }>();
-
     if (deleteError) {
       console.error(
         "Expired booking delete error:",
         deleteError,
       );
-
       continue;
     }
-
     if (
       !deletedBooking ||
       !deletedBooking.slot_id
     ) {
       continue;
     }
-
     /*
      * Ne jamais libérer un slot s'il existe
      * maintenant une réservation payée dessus.
@@ -679,15 +625,14 @@ async function cleanupExpiredHolds(
         "slot_id",
         deletedBooking.slot_id,
       )
-      .eq(
+      .in(
         "status",
-        "paid",
+        ["pending", "paid"],
       )
       .limit(1)
       .maybeSingle<{
         id: string;
       }>();
-
     if (
       confirmedLookupError
     ) {
@@ -695,14 +640,11 @@ async function cleanupExpiredHolds(
         "Expired hold paid-booking verification error:",
         confirmedLookupError,
       );
-
       continue;
     }
-
     if (confirmedBooking) {
       continue;
     }
-
     const {
       error:
         releaseError,
@@ -718,7 +660,6 @@ async function cleanupExpiredHolds(
         "id",
         deletedBooking.slot_id,
       );
-
     if (releaseError) {
       console.error(
         "Expired hold slot release error:",
@@ -727,33 +668,27 @@ async function cleanupExpiredHolds(
     }
   }
 }
-
 export async function POST(
   request: Request,
 ) {
   const supabaseAdmin =
     createSupabaseAdmin();
-
   const stripeSecretKey =
     process.env.STRIPE_SECRET_KEY;
-
   const stripe =
     stripeSecretKey
       ? new Stripe(
           stripeSecretKey,
         )
       : null;
-
   if (!stripeSecretKey) {
     console.error(
       "STRIPE_SECRET_KEY is missing; expired Checkout Sessions cannot be closed.",
     );
   }
-
   let claimedSlotId:
     | string
     | null = null;
-
   try {
     /*
      * 1. Authentification du patient.
@@ -763,7 +698,6 @@ export async function POST(
         request,
         supabaseAdmin,
       );
-
     if (!user) {
       return NextResponse.json(
         {
@@ -775,31 +709,26 @@ export async function POST(
         },
       );
     }
-
     /*
      * 2. Lire la demande.
      */
     const body =
       await request.json();
-
     const therapistId =
       String(
         body.therapistId ||
           "",
       ).trim();
-
     const slotId =
       String(
         body.slotId ||
           "",
       ).trim();
-
     const serviceId =
       String(
         body.serviceId ||
           "",
       ).trim();
-
     if (
       !therapistId ||
       !slotId ||
@@ -815,7 +744,6 @@ export async function POST(
         },
       );
     }
-
     /*
      * 3. Nettoyage opportuniste des holds
      * expirés avant de traiter la demande.
@@ -824,7 +752,6 @@ export async function POST(
       supabaseAdmin,
       stripe,
     );
-
     /*
      * 4. Vérifier le spécialiste.
      *
@@ -850,11 +777,9 @@ export async function POST(
         therapistId,
       )
       .maybeSingle<TherapistRow>();
-
     if (therapistError) {
       throw therapistError;
     }
-
     if (!therapist) {
       return NextResponse.json(
         {
@@ -866,7 +791,6 @@ export async function POST(
         },
       );
     }
-
     if (
       therapist.work_status !==
       "active"
@@ -881,7 +805,6 @@ export async function POST(
         },
       );
     }
-
     /*
      * 5. Vérifier le service choisi.
      *
@@ -909,11 +832,9 @@ export async function POST(
       .eq("therapist_id", therapist.id)
       .eq("is_active", true)
       .maybeSingle<TherapistServiceRow>();
-
     if (serviceError) {
       throw serviceError;
     }
-
     if (!service) {
       return NextResponse.json(
         {
@@ -923,10 +844,8 @@ export async function POST(
         { status: 404 },
       );
     }
-
     const price = Number(service.price);
     const durationMinutes = Number(service.duration_minutes);
-
     if (
       !Number.isFinite(price) ||
       price <= 0 ||
@@ -941,7 +860,6 @@ export async function POST(
         { status: 400 },
       );
     }
-
     /*
      * 6. Protection du suivi clinique.
      *
@@ -957,7 +875,6 @@ export async function POST(
       therapist.care_domain
         ?.trim() ||
       null;
-
     if (careDomain) {
       const {
         data:
@@ -990,13 +907,11 @@ export async function POST(
         )
         .limit(1)
         .maybeSingle<ActiveAssignmentRow>();
-
       if (
         assignmentError
       ) {
         throw assignmentError;
       }
-
       /*
        * Même domaine + autre spécialiste :
        * réservation interdite.
@@ -1020,7 +935,6 @@ export async function POST(
         );
       }
     }
-
     /*
      * 7. Vérifier le créneau.
      */
@@ -1053,11 +967,9 @@ export async function POST(
         therapistId,
       )
       .maybeSingle<SlotRow>();
-
     if (slotError) {
       throw slotError;
     }
-
     if (!slot) {
       return NextResponse.json(
         {
@@ -1069,7 +981,6 @@ export async function POST(
         },
       );
     }
-
     if (
       slot.is_booked ===
       true
@@ -1084,7 +995,6 @@ export async function POST(
         },
       );
     }
-
     /*
      * 8. Calculer la vraie date/heure.
      *
@@ -1098,7 +1008,6 @@ export async function POST(
       buildScheduledStart(
         slot,
       );
-
     if (!scheduledStart) {
       return NextResponse.json(
         {
@@ -1110,7 +1019,6 @@ export async function POST(
         },
       );
     }
-
     /*
      * Un créneau passé ne doit jamais
      * être réservable.
@@ -1129,13 +1037,11 @@ export async function POST(
         },
       );
     }
-
     const scheduledEnd =
       new Date(
         scheduledStart.getTime() +
           durationMinutes * 60 * 1000,
       );
-
     /*
      * 9. Claim du slot.
      *
@@ -1170,15 +1076,12 @@ export async function POST(
       .select(
         "id",
       );
-
     if (claimError) {
       throw claimError;
     }
-
     const claimedSlot =
       claimedSlots?.[0] ||
       null;
-
     if (!claimedSlot) {
       return NextResponse.json(
         {
@@ -1190,10 +1093,8 @@ export async function POST(
         },
       );
     }
-
     claimedSlotId =
       claimedSlot.id;
-
     /*
      * 10. Hold de 10 minutes.
      */
@@ -1204,7 +1105,6 @@ export async function POST(
             60 *
             1000,
       );
-
     /*
      * 11. Créer la réservation temporaire.
      *
@@ -1228,46 +1128,32 @@ export async function POST(
       .insert({
         patient_id:
           user.id,
-
         patient_email:
           user.email ||
           null,
-
         therapist_id:
           therapist.id,
-
         therapist_name:
           therapist.full_name,
-
         slot_id:
           slot.id,
-
         slot_day:
           slot.day,
-
         slot_time:
           slot.time,
-
         scheduled_start:
           scheduledStart.toISOString(),
-
         scheduled_end:
           scheduledEnd.toISOString(),
-
         therapist_service_id:
           service.id,
-
         service_type:
           service.service_type,
-
         duration_minutes:
           durationMinutes,
-
         price,
-
         status:
           "pending",
-
         hold_expires_at:
           holdExpiresAt.toISOString(),
       })
@@ -1288,7 +1174,6 @@ export async function POST(
         `,
       )
       .single();
-
     if (
       bookingError ||
       !booking
@@ -1309,19 +1194,15 @@ export async function POST(
           "id",
           slot.id,
         );
-
       claimedSlotId =
         null;
-
       if (bookingError) {
         throw bookingError;
       }
-
       throw new Error(
         "Unable to create booking hold.",
       );
     }
-
     /*
      * Le booking existe désormais.
      * On ne veut plus que le catch général
@@ -1329,40 +1210,30 @@ export async function POST(
      */
     claimedSlotId =
       null;
-
     /*
      * 12. Succès.
      */
     return NextResponse.json({
       success:
         true,
-
       bookingId:
         booking.id,
-
       holdExpiresAt:
         booking.hold_expires_at,
-
       therapistName:
         booking.therapist_name,
-
       price:
         Number(
           booking.price,
         ),
-
       serviceId:
         booking.therapist_service_id,
-
       serviceType:
         booking.service_type,
-
       durationMinutes:
         booking.duration_minutes,
-
       slotLabel:
         `${booking.slot_day || ""} ${booking.slot_time || ""}`.trim(),
-
       booking,
     });
   } catch (error) {
@@ -1388,7 +1259,6 @@ export async function POST(
           "id",
           claimedSlotId,
         );
-
       if (releaseError) {
         console.error(
           "Booking hold rollback error:",
@@ -1396,12 +1266,10 @@ export async function POST(
         );
       }
     }
-
     console.error(
       "Booking hold error:",
       error,
     );
-
     return NextResponse.json(
       {
         error:

@@ -204,7 +204,7 @@ export default function PrivacyPage() {
             title: "18. حذف الحساب",
             paragraphs: [
               "سيتم توفير آلية تمكّن المستخدم من طلب حذف حسابه وبياناته الشخصية، مع مراعاة البيانات التي يجب الاحتفاظ بها بسبب التزام قانوني أو مطالبة قانونية.",
-              "سيتم تطوير وظيفة إدارة طلبات الوصول والتصحيح والحذف ضمن مرحلة استكمال RGPD.",
+             " يمكن للمستخدمين تقديم طلب يتعلق ببياناتهم الشخصية من خلال النموذج المخصص في المنصة، بما في ذلك طلبات الوصول أو التصحيح أو الحذف أو تقييد المعالجة أو نقل البيانات أو الاعتراض، عندما تكون هذه الحقوق قابلة للتطبيق.",
             ],
           },
           {
@@ -415,7 +415,7 @@ export default function PrivacyPage() {
               title: "18. Suppression du compte et demandes relatives à la confidentialité",
               paragraphs: [
                 "Un mécanisme permettra aux utilisateurs de demander la suppression de leur compte et de leurs informations personnelles, sous réserve des informations qui doivent légalement être conservées.",
-                "Les fonctionnalités relatives aux demandes d’accès, de rectification et de suppression seront finalisées dans le cadre de la phase finale de mise en conformité au RGPD.",
+                "Les utilisateurs peuvent soumettre une demande relative à leurs informations personnelles au moyen du formulaire dédié de la plateforme, notamment pour demander l’accès, la rectification, l’effacement, la limitation, la portabilité ou exercer un droit d’opposition, lorsque ces droits sont applicables.",
               ],
             },
             {
@@ -625,7 +625,7 @@ export default function PrivacyPage() {
             title: "18. Account deletion and privacy requests",
             paragraphs: [
               "A mechanism will be provided for users to request deletion of their account and personal information, subject to information that must legally be retained.",
-              "The functionality for access, correction and deletion requests will be completed as part of the final GDPR implementation phase.",
+              "Users can submit a request concerning their personal information through the platform's dedicated request form, including requests for access, correction, deletion, restriction, data portability or objection, where those rights are applicable.",
             ],
           },
           {
