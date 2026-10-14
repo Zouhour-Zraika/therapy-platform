@@ -3,39 +3,19 @@ import {
   Suspense,
   useState,
 } from "react";
-import {
-  useSearchParams,
-} from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Navbar from "../components/Navbar";
-import {
-  supabase,
-} from "@/lib/supabase";
-import {
-  useLanguage,
-} from "@/i18n/LanguageProvider";
-type PaymentProvider =
-  | "stripe"
-  | "whish"
-  | "omt";
+import { supabase } from "@/lib/supabase";
+import { useLanguage } from "@/i18n/LanguageProvider";
+type PaymentProvider = "stripe" | "whish" | "omt";
 function PaymentContent() {
-  const searchParams =
-    useSearchParams();
-  const bookingId =
-    searchParams.get("bookingId");
-  const therapist =
-    searchParams.get("therapist");
-  const price =
-    searchParams.get("price");
-  const slot =
-    searchParams.get("slot");
-  const {
-    language,
-    isArabic,
-  } = useLanguage();
-  const [
-    isProcessing,
-    setIsProcessing,
-  ] = useState(false);
+  const searchParams = useSearchParams();
+  const bookingId = searchParams.get("bookingId");
+  const therapist = searchParams.get("therapist");
+  const price = searchParams.get("price");
+  const slot = searchParams.get("slot");
+  const { language, isArabic } = useLanguage();
+  const [isProcessing, setIsProcessing] = useState(false);
   const [
     selectedProvider,
     setSelectedProvider,
@@ -53,9 +33,11 @@ function PaymentContent() {
   const [whishSubmitted, setWhishSubmitted] = useState(false);
   const [whishError, setWhishError] = useState("");
   const omtText = language === "ar" ? {
-    reference: "رقم مرجع تحويل OMT",
+    reference: "الرقم المرجعي لعملية تحويل OMT",
+    referenceHelp: "أدخل رقم العملية الموجود على إيصال التحويل أو في سجل معاملات OMT. هذا ليس رقم هاتف المستفيد.",
+    warning: "العيادة لا تضمن استرداد أي مبلغ يُرسل إلى مستفيد غير صحيح. يجب توجيه طلب استرجاع المبلغ إلى OMT Pay وفقاً للشروط المطبقة.",
     note: "ملاحظة إضافية (اختياري)",
-    instructions: "أرسل المبلغ بالدولار الأمريكي إلى Manal Zraika على OMT Pay: +961 3 425 202. تأكد من اسم المستفيد قبل التحويل. أدخل المرجع بعد إجراء التحويل، خلال مهلة الحجز البالغة 10 دقائق. التصريح ليس إثباتاً للدفع.",
+    instructions: "أرسل المبلغ بالدولار الأمريكي إلى Manal Zraika على OMT Pay: +961 3 425 202. تحقق بعناية من اسم المستفيد ورقم هاتفه قبل التحويل. أدخل المرجع بعد إجراء التحويل، خلال مهلة الحجز البالغة 10 دقائق. التصريح ليس إثباتاً للدفع.",
     send: "إرسال تصريح التحويل للمراجعة",
     sending: "جارٍ إرسال التصريح...",
     submitted: "تم إرسال التصريح. الحجز قيد المراجعة ولم يتم تأكيد الدفع بعد.",
@@ -63,8 +45,10 @@ function PaymentContent() {
     required: "أدخل رقم مرجع التحويل.",
   } : language === "fr" ? {
     reference: "Référence de la transaction OMT",
+    referenceHelp: "Saisissez le numéro de référence figurant sur le reçu ou dans l’historique de votre transfert OMT. Ce n’est pas le numéro de téléphone du bénéficiaire.",
+    warning: "La clinique ne peut pas garantir le remboursement d’un transfert envoyé à un destinataire incorrect. Toute demande de récupération doit être adressée à OMT Pay, sous réserve des conditions applicables.",
     note: "Note complémentaire (facultatif)",
-    instructions: "Effectuez le transfert en USD à Manal Zraika sur OMT Pay : +961 3 425 202. Vérifiez le bénéficiaire avant le transfert. Après le transfert, déclarez sa référence dans les 10 minutes de réservation. Cette déclaration n’est pas une preuve de paiement.",
+    instructions: "Effectuez le transfert en USD à Manal Zraika sur OMT Pay : +961 3 425 202. Vérifiez soigneusement le nom et le numéro du bénéficiaire avant le transfert. Après le transfert, déclarez sa référence dans les 10 minutes de réservation. Cette déclaration n’est pas une preuve de paiement.",
     send: "Déclarer le transfert pour vérification",
     sending: "Envoi de la déclaration...",
     submitted: "Déclaration reçue. Votre réservation est en cours de vérification ; le paiement n’est pas encore confirmé.",
@@ -72,8 +56,10 @@ function PaymentContent() {
     required: "Saisissez la référence du transfert.",
   } : {
     reference: "OMT transaction reference",
+    referenceHelp: "Enter the transaction reference shown on your OMT receipt or transfer history. This is not the recipient’s phone number.",
+    warning: "The clinic cannot guarantee a refund for a transfer sent to the wrong recipient. Recovery requests must be directed to OMT Pay, subject to applicable terms.",
     note: "Additional note (optional)",
-    instructions: "Transfer USD to Manal Zraika on OMT Pay: +961 3 425 202. Verify the recipient before transferring. After transferring, submit the reference within the 10-minute booking hold. A declaration is not proof of payment.",
+    instructions: "Transfer USD to Manal Zraika on OMT Pay: +961 3 425 202. Carefully verify the recipient’s name and phone number before transferring. After transferring, submit the reference within the 10-minute booking hold. A declaration is not proof of payment.",
     send: "Submit transfer for review",
     sending: "Submitting declaration...",
     submitted: "Declaration received. Your booking is under review; payment is not yet confirmed.",
@@ -81,21 +67,21 @@ function PaymentContent() {
     required: "Enter the transfer reference.",
   };
   const whishText = language === "ar" ? {
-    reference: "رقم مرجع تحويل Whish Money", note: "ملاحظة إضافية (اختياري)",
-    instructions: "حوّل المبلغ بالدولار الأمريكي إلى Manal Zraika على رقم Whish Money: +961 3 425 202. تأكد من اسم المستفيد قبل التحويل. أدخل مرجع التحويل خلال مهلة الحجز البالغة 10 دقائق. لا يُؤكد الحجز إلا بعد التحقق من استلام المبلغ.",
+    reference: "الرقم المرجعي لتحويل Whish Money", referenceHelp: "أدخل رقم العملية الموجود على إيصال أو سجل تحويل Whish Money، وليس رقم هاتف المستفيد.", warning: "العيادة لا تضمن استرداد مبلغ أُرسل إلى مستفيد غير صحيح. تُقدّم طلبات الاسترجاع إلى Whish Money وفقاً للشروط المطبقة.", note: "ملاحظة إضافية (اختياري)",
+    instructions: "حوّل المبلغ بالدولار الأمريكي إلى Manal Zraika على رقم Whish Money: +961 3 425 202. تحقق بعناية من اسم المستفيد ورقم هاتفه قبل التحويل. أدخل مرجع التحويل خلال مهلة الحجز البالغة 10 دقائق. لا يُؤكد الحجز إلا بعد التحقق من استلام المبلغ.",
     send: "إرسال تحويل Whish للمراجعة", sending: "جارٍ إرسال التصريح...",
     submitted: "تم إرسال التصريح. الحجز قيد المراجعة ولم يتم تأكيد الدفع بعد.",
     error: "تعذر إرسال تصريح Whish. تحقق من المرجع وصلاحية الحجز.", required: "أدخل رقم مرجع تحويل Whish.",
   } : language === "fr" ? {
-    reference: "Référence de la transaction Whish Money", note: "Note complémentaire (facultatif)",
-    instructions: "Envoyez le montant en USD à Manal Zraika sur Whish Money : +961 3 425 202. Vérifiez le nom du bénéficiaire avant le transfert. Déclarez ensuite la référence dans les 10 minutes de réservation. La réservation ne sera confirmée qu'après vérification de la réception.",
+    reference: "Référence de la transaction Whish Money", referenceHelp: "Saisissez la référence figurant sur le reçu ou dans l’historique de votre transfert Whish Money. Ce n’est pas le numéro de téléphone du bénéficiaire.", warning: "La clinique ne peut pas garantir le remboursement d’un transfert envoyé à un destinataire incorrect. Toute demande de récupération doit être adressée à Whish Money, sous réserve des conditions applicables.", note: "Note complémentaire (facultatif)",
+    instructions: "Envoyez le montant en USD à Manal Zraika sur Whish Money : +961 3 425 202. Vérifiez soigneusement le nom et le numéro du bénéficiaire avant le transfert. Déclarez ensuite la référence dans les 10 minutes de réservation. La réservation ne sera confirmée qu'après vérification de la réception.",
     send: "Déclarer le transfert Whish pour vérification", sending: "Envoi de la déclaration...",
     submitted: "Déclaration reçue. Votre réservation est en cours de vérification ; le paiement n’est pas encore confirmé.",
     error: "Impossible de déclarer le transfert Whish. Vérifiez la référence et le délai.",
     required: "Saisissez la référence du transfert Whish.",
   } : {
-    reference: "Whish Money transaction reference", note: "Additional note (optional)",
-    instructions: "Send the USD amount to Manal Zraika on Whish Money: +961 3 425 202. Verify the recipient name before sending. Submit the reference within the 10-minute booking hold. The booking is confirmed only after receipt verification.",
+    reference: "Whish Money transaction reference", referenceHelp: "Enter the reference shown on your Whish Money receipt or transfer history, not the recipient’s phone number.", warning: "The clinic cannot guarantee a refund for a transfer sent to the wrong recipient. Recovery requests must be directed to Whish Money, subject to applicable terms.", note: "Additional note (optional)",
+    instructions: "Send the USD amount to Manal Zraika on Whish Money: +961 3 425 202. Carefully verify the recipient’s name and phone number before sending. Submit the reference within the 10-minute booking hold. The booking is confirmed only after receipt verification.",
     send: "Submit Whish transfer for review", sending: "Submitting declaration...",
     submitted: "Declaration received. Your booking is under review; payment is not yet confirmed.",
     error: "Unable to declare Whish transfer. Check the reference and booking deadline.",
@@ -258,115 +244,37 @@ function PaymentContent() {
     value: string,
   ) => {
     return value
-      .replace(
-        "Monday",
-        "الاثنين",
-      )
-      .replace(
-        "Tuesday",
-        "الثلاثاء",
-      )
-      .replace(
-        "Wednesday",
-        "الأربعاء",
-      )
-      .replace(
-        "Thursday",
-        "الخميس",
-      )
-      .replace(
-        "Friday",
-        "الجمعة",
-      )
-      .replace(
-        "Saturday",
-        "السبت",
-      )
-      .replace(
-        "Sunday",
-        "الأحد",
-      );
+      .replace("Monday", "الاثنين")
+      .replace("Tuesday", "الثلاثاء")
+      .replace("Wednesday", "الأربعاء")
+      .replace("Thursday", "الخميس")
+      .replace("Friday", "الجمعة")
+      .replace("Saturday", "السبت")
+      .replace("Sunday", "الأحد");
   };
   const translateFrenchDay = (
     value: string,
   ) => {
     return value
-      .replace(
-        "Monday",
-        "Lundi",
-      )
-      .replace(
-        "Tuesday",
-        "Mardi",
-      )
-      .replace(
-        "Wednesday",
-        "Mercredi",
-      )
-      .replace(
-        "Thursday",
-        "Jeudi",
-      )
-      .replace(
-        "Friday",
-        "Vendredi",
-      )
-      .replace(
-        "Saturday",
-        "Samedi",
-      )
-      .replace(
-        "Sunday",
-        "Dimanche",
-      )
-      .replace(
-        "January",
-        "janvier",
-      )
-      .replace(
-        "February",
-        "février",
-      )
-      .replace(
-        "March",
-        "mars",
-      )
-      .replace(
-        "April",
-        "avril",
-      )
-      .replace(
-        "May",
-        "mai",
-      )
-      .replace(
-        "June",
-        "juin",
-      )
-      .replace(
-        "July",
-        "juillet",
-      )
-      .replace(
-        "August",
-        "août",
-      )
-      .replace(
-        "September",
-        "septembre",
-      )
-      .replace(
-        "October",
-        "octobre",
-      )
-      .replace(
-        "November",
-        "novembre",
-      )
-      .replace(
-        "December",
-        "décembre",
-      );
+      .replace("Monday", "Lundi")
+      .replace("Tuesday", "Mardi")
+      .replace("Wednesday", "Mercredi")
+      .replace("Thursday", "Jeudi")
+      .replace("Friday", "Vendredi")
+      .replace("Saturday", "Samedi")
+      .replace("Sunday", "Dimanche")
+      .replace("January", "janvier")
+      .replace("February", "février")
+      .replace("March", "mars")
+      .replace("April", "avril")
+      .replace("May", "mai")
+      .replace("June", "juin")
+      .replace("July", "juillet")
+      .replace("August", "août")
+      .replace("September", "septembre")
+      .replace("October", "octobre")
+      .replace("November", "novembre")
+      .replace("December", "décembre");
   };
   const formatSlot = (
     value:
@@ -397,8 +305,7 @@ function PaymentContent() {
       | string
       | null,
   ) => {
-    const numericValue =
-      Number(value);
+    const numericValue = Number(value);
     if (
       !Number.isFinite(
         numericValue,
@@ -509,8 +416,7 @@ function PaymentContent() {
                 }),
             },
           );
-        const data =
-          await response.json();
+        const data = await response.json();
 if (
           !response.ok
         ) {
@@ -928,6 +834,11 @@ if (
                       <p className="text-sm leading-6 text-aan-secondary">
                         {isWhish ? text.unavailable : labels.instructions}
                       </p>
+                      {!isWhish && (
+                        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-aan-navy">
+                          {labels.warning}
+                        </p>
+                      )}
                       {submitted ? (
                         <p role="status" className="rounded-xl border border-aan-border bg-[#f8f4ee] p-4 font-semibold text-aan-navy">
                           {labels.submitted}
@@ -940,6 +851,7 @@ if (
                               onChange={(event) => isWhish ? setWhishReference(event.target.value) : setOmtReference(event.target.value)}
                               className="mt-2 w-full rounded-xl border border-aan-border bg-white p-3 text-aan-navy" />
                           </label>
+                          <p className="text-sm leading-6 text-aan-secondary">{labels.referenceHelp}</p>
                           <label className="block text-sm font-semibold text-aan-navy">
                             {labels.note}
                             <textarea rows={3} maxLength={1000} value={note}
