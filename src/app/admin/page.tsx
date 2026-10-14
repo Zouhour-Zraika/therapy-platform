@@ -1011,6 +1011,23 @@ export default function AdminPage() {
       };
 
         const adminSections: AdminSection[] = [
+         
+            {
+      href: "/admin-whish",
+      title:
+        language === "fr"
+          ? "Paiements Whish Money"
+          : language === "ar"
+            ? "مدفوعات Whish Money"
+            : "Whish Money Payments",
+      description:
+        language === "fr"
+          ? "Vérifier les transferts et finaliser les réservations."
+          : language === "ar"
+            ? "مراجعة التحويلات وإكمال الحجوزات."
+            : "Review transfers and finalize bookings.",
+      icon: "omt",
+    },  
     {
       href: "/admin-omt",
       title: copy.omtTitle,
