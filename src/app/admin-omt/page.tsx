@@ -99,6 +99,23 @@ export default function AdminOmtPage() {
       approved: "تمت الموافقة", rejected: "مرفوض",
     },
   };
+  const displayPatientNote = (note: string) => {
+    if (note.trim() !== "TEST UNIQUEMENT — aucun transfert effectué") return note;
+    if (language === "en") return "TEST ONLY — no transfer was made";
+    if (language === "ar") return "اختبار فقط — لم يتم إجراء أي تحويل";
+    return note;
+  };
+
+  const formatSubmittedAt = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleString(language === "fr" ? "fr-FR" : "en-GB", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      numberingSystem: "latn",
+    });
+  };
+
   const statusText = (status: string) =>
     statusLabels[language]?.[status] || status.replace(/_/g, " ");
 
@@ -209,8 +226,8 @@ export default function AdminOmtPage() {
                   <dl className="mt-5 space-y-2 text-sm text-aan-secondary">
                     <div><dt className="inline font-semibold">{labels.reference}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.transaction_reference}</bdi></dd></div>
                     <div><dt className="inline font-semibold">{labels.booking}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.booking_id || "—"}</bdi></dd></div>
-                    <div><dt className="inline font-semibold">{labels.submitted}: </dt><dd className="inline">{item.submitted_at ? new Date(item.submitted_at).toLocaleString(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-GB") : "—"}</dd></div>
-                    {item.patient_note && <div><dt className="inline font-semibold">{labels.note}: </dt><dd className="inline"><bdi dir="auto">{item.patient_note}</bdi></dd></div>}
+                    <div><dt className="inline font-semibold">{labels.submitted}: </dt><dd className="inline"><bdi dir="ltr">{item.submitted_at ? formatSubmittedAt(item.submitted_at) : "—"}</bdi></dd></div>
+                    {item.patient_note && <div><dt className="inline font-semibold">{labels.note}: </dt><dd className="inline"><bdi dir="auto">{displayPatientNote(item.patient_note)}</bdi></dd></div>}
                   </dl>
 
                   {item.status === "submitted" || item.status === "under_review" ? (
