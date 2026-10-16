@@ -85,6 +85,23 @@ export default function AdminOmtPage() {
     finalized: "Booking finalized successfully.",
   };
 
+  const statusLabels: Record<string, Record<string, string>> = {
+    fr: {
+      submitted: "Déclaré", under_review: "En vérification",
+      approved: "Approuvé", rejected: "Refusé",
+    },
+    en: {
+      submitted: "Submitted", under_review: "Under review",
+      approved: "Approved", rejected: "Rejected",
+    },
+    ar: {
+      submitted: "تم التصريح", under_review: "قيد المراجعة",
+      approved: "تمت الموافقة", rejected: "مرفوض",
+    },
+  };
+  const statusText = (status: string) =>
+    statusLabels[language]?.[status] || status.replace(/_/g, " ");
+
   const token = useCallback(async () => {
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError || !data.session?.access_token) {
@@ -186,14 +203,14 @@ export default function AdminOmtPage() {
               {items.map((item) => (
                 <article key={item.id} className="aan-card p-6 sm:p-8">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="text-xl font-semibold text-aan-navy">{item.amount} {item.currency} · OMT</h2>
-                    <span className="rounded-full border border-aan-border px-3 py-1 text-sm">{item.status}</span>
+                    <h2 className="text-xl font-semibold text-aan-navy"><bdi dir="ltr">{item.amount} {item.currency} · OMT</bdi></h2>
+                    <span className="rounded-full border border-aan-border px-3 py-1 text-sm">{statusText(item.status)}</span>
                   </div>
                   <dl className="mt-5 space-y-2 text-sm text-aan-secondary">
-                    <div><dt className="inline font-semibold">{labels.reference}: </dt><dd className="inline break-all">{item.transaction_reference}</dd></div>
-                    <div><dt className="inline font-semibold">{labels.booking}: </dt><dd className="inline break-all">{item.booking_id || "—"}</dd></div>
-                    <div><dt className="inline font-semibold">{labels.submitted}: </dt><dd className="inline">{item.submitted_at ? new Date(item.submitted_at).toLocaleString() : "—"}</dd></div>
-                    {item.patient_note && <div><dt className="inline font-semibold">{labels.note}: </dt><dd className="inline">{item.patient_note}</dd></div>}
+                    <div><dt className="inline font-semibold">{labels.reference}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.transaction_reference}</bdi></dd></div>
+                    <div><dt className="inline font-semibold">{labels.booking}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.booking_id || "—"}</bdi></dd></div>
+                    <div><dt className="inline font-semibold">{labels.submitted}: </dt><dd className="inline">{item.submitted_at ? new Date(item.submitted_at).toLocaleString(language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-GB") : "—"}</dd></div>
+                    {item.patient_note && <div><dt className="inline font-semibold">{labels.note}: </dt><dd className="inline"><bdi dir="auto">{item.patient_note}</bdi></dd></div>}
                   </dl>
 
                   {item.status === "submitted" || item.status === "under_review" ? (
