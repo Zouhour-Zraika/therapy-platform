@@ -50,6 +50,11 @@ export default function AdminOmtPage() {
     confirmReject: "Confirmer le refus de cette déclaration ?",
     confirmFinalize: "Finaliser cette réservation ? Cette action peut déclencher des e-mails réels.",
     failed: "Opération impossible. Consulte la réponse du serveur.",
+    rejected: "Déclaration refusée avec succès.",
+    approved: "Déclaration approuvée avec succès.",
+    prepared: "Paiement et reçu préparés avec succès.",
+    meetingReady: "Réunion préparée avec succès.",
+    finalized: "Réservation finalisée avec succès.",
   } : language === "ar" ? {
     title: "مدفوعات OMT", intro: "تحويلات بانتظار التحقق اليدوي. التصريح ليس إثباتاً للدفع.",
     refresh: "تحديث", empty: "لا توجد تصريحات.", reference: "مرجع التحويل",
@@ -59,6 +64,11 @@ export default function AdminOmtPage() {
     finalize: "إكمال الحجز والإشعارات", confirmApprove: "هل تحققت بنفسك من استلام تحويل OMT؟",
     confirmReject: "هل تؤكد رفض التصريح؟", confirmFinalize: "إكمال الحجز؟ قد يتم إرسال رسائل بريد فعلية.",
     failed: "تعذرت العملية. تحقق من رد الخادم.",
+    rejected: "تم رفض التصريح بنجاح.",
+    approved: "تمت الموافقة على التصريح بنجاح.",
+    prepared: "تم تجهيز الدفع والإيصال بنجاح.",
+    meetingReady: "تم تجهيز الاجتماع بنجاح.",
+    finalized: "تم إكمال الحجز بنجاح.",
   } : {
     title: "OMT Payments", intro: "Manually verify transfers. A declaration is not proof of payment.",
     refresh: "Refresh", empty: "No declarations to display.", reference: "Transfer reference",
@@ -68,6 +78,11 @@ export default function AdminOmtPage() {
     finalize: "Finalize booking and notifications", confirmApprove: "Have you personally verified the OMT transfer was received?",
     confirmReject: "Reject this declaration?", confirmFinalize: "Finalize this booking? Real emails may be sent.",
     failed: "Operation failed. Check the server response.",
+    rejected: "Declaration rejected successfully.",
+    approved: "Declaration approved successfully.",
+    prepared: "Payment and receipt prepared successfully.",
+    meetingReady: "Meeting prepared successfully.",
+    finalized: "Booking finalized successfully.",
   };
 
   const token = useCallback(async () => {
@@ -135,7 +150,11 @@ export default function AdminOmtPage() {
       if (!response.ok || result.success === false) {
         throw new Error(result.error || `HTTP ${response.status}`);
       }
-      setMessages((current) => ({ ...current, [item.id]: JSON.stringify(result, null, 2) }));
+      const successMessage = kind === "reject" ? labels.rejected
+        : kind === "approve" ? labels.approved
+        : kind === "prepare" ? labels.prepared
+        : kind === "meeting" ? labels.meetingReady : labels.finalized;
+      setMessages((current) => ({ ...current, [item.id]: successMessage }));
       await refresh();
     } catch (cause) {
       setMessages((current) => ({ ...current, [item.id]: cause instanceof Error ? cause.message : labels.failed }));
@@ -197,7 +216,7 @@ export default function AdminOmtPage() {
                       <button disabled={busy !== null} onClick={() => void action(item, "finalize")} className="rounded-xl bg-aan-button px-4 py-3 text-white disabled:opacity-50">{labels.finalize}</button>
                     </div>
                   )}
-                  {messages[item.id] && <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-xl bg-aan-background p-4 text-xs">{messages[item.id]}</pre>}
+                  {messages[item.id] && <p role="status" className="mt-4 rounded-xl bg-aan-background p-4 text-sm text-aan-navy">{messages[item.id]}</p>}
                 </article>
               ))}
             </div>
