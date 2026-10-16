@@ -94,6 +94,18 @@ type PaymentReceipt = {
   issued_at: string | null;
 };
 
+type ManualTransfer = {
+  id: string;
+  booking_id: string | null;
+  provider: "omt" | "whish";
+  status: string;
+  amount: number;
+  currency: string;
+  transaction_reference: string;
+  submitted_at: string;
+  patient_note: string | null;
+};
+
 const PAYMENT_HOLD_MS = 10 * 60 * 1000;
 const PATIENT_CHANGE_DEADLINE_MS = 24 * 60 * 60 * 1000;
 
@@ -145,6 +157,7 @@ function PatientDashboardContent() {
   const [patientDocumentRecipients, setPatientDocumentRecipients] = useState<PatientDocumentRecipient[]>([]);
   const [selectedPatientRecordId, setSelectedPatientRecordId] = useState("");
   const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
+  const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
   const { language, isArabic } = useLanguage();
   const searchParams = useSearchParams();
@@ -954,6 +967,17 @@ function PatientDashboardContent() {
       setPatientDocuments((received || []) as PatientDocument[]);
       setPatientSentDocuments((sent || []) as PatientDocument[]);
       setPaymentReceipts((receipts || []) as PaymentReceipt[]);
+      // Authenticated endpoint filters declarations by the current patient.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.access_token) throw new Error("AUTH_REQUIRED");
+      const transfersResponse = await fetch("/api/manual-payment/history", {
+        headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+        cache: "no-store",
+      });
+      if (!transfersResponse.ok) throw new Error("TRANSFER_HISTORY_FAILED");
+      const transfersPayload = (await transfersResponse.json()) as { declarations?: ManualTransfer[] };
+      setManualTransfers(Array.isArray(transfersPayload.declarations) ? transfersPayload.declarations : []);
+
       setPatientDocumentRecipients(recipients);
       setSelectedPatientRecordId((current) => {
         if (current && recipients.some((item) => item.patient_record_id === current)) {
@@ -2787,6 +2811,37 @@ function PatientDashboardContent() {
                   )}
                   </details>
                 </div>
+                <details className="group mt-6 rounded-2xl border border-aan-border bg-white px-5 py-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-xl font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
+                    {language === "ar" ? "سجل تحويلات OMT وWhish" : language === "fr" ? "Historique des transferts OMT et Whish" : "OMT and Whish transfer history"}
+                    <span className="text-sm font-semibold text-aan-secondary">({manualTransfers.length})</span>
+                  </summary>
+                  <p className="mb-4 text-sm text-aan-secondary">
+                    {language === "ar" ? "التصريح بالتحويل ليس إثباتاً لاستلام الدفع." : language === "fr" ? "Une déclaration de transfert ne constitue pas une preuve de paiement reçu." : "A transfer declaration is not proof that payment was received."}
+                  </p>
+                  {documentsLoading ? <p className="py-4 text-aan-secondary">…</p> : manualTransfers.length === 0 ? (
+                    <p className="py-5 text-sm text-aan-secondary">{language === "ar" ? "لا توجد تحويلات مصرّح بها." : language === "fr" ? "Aucun transfert déclaré." : "No declared transfers."}</p>
+                  ) : <div className="space-y-3 pb-5">
+                    {manualTransfers.map((transfer) => {
+                      const statusNames: Record<string, [string, string, string]> = {
+                        submitted: ["Déclaré", "Submitted", "تم التصريح"],
+                        under_review: ["En vérification", "Under review", "قيد المراجعة"],
+                        approved: ["Approuvé", "Approved", "تمت الموافقة"],
+                        rejected: ["Refusé", "Rejected", "مرفوض"],
+                      };
+                      const index = language === "fr" ? 0 : language === "ar" ? 2 : 1;
+                      return <article key={transfer.id} className="rounded-xl border border-aan-border p-4 text-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <strong className="text-aan-navy"><bdi dir="ltr">{transfer.provider.toUpperCase()} · {Number(transfer.amount).toFixed(2)} {transfer.currency}</bdi></strong>
+                          <span className="rounded-full border border-aan-border px-3 py-1">{statusNames[transfer.status]?.[index] || transfer.status.replace(/_/g, " ")}</span>
+                        </div>
+                        <p className="mt-2 text-aan-secondary">{language === "ar" ? "مرجع التحويل" : language === "fr" ? "Référence de transfert" : "Transfer reference"} : <bdi dir="ltr" className="break-all">{transfer.transaction_reference}</bdi></p>
+                        <p className="mt-1 text-aan-secondary">{language === "ar" ? "تاريخ التصريح" : language === "fr" ? "Date de déclaration" : "Declared on"} : <bdi dir="ltr">{transfer.submitted_at ? new Date(transfer.submitted_at).toLocaleString(language === "fr" ? "fr-FR" : "en-GB") : "—"}</bdi></p>
+                        {transfer.patient_note && <p className="mt-2 text-aan-secondary">{language === "ar" ? "ملاحظة المريض" : language === "fr" ? "Note du patient" : "Patient note"} : <bdi dir="auto" className="break-words">{transfer.patient_note}</bdi></p>}
+                      </article>;
+                    })}
+                  </div>}
+                </details>
                 <details className="group mt-6 rounded-2xl border border-aan-border bg-white px-5 py-1">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-xl font-bold text-aan-navy [&::-webkit-details-marker]:hidden">
                     {language === "ar"

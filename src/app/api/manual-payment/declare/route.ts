@@ -1,4 +1,3 @@
-// File: src/app/api/manual-payment/declare/route.ts
 // OMT and Whish declarations only. Stripe and patient packs are untouched.
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
