@@ -2837,7 +2837,13 @@ function PatientDashboardContent() {
                         </div>
                         <p className="mt-2 text-aan-secondary">{language === "ar" ? "مرجع التحويل" : language === "fr" ? "Référence de transfert" : "Transfer reference"} : <bdi dir="ltr" className="break-all">{transfer.transaction_reference}</bdi></p>
                         <p className="mt-1 text-aan-secondary">{language === "ar" ? "تاريخ التصريح" : language === "fr" ? "Date de déclaration" : "Declared on"} : <bdi dir="ltr">{transfer.submitted_at ? new Date(transfer.submitted_at).toLocaleString(language === "fr" ? "fr-FR" : "en-GB") : "—"}</bdi></p>
-                        {transfer.patient_note && <p className="mt-2 text-aan-secondary">{language === "ar" ? "ملاحظة المريض" : language === "fr" ? "Note du patient" : "Patient note"} : <bdi dir="auto" className="break-words">{transfer.patient_note}</bdi></p>}
+                        {transfer.patient_note && <p className="mt-2 text-aan-secondary">{language === "ar" ? "ملاحظة المريض" : language === "fr" ? "Note du patient" : "Patient note"} : <bdi dir="auto" className="break-words">{transfer.patient_note.trim().replace(/\s+/g, " ").toUpperCase() === "TEST UNIQUEMENT — AUCUN TRANSFERT EFFECTUÉ"
+                          ? language === "ar"
+                            ? "للاختبار فقط — لم يتم إجراء أي تحويل"
+                            : language === "en"
+                              ? "TEST ONLY — no transfer was made"
+                              : transfer.patient_note
+                          : transfer.patient_note}</bdi></p>}
                       </article>;
                     })}
                   </div>}
