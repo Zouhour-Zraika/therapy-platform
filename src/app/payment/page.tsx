@@ -1,6 +1,7 @@
 "use client";
 import {
   Suspense,
+  useEffect,
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
@@ -11,9 +12,60 @@ type PaymentProvider = "stripe" | "whish" | "omt";
 function PaymentContent() {
   const searchParams = useSearchParams();
   const bookingId = searchParams.get("bookingId");
+  const isPatientPack = searchParams.get("purchaseType") === "patient_pack";
+  const packTherapistId = searchParams.get("therapistId");
+  const packServiceId = searchParams.get("serviceId");
+  const [packDetails, setPackDetails] = useState<{
+    sessions: number; durationMinutes: number; totalPrice: number;
+    discountRate: number; validityMonths: number;
+  } | null>(null);
+  const [packLoading, setPackLoading] = useState(false);
+  const [packError, setPackError] = useState("");
+  useEffect(() => {
+    if (!isPatientPack) return;
+    let active = true;
+    setPackDetails(null);
+    setPackError("");
+    if (!packTherapistId || !packServiceId) {
+      setPackError("Missing Patient Pack information.");
+      return;
+    }
+    setPackLoading(true);
+    const params = new URLSearchParams({therapistId: packTherapistId, serviceId: packServiceId});
+    void fetch(`/api/patient-pack/options?${params.toString()}`)
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok || result.available !== true) throw new Error(result.error || "Patient Pack unavailable.");
+        if (!Number.isFinite(Number(result.totalPrice)) || Number(result.totalPrice) <= 0) throw new Error("Invalid Patient Pack price.");
+        if (active) setPackDetails({
+          sessions: Number(result.sessions), durationMinutes: Number(result.durationMinutes),
+          totalPrice: Number(result.totalPrice), discountRate: Number(result.discountRate),
+          validityMonths: Number(result.validityMonths),
+        });
+      })
+      .catch((error) => { if (active) setPackError(error instanceof Error ? error.message : "Patient Pack unavailable."); })
+      .finally(() => { if (active) setPackLoading(false); });
+    return () => { active = false; };
+  }, [isPatientPack, packTherapistId, packServiceId]);
   const therapist = searchParams.get("therapist");
   const price = searchParams.get("price");
   const slot = searchParams.get("slot");
+  const selectedTimeZone = searchParams.get("timeZone");
+  const [scheduledStart, setScheduledStart] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setScheduledStart(null);
+    if (!bookingId) return () => { active = false; };
+    // Read-only: booking RLS limits access to the patient or therapist.
+    void supabase.from("bookings").select("scheduled_start")
+      .eq("id", bookingId).maybeSingle()
+      .then(({ data, error }) => {
+        if (active && !error && data?.scheduled_start) {
+          setScheduledStart(data.scheduled_start);
+        }
+      });
+    return () => { active = false; };
+  }, [bookingId]);
   const { language, isArabic } = useLanguage();
   const [isProcessing, setIsProcessing] = useState(false);
   const [
@@ -66,6 +118,24 @@ function PaymentContent() {
     error: "Unable to submit declaration. Check the reference and booking deadline.",
     required: "Enter the transfer reference.",
   };
+  const packOmtText = language === "ar" ? {
+    instructions: "للباقة: تحقق من اسم المستفيد ورقم OMT الظاهرين أدناه قبل أي تحويل. لا توجد مهلة حجز مدتها 10 دقائق للباقة. أرسل المرجع للمراجعة؛ التصريح ليس إثباتاً للدفع.",
+    submitted: "تم تسجيل تصريح OMT للباقة. ستظل الباقة غير نشطة حتى تتحقق الإدارة من استلام المبلغ وتوافق عليه.",
+    error: "تعذر تسجيل تصريح OMT للباقة. تحقق من المرجع أو اتصل بالدعم إذا أرسلت المال بالفعل.",
+  } : language === "fr" ? {
+    instructions: "Pour le Pack : vérifiez soigneusement le bénéficiaire et le numéro OMT ci-dessous avant tout transfert. Le délai de réservation de 10 minutes ne s'applique pas aux Packs. Déclarez ensuite la référence ; une déclaration n'est pas une preuve de paiement.",
+    submitted: "Déclaration OMT du Pack enregistrée. Le Pack restera inactif jusqu'à la vérification du transfert et l'approbation administrative.",
+    error: "Impossible d'enregistrer la déclaration OMT du Pack. Vérifiez la référence ou contactez AAN si vous avez déjà transféré de l'argent.",
+  } : {
+    instructions: "For a Pack: carefully verify the OMT recipient and number below before transferring. The 10-minute booking hold does not apply to Packs. Submit the transfer reference for review; a declaration is not proof of payment.",
+    submitted: "Pack OMT declaration received. Your Pack remains inactive until the transfer is verified and approved by an administrator.",
+    error: "Unable to record the Pack OMT declaration. Check the reference or contact AAN if you already transferred money.",
+  };
+  const packOmtRecipient = language === "ar"
+    ? "المستفيد: Manal Zraika — OMT Pay: +961 3 425 202 — USD"
+    : language === "fr"
+      ? "Bénéficiaire : Manal Zraika — OMT Pay : +961 3 425 202 — USD"
+      : "Recipient: Manal Zraika — OMT Pay: +961 3 425 202 — USD";
   const whishText = language === "ar" ? {
     reference: "الرقم المرجعي لتحويل Whish Money", referenceHelp: "أدخل رقم العملية الموجود على إيصال أو سجل تحويل Whish Money، وليس رقم هاتف المستفيد.", warning: "العيادة لا تضمن استرداد مبلغ أُرسل إلى مستفيد غير صحيح. تُقدّم طلبات الاسترجاع إلى Whish Money وفقاً للشروط المطبقة.", note: "ملاحظة إضافية (اختياري)",
     instructions: "حوّل المبلغ بالدولار الأمريكي إلى Manal Zraika على رقم Whish Money: +961 3 425 202. تحقق بعناية من اسم المستفيد ورقم هاتفه قبل التحويل. أدخل مرجع التحويل خلال مهلة الحجز البالغة 10 دقائق. لا يُؤكد الحجز إلا بعد التحقق من استلام المبلغ.",
@@ -281,6 +351,27 @@ function PaymentContent() {
       | string
       | null,
   ) => {
+    if (scheduledStart) {
+      const date = new Date(scheduledStart);
+      if (!Number.isNaN(date.getTime())) {
+        const locale = language === "ar" ? "ar-LB" : language === "fr" ? "fr-FR" : "en-US";
+        // Respect the timezone chosen during booking, rather than the browser timezone.
+        // Invalid or absent URL parameters fall back to the browser timezone.
+        let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (selectedTimeZone) {
+          try {
+            new Intl.DateTimeFormat("en-US", { timeZone: selectedTimeZone });
+            timeZone = selectedTimeZone;
+          } catch {
+            // Keep the browser timezone for an invalid IANA timezone.
+          }
+        }
+        return new Intl.DateTimeFormat(locale, {
+          weekday: "long", day: "numeric", month: "long", year: "numeric",
+          hour: "2-digit", minute: "2-digit", hour12: false, timeZone,
+        }).format(date);
+      }
+    }
     if (!value) {
       return "—";
     }
@@ -305,6 +396,7 @@ function PaymentContent() {
       | string
       | null,
   ) => {
+    if (value === null || value.trim() === "") return "—";
     const numericValue = Number(value);
     if (
       !Number.isFinite(
@@ -340,7 +432,7 @@ function PaymentContent() {
       ) {
         return;
       }
-      if (!bookingId) {
+      if ((!isPatientPack && !bookingId) || (isPatientPack && (!packDetails || !packTherapistId || !packServiceId))) {
         alert(
           text.missingBooking,
         );
@@ -411,7 +503,9 @@ function PaymentContent() {
               },
               body:
                 JSON.stringify({
-                  bookingId,
+                  ...(isPatientPack
+                    ? { purchaseType: "patient_pack", therapistId: packTherapistId, serviceId: packServiceId }
+                    : { bookingId }),
                   language,
                 }),
             },
@@ -459,11 +553,11 @@ if (
     const referenceValue = isWhish ? whishReference : omtReference;
     const noteValue = isWhish ? whishNote : omtNote;
     const submitted = isWhish ? whishSubmitted : omtSubmitted;
-    const labels = isWhish ? whishText : omtText;
+    const labels = isWhish ? whishText : (isPatientPack ? { ...omtText, ...packOmtText } : omtText);
     const setError = isWhish ? setWhishError : setOmtError;
     const setSubmitted = isWhish ? setWhishSubmitted : setOmtSubmitted;
-    if (isProcessing || submitted) return;
-    if (!bookingId) {
+    if (isProcessing || submitted || (isPatientPack && isWhish)) return;
+    if (isPatientPack ? (!packDetails || !packTherapistId || !packServiceId || packLoading || !!packError) : !bookingId) {
       setError(text.missingBooking);
       return;
     }
@@ -481,14 +575,16 @@ if (
         setError(text.loginRequired);
         return;
       }
-      const response = await fetch("/api/manual-payment/declare", {
+      const response = await fetch(isPatientPack ? "/api/patient-pack/omt-declare" : "/api/manual-payment/declare", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          bookingId,
+          ...(isPatientPack
+            ? { therapistId: packTherapistId, serviceId: packServiceId }
+            : { bookingId }),
           provider,
           transactionReference: reference,
           patientNote: noteValue.trim() || null,
@@ -565,7 +661,7 @@ if (
               </p>
               <h1 className="aan-heading mx-auto mt-5 max-w-3xl text-4xl leading-tight sm:text-5xl lg:text-6xl">
                 {
-                  text.title
+                  isPatientPack ? (language === "fr" ? "Régler votre Pack Patient" : language === "ar" ? "دفع باقة المريض" : "Pay for your Patient Pack") : text.title
                 }
               </h1>
               <div className="mx-auto mt-6 flex items-center justify-center gap-3">
@@ -575,7 +671,7 @@ if (
               </div>
               <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-aan-secondary sm:text-lg">
                 {
-                  text.subtitle
+                  isPatientPack ? (language === "fr" ? "Vérifiez votre Pack et choisissez votre moyen de paiement." : language === "ar" ? "راجع الباقة واختر طريقة الدفع." : "Review your Pack and choose a payment method.") : text.subtitle
                 }
               </p>
             </div>
@@ -604,14 +700,16 @@ if (
                   <div className="border-t border-aan-border pt-5">
                     <p className="text-sm font-bold text-aan-secondary">
                       {
-                        text.appointment
+                        isPatientPack ? (language === "fr" ? "Séances" : language === "ar" ? "الجلسات" : "Sessions") : text.appointment
                       }
                     </p>
                     <p className="mt-2 text-lg font-semibold leading-7 text-aan-navy">
                       {
-                        formatSlot(
-                          slot,
-                        )
+                        isPatientPack
+                          ? packLoading ? "…" : packError ? packError : packDetails
+                            ? `${packDetails.sessions} × ${packDetails.durationMinutes} min · ${packDetails.discountRate}% · ${packDetails.validityMonths} ${language === "fr" ? "mois" : language === "ar" ? "أشهر" : "months"}`
+                            : "—"
+                          : formatSlot(slot)
                       }
                     </p>
                   </div>
@@ -624,7 +722,7 @@ if (
                     <p className="mt-2 text-4xl font-bold text-aan-navy">
                       {
                         formatPrice(
-                          price,
+                          isPatientPack ? (packDetails ? String(packDetails.totalPrice) : null) : price,
                         )
                       }
                     </p>
@@ -635,7 +733,7 @@ if (
                     </span>
                     <p className="text-sm leading-6 text-aan-secondary">
                       {
-                        text.paymentInfo
+                        isPatientPack ? (language === "fr" ? "Les séances seront disponibles après confirmation du paiement. Aucun créneau n’est réservé à l’achat." : language === "ar" ? "ستتوفر الجلسات بعد تأكيد الدفع. لا يتم حجز موعد عند الشراء." : "Sessions become available after payment confirmation. No appointment is reserved at purchase.") : text.paymentInfo
                       }
                     </p>
                   </div>
@@ -778,9 +876,7 @@ if (
                             OMT
                           </p>
                           <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
-                            {
-                              text.availableNow
-                            }
+                            {text.availableNow}
                           </span>
                         </div>
                         <p className="mt-2 text-sm leading-6 text-aan-secondary">
@@ -824,7 +920,7 @@ if (
                 </button>
                 {(selectedProvider === "omt" || selectedProvider === "whish") && (() => {
                   const isWhish = selectedProvider === "whish";
-                  const labels = isWhish ? whishText : omtText;
+                  const labels = isWhish ? whishText : (isPatientPack ? { ...omtText, ...packOmtText } : omtText);
                   const submitted = isWhish ? whishSubmitted : omtSubmitted;
                   const reference = isWhish ? whishReference : omtReference;
                   const note = isWhish ? whishNote : omtNote;
@@ -833,6 +929,7 @@ if (
                     <div className="mt-6 space-y-4 rounded-2xl border border-aan-border bg-white p-5">
                       <p className="text-sm leading-6 text-aan-secondary">
                         {isWhish ? text.unavailable : labels.instructions}
+                        {!isWhish && isPatientPack && <span className="mt-2 block font-semibold text-aan-navy">{packOmtRecipient}</span>}
                       </p>
                       {!isWhish && (
                         <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-aan-navy">
@@ -891,7 +988,7 @@ if (
                   {selectedProvider === "stripe"
                     ? isProcessing ? text.redirectingStripe : text.payStripe
                     : selectedProvider === "omt"
-                      ? omtSubmitted ? omtText.submitted : isProcessing ? omtText.sending : omtText.send
+                      ? omtSubmitted ? (isPatientPack ? packOmtText.submitted : omtText.submitted) : isProcessing ? omtText.sending : omtText.send
                       : text.unavailable}
                 </button>
               </section>

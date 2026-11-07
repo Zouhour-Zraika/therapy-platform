@@ -199,7 +199,8 @@ export default function ClinicianPage() {
          * → accès clinique refusé
          */
         if (
-          specialist?.work_status === "inactive"
+          specialist?.work_status === "inactive" &&
+          profile.role !== "admin"
         ) {
           await supabase.auth.signOut();
 

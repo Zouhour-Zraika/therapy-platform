@@ -2477,43 +2477,13 @@ function BookingContent() {
             return;
           }
 
-          const response = await fetch(
-            "/api/create-checkout-session",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                purchaseType: "patient_pack",
-                therapistId: selectedTherapist.id,
-                serviceId: selectedService.id,
-                language,
-              }),
-            },
-          );
-
-          const result = await response.json();
-
-          if (!response.ok || !result.url) {
-            console.error(
-              "Patient Pack checkout error:",
-              result,
-            );
-
-            alert(
-              result.error ||
-                (language === "ar"
-                  ? "تعذر بدء دفع باقة المريض. يرجى المحاولة مرة أخرى."
-                  : language === "fr"
-                    ? "Impossible de démarrer le paiement du Pack Patient. Veuillez réessayer."
-                    : "Unable to start the Patient Pack payment. Please try again."),
-            );
-            return;
-          }
-
-          window.location.href = String(result.url);
+          const params = new URLSearchParams({
+            purchaseType: "patient_pack",
+            therapistId: selectedTherapist.id,
+            serviceId: selectedService.id,
+            therapist: selectedTherapist.full_name || "",
+          });
+          window.location.href = `/payment?${params.toString()}`;
           return;
         }
 

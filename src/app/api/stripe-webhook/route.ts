@@ -2082,6 +2082,35 @@ export async function POST(
         );
       }
 
+      /*
+       * Sécurité : un paiement Stripe tardif ne doit jamais
+       * réactiver un pack annulé, rejeté, expiré ou payé par OMT.
+       * Les relectures Stripe ne sont admises que pour le même paiement.
+       */
+      const stripePackIsPending =
+        existingPack.status === "pending" &&
+        existingPack.payment_provider === "stripe" &&
+        !existingPack.payment_transaction_id;
+
+      const stripePackIsReplay =
+        (existingPack.status === "active" ||
+          existingPack.status === "used") &&
+        existingPack.payment_provider === "stripe" &&
+        existingPack.payment_transaction_id === transactionId;
+
+      if (!stripePackIsPending && !stripePackIsReplay) {
+        console.warn("Ignoring Stripe payment for ineligible Patient Pack", {
+          packId,
+          status: existingPack.status,
+          provider: existingPack.payment_provider,
+        });
+        return NextResponse.json({
+          received: true,
+          ignored: true,
+          reason: "Patient Pack is not eligible for Stripe activation.",
+        });
+      }
+
       const packPrice =
         Number(
           existingPack.total_price,
@@ -2342,6 +2371,8 @@ export async function POST(
             "id",
             packId,
           )
+          .eq("payment_provider", "stripe")
+          .eq("status", existingPack.status)
           .select(
             `
               id,

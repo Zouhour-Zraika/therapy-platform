@@ -2294,12 +2294,22 @@ export default function AdminProfilePage() {
          * en anglais + arabe pour compatibilité
          * avec le reste du projet.
          */
-        const {
-          error:
-            profileError,
-        } = await supabase
-          .from("profiles")
-          .update({
+
+        const { data: { session }, error: sessionError } =
+          await supabase.auth.getSession();
+
+        if (sessionError || !session) {
+          throw new Error("Authentication required");
+        }
+
+        const response = await fetch("/api/admin/profile-save", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            profile: {
             full_name:
               latinFullName,
 
@@ -2359,29 +2369,8 @@ export default function AdminProfilePage() {
 
             photo_url:
               uploadedPhotoUrl,
-          })
-          .eq(
-            "id",
-            user.id,
-          );
-
-        if (profileError) {
-          throw profileError;
-        }
-
-        /*
-         * therapists :
-         * c’est ici que sont conservées
-         * LES TROIS LANGUES utilisées
-         * sur la page publique.
-         */
-        const {
-          error:
-            therapistError,
-        } = await supabase
-          .from("therapists")
-          .upsert(
-            {
+          },
+            therapist: {
               id: user.id,
 
               full_name:
@@ -2471,16 +2460,14 @@ export default function AdminProfilePage() {
               price:
                 parsedPrice,
             },
-            {
-              onConflict:
-                "id",
-            },
-          );
+          }),
+        });
 
-        if (therapistError) {
-          throw therapistError;
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || "Unable to save profile");
         }
-
         setPhotoUrl(
           uploadedPhotoUrl ||
             "",

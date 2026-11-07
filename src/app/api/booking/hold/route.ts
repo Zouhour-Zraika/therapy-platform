@@ -485,6 +485,25 @@ async function cleanupExpiredHolds(
         ? expiredBooking
             .payment_transaction_id
         : null;
+    /*
+     * Une référence de paiement autre qu'une Checkout Session
+     * peut correspondre à un paiement en cours de réconciliation.
+     * Ne jamais supprimer automatiquement cette réservation.
+     */
+    if (
+      expiredBooking.payment_transaction_id &&
+      !checkoutSessionId
+    ) {
+      console.warn(
+        "Payment reference requires reconciliation; retaining expired booking:",
+        {
+          bookingId: expiredBooking.id,
+          transactionId: expiredBooking.payment_transaction_id,
+        },
+      );
+      continue;
+    }
+
     if (checkoutSessionId && !stripe) {
       // Never delete a booking while its Stripe Checkout cannot be verified.
       console.error("Stripe unavailable; retaining expired booking:", expiredBooking.id);
@@ -501,38 +520,30 @@ async function cleanupExpiredHolds(
             checkoutSessionId,
           );
         if (
-          checkoutSession.status ===
-          "open"
-        ) {
-          await stripe.checkout.sessions.expire(
-            checkoutSessionId,
-          );
-          console.log(
-            "Expired Stripe Checkout Session for booking hold:",
-            {
-              bookingId:
-                expiredBooking.id,
-              sessionId:
-                checkoutSessionId,
-            },
-          );
-        } else if (
-          checkoutSession.payment_status ===
-            "paid" ||
-          checkoutSession.status ===
-            "complete"
+          checkoutSession.payment_status === "paid" ||
+          checkoutSession.status === "complete"
         ) {
           console.warn(
-            "Expired hold already has a completed Stripe Checkout; leaving booking for webhook reconciliation:",
+            "Completed Stripe Checkout; retaining booking for webhook reconciliation:",
+            { bookingId: expiredBooking.id, sessionId: checkoutSessionId },
+          );
+          continue;
+        }
+
+        if (checkoutSession.status === "open") {
+          await stripe.checkout.sessions.expire(checkoutSessionId);
+          console.log(
+            "Expired Stripe Checkout Session for booking hold:",
+            { bookingId: expiredBooking.id, sessionId: checkoutSessionId },
+          );
+        } else if (checkoutSession.status !== "expired") {
+          console.warn(
+            "Unexpected Stripe Checkout status; retaining booking:",
             {
-              bookingId:
-                expiredBooking.id,
-              sessionId:
-                checkoutSessionId,
-              checkoutStatus:
-                checkoutSession.status,
-              paymentStatus:
-                checkoutSession.payment_status,
+              bookingId: expiredBooking.id,
+              sessionId: checkoutSessionId,
+              status: checkoutSession.status,
+              paymentStatus: checkoutSession.payment_status,
             },
           );
           continue;
@@ -563,12 +574,7 @@ async function cleanupExpiredHolds(
      * La page Stripe est maintenant expirée (ou aucune session
      * Stripe n'était encore attachée). On peut supprimer le pending.
      */
-    const {
-      data:
-        deletedBooking,
-      error:
-        deleteError,
-    } = await supabaseAdmin
+    const deleteQuery = supabaseAdmin
       .from("bookings")
       .delete()
       .eq(
@@ -587,6 +593,20 @@ async function cleanupExpiredHolds(
         "hold_expires_at",
         nowIso,
       )
+      ;
+
+    const protectedDeleteQuery =
+      expiredBooking.payment_transaction_id == null
+        ? deleteQuery.is("payment_transaction_id", null)
+        : deleteQuery.eq(
+            "payment_transaction_id",
+            expiredBooking.payment_transaction_id,
+          );
+
+    const {
+      data: deletedBooking,
+      error: deleteError,
+    } = await protectedDeleteQuery
       .select(
         "id, slot_id",
       )
@@ -729,6 +749,10 @@ export async function POST(
         body.serviceId ||
           "",
       ).trim();
+    const bookingLanguage =
+      ["fr", "en", "ar"].includes(body.language)
+        ? body.language
+        : "en";
     if (
       !therapistId ||
       !slotId ||
@@ -1095,6 +1119,41 @@ export async function POST(
     }
     claimedSlotId =
       claimedSlot.id;
+
+    /*
+     * TEST ONLY - Check time overlaps across different slots.
+     * Include paid bookings, active Stripe holds, and OMT/Whish
+     * declarations awaiting review. Rejected declarations and
+     * expired ordinary Stripe holds do not block this check.
+     * This check is NOT a database-level concurrency guarantee.
+     */
+    const nowForConflict = new Date().toISOString();
+    const { data: overlappingBookings, error: overlapError } =
+      await supabaseAdmin
+        .from("bookings")
+        .select("id, status, manual_payment_status, hold_expires_at")
+        .eq("therapist_id", therapist.id)
+        .lt("scheduled_start", scheduledEnd.toISOString())
+        .gt("scheduled_end", scheduledStart.toISOString())
+        .in("status", ["pending", "paid"]);
+    if (overlapError) {
+      throw overlapError;
+    }
+    const hasBlockingOverlap = (overlappingBookings || []).some((other) => {
+      if (other.status === "paid") return true;
+      if (other.manual_payment_status === "rejected" ||
+          other.manual_payment_status === "expired") return false;
+      if (["submitted", "under_review", "approved", "awaiting_transfer"].includes(
+        other.manual_payment_status || ""
+      )) return true;
+      return other.manual_payment_status == null &&
+        !!other.hold_expires_at &&
+        other.hold_expires_at > nowForConflict;
+    });
+    if (hasBlockingOverlap) {
+      throw new Error("BOOKING_TIME_CONFLICT");
+    }
+
     /*
      * 10. Hold de 10 minutes.
      */
@@ -1128,6 +1187,8 @@ export async function POST(
       .insert({
         patient_id:
           user.id,
+        booking_language:
+          bookingLanguage,
         patient_email:
           user.email ||
           null,
@@ -1273,13 +1334,19 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          error instanceof
-          Error
-            ? error.message
-            : "Unable to create booking hold.",
+          error instanceof Error && error.message === "BOOKING_TIME_CONFLICT"
+            ? "This specialist already has a booking during the selected time."
+            : error instanceof Error
+              ? error.message
+              : "Unable to create booking hold.",
+        ...(error instanceof Error && error.message === "BOOKING_TIME_CONFLICT"
+          ? { code: "BOOKING_TIME_CONFLICT" }
+          : {}),
       },
       {
-        status: 500,
+        status: error instanceof Error && error.message === "BOOKING_TIME_CONFLICT"
+          ? 409
+          : 500,
       },
     );
   }

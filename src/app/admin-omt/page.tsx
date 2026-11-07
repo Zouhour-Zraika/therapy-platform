@@ -9,6 +9,7 @@ import { useLanguage } from "@/i18n/LanguageProvider";
 type Declaration = {
   id: string;
   booking_id: string | null;
+  patient_pack_id: string | null;
   patient_id: string;
   provider: string;
   status: string;
@@ -40,7 +41,7 @@ export default function AdminOmtPage() {
     title: "Paiements OMT",
     intro: "Déclarations de transfert à vérifier manuellement. Une déclaration ne constitue jamais une preuve de paiement.",
     refresh: "Actualiser", empty: "Aucune déclaration à afficher.",
-    reference: "Référence de transfert", booking: "Réservation",
+    reference: "Référence de transfert", booking: "Réservation", pack: "Pack Patient",
     submitted: "Déclaré le", note: "Note du patient",
     adminNote: "Note administrative (facultative)",
     approve: "Approuver après vérification OMT",
@@ -58,7 +59,7 @@ export default function AdminOmtPage() {
   } : language === "ar" ? {
     title: "مدفوعات OMT", intro: "تحويلات بانتظار التحقق اليدوي. التصريح ليس إثباتاً للدفع.",
     refresh: "تحديث", empty: "لا توجد تصريحات.", reference: "مرجع التحويل",
-    booking: "الحجز", submitted: "تاريخ التصريح", note: "ملاحظة المريض",
+    booking: "الحجز", pack: "باقة المريض", submitted: "تاريخ التصريح", note: "ملاحظة المريض",
     adminNote: "ملاحظة الإدارة (اختياري)", approve: "الموافقة بعد التحقق من OMT",
     reject: "رفض", prepare: "تحضير الدفع والإيصال", meeting: "تحضير الاجتماع",
     finalize: "إكمال الحجز والإشعارات", confirmApprove: "هل تحققت بنفسك من استلام تحويل OMT؟",
@@ -72,7 +73,7 @@ export default function AdminOmtPage() {
   } : {
     title: "OMT Payments", intro: "Manually verify transfers. A declaration is not proof of payment.",
     refresh: "Refresh", empty: "No declarations to display.", reference: "Transfer reference",
-    booking: "Booking", submitted: "Submitted", note: "Patient note",
+    booking: "Booking", pack: "Patient Pack", submitted: "Submitted", note: "Patient note",
     adminNote: "Admin note (optional)", approve: "Approve after verifying OMT",
     reject: "Reject", prepare: "Prepare payment and receipt", meeting: "Prepare meeting",
     finalize: "Finalize booking and notifications", confirmApprove: "Have you personally verified the OMT transfer was received?",
@@ -166,7 +167,9 @@ export default function AdminOmtPage() {
     try {
       const accessToken = await token();
       const endpoint = kind === "approve" || kind === "reject"
-        ? "/api/admin/omt-review"
+        ? item.patient_pack_id && !item.booking_id
+          ? "/api/admin/omt-pack-review"
+          : "/api/admin/omt-review"
         : kind === "prepare"
           ? "/api/admin/omt-prepare"
           : kind === "meeting"
@@ -225,7 +228,7 @@ export default function AdminOmtPage() {
                   </div>
                   <dl className="mt-5 space-y-2 text-sm text-aan-secondary">
                     <div><dt className="inline font-semibold">{labels.reference}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.transaction_reference}</bdi></dd></div>
-                    <div><dt className="inline font-semibold">{labels.booking}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.booking_id || "—"}</bdi></dd></div>
+                    <div><dt className="inline font-semibold">{item.patient_pack_id && !item.booking_id ? labels.pack : labels.booking}: </dt><dd className="inline break-all"><bdi dir="ltr">{item.patient_pack_id && !item.booking_id ? item.patient_pack_id : item.booking_id || "—"}</bdi></dd></div>
                     <div><dt className="inline font-semibold">{labels.submitted}: </dt><dd className="inline"><bdi dir="ltr">{item.submitted_at ? formatSubmittedAt(item.submitted_at) : "—"}</bdi></dd></div>
                     {item.patient_note && <div><dt className="inline font-semibold">{labels.note}: </dt><dd className="inline"><bdi dir="auto">{displayPatientNote(item.patient_note)}</bdi></dd></div>}
                   </dl>
