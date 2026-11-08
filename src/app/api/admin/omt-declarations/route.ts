@@ -43,7 +43,6 @@ export async function GET(request: Request) {
     }
 
     const token = authorization.slice("Bearer ".length).trim();
-
     if (!token) {
       return NextResponse.json(
         { error: "Authentication required." },
@@ -89,21 +88,14 @@ export async function GET(request: Request) {
     const pageText = url.searchParams.get("page") || "1";
     const page = Number(pageText);
 
-    if (
-      !Number.isSafeInteger(page) ||
-      page < 1 ||
-      page > 10000
-    ) {
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000) {
       return NextResponse.json(
         { error: "Invalid page number." },
         { status: 400 },
       );
     }
 
-    if (
-      status &&
-      !ALLOWED_STATUSES.some((allowed) => allowed === status)
-    ) {
+    if (status && !ALLOWED_STATUSES.some((allowed) => allowed === status)) {
       return NextResponse.json(
         { error: "Invalid declaration status." },
         { status: 400 },
@@ -119,6 +111,7 @@ export async function GET(request: Request) {
         `
           id,
           booking_id,
+          patient_pack_id,
           patient_id,
           provider,
           status,

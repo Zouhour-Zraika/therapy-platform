@@ -34,6 +34,14 @@ function adminClient() {
 }
 
 export async function POST(request: Request) {
+  // Whish disabled until testing is complete.
+  const incomingBody = await request.clone().json().catch(() => null);
+  if (incomingBody?.provider === "whish") {
+    return NextResponse.json(
+      { error: "Whish Money is not available yet." },
+      { status: 403 }
+    );
+  }
   try {
     const supabase = adminClient();
     const authorization = request.headers.get("authorization");

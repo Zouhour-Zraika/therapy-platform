@@ -56,8 +56,21 @@ function appointment(value: string | null, language: Language): string {
 function emailContent(args: {
   type: NotificationType;
   language: Language;
-  booking: any;
-  receipt: any;
+  booking: {
+    id: string;
+    scheduled_start: string | null;
+    meeting_provider: string | null;
+    meeting_url: string | null;
+    zoom_start_url: string | null;
+    zoom_join_url: string | null;
+    backup_host_url: string | null;
+    backup_join_url: string | null;
+  };
+  receipt: {
+    receipt_number: string | null;
+    amount: number | null;
+    payment_transaction_id: string | null;
+  };
   therapistName: string;
 }) {
   const { type, language, booking, receipt, therapistName } = args;
@@ -166,18 +179,18 @@ function emailContent(args: {
       /^https:\/\//i.test(content)
         ? `<a href="${safe}" rel="noopener noreferrer">${safe}</a>`
         : safe;
-    return `<tr><td style="padding:10px;font-weight:bold;vertical-align:top">${escapeHtml(label)}</td><td style="padding:10px;overflow-wrap:anywhere">${displayed}</td></tr>`;
+    return `<tr><td dir="${isArabic ? "rtl" : "ltr"}" style="padding:10px;font-weight:bold;vertical-align:top;text-align:${isArabic ? "right" : "left"}">${escapeHtml(label)}</td><td dir="auto" style="padding:10px;overflow-wrap:anywhere;text-align:${isArabic ? "right" : "left"}">${displayed}</td></tr>`;
   }).join("\n");
 
   return {
     subject: `AAN Psychotherapy — ${subject}`,
     html: `<!doctype html><html lang="${language}" dir="${isArabic ? "rtl" : "ltr"}">
-      <body style="background:#f3efe9;font-family:Arial,sans-serif;padding:20px">
-      <main style="max-width:680px;margin:auto;background:white;padding:30px;border-radius:18px;color:#24364b">
+      <body dir="${isArabic ? "rtl" : "ltr"}" style="background:#f3efe9;font-family:Arial,sans-serif;padding:20px;direction:${isArabic ? "rtl" : "ltr"};text-align:${isArabic ? "right" : "left"}">
+      <main dir="${isArabic ? "rtl" : "ltr"}" style="max-width:680px;margin:auto;background:white;padding:30px;border-radius:18px;color:#24364b;direction:${isArabic ? "rtl" : "ltr"};text-align:${isArabic ? "right" : "left"}">
       <p style="color:#b5965c;font-weight:bold">AAN PSYCHOTHERAPY</p>
       <h1>${escapeHtml(subject)}</h1>
       <p>${escapeHtml(intro)}</p>
-      <table style="width:100%;background:#f9f6f1;border-radius:12px">${table}</table>
+      <table dir="${isArabic ? "rtl" : "ltr"}" style="width:100%;background:#f9f6f1;border-radius:12px;direction:${isArabic ? "rtl" : "ltr"};text-align:${isArabic ? "right" : "left"}">${table}</table>
       <p style="margin-top:25px">AAN Psychotherapy</p>
       </main></body></html>`,
   };
@@ -226,7 +239,7 @@ export async function POST(request: Request) {
 
     const { data: booking, error: bookingError } = await db
       .from("bookings")
-      .select("id,status,manual_payment_status,payment_provider,patient_pack_id,patient_id,patient_email,therapist_id,therapist_name,scheduled_start,meeting_provider,meeting_url,zoom_join_url,zoom_start_url,backup_join_url,backup_host_url")
+      .select("id,status,manual_payment_status,payment_provider,patient_pack_id,patient_id,patient_email,booking_language,therapist_id,therapist_name,scheduled_start,meeting_provider,meeting_url,zoom_join_url,zoom_start_url,backup_join_url,backup_host_url")
       .eq("id", bookingId)
       .single();
 
@@ -270,6 +283,9 @@ export async function POST(request: Request) {
           return errorResponse("Patient email mismatch", 409);
         }
         language = languageOf(data.user?.user_metadata?.language || data.user?.user_metadata?.locale);
+      }
+      if (["fr", "en", "ar"].includes(booking.booking_language || "")) {
+        language = booking.booking_language as Language;
       }
     }
 

@@ -265,6 +265,15 @@ export async function POST(request: Request) {
       return respondError("No connected meeting provider", 409);
     }
 
+    // Never silently switch providers when a meeting already exists.
+    // If the selected provider is disconnected, stop before any external call.
+    if (
+      (provider === "zoom" && !zoomEnabled) ||
+      (provider === "google_meet" && !googleEnabled)
+    ) {
+      return respondError("Selected meeting provider is not connected", 409);
+    }
+
     const serviceType = (booking.service_type || "").trim().toLowerCase();
     const continuationServices = [
       "couple",

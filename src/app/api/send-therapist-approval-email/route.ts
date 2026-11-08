@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
 
 type TherapistApprovalEmailRequest = {
+  applicationId?: string;
   email?: string;
   fullName?: string;
   loginUrl?: string;
@@ -9,6 +11,21 @@ type TherapistApprovalEmailRequest = {
 
 export async function POST(request: Request) {
   try {
+    const internalSecret = process.env.AAN_INTERNAL_API_SECRET;
+
+    const providedSecret =
+      request.headers.get("x-aan-internal-secret");
+
+    if (
+      !internalSecret ||
+      !providedSecret ||
+      providedSecret !== internalSecret
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized." },
+        { status: 401 },
+      );
+    }
     const resendApiKey =
       process.env.RESEND_API_KEY;
 
@@ -47,9 +64,7 @@ export async function POST(request: Request) {
         "",
       ) || requestOrigin;
 
-    const loginUrl =
-      body.loginUrl?.trim() ||
-      `${siteUrl}/clinician`;
+    const loginUrl = `${siteUrl}/clinician`;
 
     if (!email) {
       return NextResponse.json(
@@ -61,6 +76,62 @@ export async function POST(request: Request) {
         {
           status: 400,
         },
+      );
+    }
+
+    const safeFullName = fullName
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+    const applicationId = body.applicationId?.trim();
+
+    if (
+      !applicationId ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(applicationId)
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Valid application ID is required." },
+        { status: 400 },
+      );
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey =
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      return NextResponse.json(
+        { success: false, error: "Server configuration missing." },
+        { status: 500 },
+      );
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+
+    const { data: application, error: applicationError } =
+      await supabaseAdmin
+        .from("therapist_applications")
+        .select("id, email, status")
+        .eq("id", applicationId)
+        .maybeSingle();
+
+    if (applicationError) {
+      throw applicationError;
+    }
+
+    if (
+      !application ||
+      application.status !== "approved" ||
+      application.email?.trim().toLowerCase() !==
+        email?.trim().toLowerCase()
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Approved application not verified." },
+        { status: 403 },
       );
     }
 
@@ -152,7 +223,7 @@ export async function POST(request: Request) {
                           line-height: 1.8;
                         "
                       >
-                        Dear ${fullName},
+                        Dear ${safeFullName},
                         <br /><br />
                         We are pleased to inform you that your application
                         to join AAN Psychotherapy as a specialist has been
@@ -220,7 +291,7 @@ export async function POST(request: Request) {
                           line-height: 1.8;
                         "
                       >
-                        Bonjour ${fullName},
+                        Bonjour ${safeFullName},
                         <br /><br />
                         Nous avons le plaisir de vous informer que votre
                         candidature pour rejoindre AAN Psychotherapy en
@@ -259,7 +330,7 @@ export async function POST(request: Request) {
                           line-height: 1.9;
                         "
                       >
-                        مرحباً ${fullName}،
+                        مرحباً ${safeFullName}،
                         <br /><br />
                         يسرّنا إبلاغك بأنه تمت الموافقة على طلبك
                         للانضمام إلى AAN Psychotherapy كمختص.
@@ -313,7 +384,9 @@ export async function POST(request: Request) {
         subject,
 
         html,
-      });
+       }, {
+         idempotencyKey: `therapist-approval-${applicationId}`,
+       });
 
     if (error) {
       console.error(

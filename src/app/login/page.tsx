@@ -517,7 +517,8 @@ export default function LoginPage() {
            */
           if (
             specialist?.work_status ===
-            "inactive"
+              "inactive" &&
+            profile.role !== "admin"
           ) {
             await supabase.auth.signOut();
 

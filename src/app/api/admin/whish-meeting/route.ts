@@ -105,6 +105,7 @@ export async function POST(request: Request) {
       }
       if (!owned) {
         throw new Error("Whish meeting preparation lock has expired or changed");
+      }
       const { data: declaration, error: declarationError } = await db
         .from("manual_payment_declarations")
         .select("id")
@@ -117,7 +118,6 @@ export async function POST(request: Request) {
         .maybeSingle();
       if (declarationError || !declaration) {
         throw new Error("Approved Whish declaration missing or invalid");
-      }
       }
     }
     const { data: booking, error: bookingError } = await db
@@ -232,6 +232,12 @@ export async function POST(request: Request) {
     }
     if (!provider) {
       return respondError("No connected meeting provider", 409);
+    }
+    if (
+      (provider === "zoom" && !zoomEnabled) ||
+      (provider === "google_meet" && !googleEnabled)
+    ) {
+      return respondError("Selected meeting provider is not connected", 409);
     }
     const serviceType = (booking.service_type || "").trim().toLowerCase();
     const continuationServices = [

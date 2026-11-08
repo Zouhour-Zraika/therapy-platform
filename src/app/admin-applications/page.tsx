@@ -49,6 +49,7 @@ export default function AdminApplicationsPage() {
 
         all: "جميع الطلبات",
         pending: "قيد المراجعة",
+        reviewRequired: "تتطلب هذه الحالة مراجعة إدارية قبل اتخاذ أي إجراء.",
         approved: "مقبول",
         rejected: "مرفوض",
 
@@ -84,6 +85,7 @@ export default function AdminApplicationsPage() {
 
           all: "Toutes les candidatures",
           pending: "En attente",
+          reviewRequired: "Vérification administrative nécessaire avant toute nouvelle action.",
           approved: "Approuvées",
           rejected: "Refusées",
 
@@ -118,6 +120,7 @@ export default function AdminApplicationsPage() {
 
         all: "All applications",
         pending: "Pending",
+        reviewRequired: "Administrative verification required before any further action.",
         approved: "Approved",
         rejected: "Rejected",
 
@@ -261,15 +264,23 @@ export default function AdminApplicationsPage() {
     setProcessingId(id);
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("therapist_applications")
         .update({
           status: "rejected",
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("id");
 
       if (error) {
         throw error;
+      }
+
+      if (!data || data.length !== 1) {
+        throw new Error(
+          "This application has already been processed.",
+        );
       }
 
       await getApplications();
@@ -377,6 +388,7 @@ export default function AdminApplicationsPage() {
   };
 
   const getStatusLabel = (status: string) => {
+    if (status === "processing") return copy.reviewRequired;
     if (status === "approved") {
       return copy.approved;
     }
@@ -389,6 +401,7 @@ export default function AdminApplicationsPage() {
   };
 
   const getStatusClasses = (status: string) => {
+    if (status === "processing") return "border-orange-200 bg-orange-50 text-orange-800";
     if (status === "approved") {
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     }
@@ -502,6 +515,8 @@ export default function AdminApplicationsPage() {
                     const isProcessing =
                       processingId ===
                       application.id;
+
+                    const needsReview = application.status === "processing";
 
                     const isPending =
                       application.status ===
@@ -630,6 +645,12 @@ export default function AdminApplicationsPage() {
                                     ? copy.processing
                                     : copy.reject}
                                 </button>
+                              </div>
+                            )}
+
+                            {needsReview && (
+                              <div role="alert" className="rounded-2xl border border-orange-200 bg-orange-50 p-5 text-center font-semibold leading-7 text-orange-800">
+                                {copy.reviewRequired}
                               </div>
                             )}
 

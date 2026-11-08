@@ -11,6 +11,8 @@ type ApproveTherapistRequest = {
 };
 
 export async function POST(request: Request) {
+  let approvalInviteStarted = false;
+  let approvalClaimedSuccessfully = false;
   try {
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -200,6 +202,8 @@ export async function POST(request: Request) {
       .select(`
         id,
         email,
+        full_name,
+        specialty,
         status
       `)
       .eq(
@@ -240,6 +244,13 @@ export async function POST(request: Request) {
       });
     }
 
+    if (application.status !== "pending") {
+      return NextResponse.json(
+        { error: "Only pending applications can be approved." },
+        { status: 409 },
+      );
+    }
+
     const applicationEmail =
       application.email
         ?.trim()
@@ -259,6 +270,8 @@ export async function POST(request: Request) {
         },
       );
     }
+    const trustedFullName = application.full_name?.trim() || "";
+    const trustedSpecialty = application.specialty?.trim() || "";
 
     const requestOrigin =
       new URL(request.url).origin;
@@ -273,6 +286,30 @@ export async function POST(request: Request) {
      * Inviter le spécialiste
      * =========================================================
      */
+
+
+    const {
+      data: applicationClaimed,
+      error: applicationClaimError,
+    } = await supabaseAdmin.rpc(
+      "claim_therapist_application_for_approval",
+      { p_application_id: applicationId },
+    );
+
+    if (applicationClaimError) {
+      throw applicationClaimError;
+    }
+
+    if (applicationClaimed !== true) {
+      return NextResponse.json(
+        { error: "This application is no longer pending." },
+        { status: 409 },
+      );
+    }
+
+    approvalClaimedSuccessfully = true;
+    approvalInviteStarted = true;
+
 
     const {
       data: invitedUser,
@@ -326,6 +363,8 @@ export async function POST(request: Request) {
           {
             error:
               inviteError.message,
+            requiresManualReview: true,
+            invitationStarted: true,
           },
           {
             status: 500,
@@ -339,6 +378,8 @@ export async function POST(request: Request) {
         {
           error:
             "Unable to determine the therapist user ID.",
+            requiresManualReview: true,
+            invitationStarted: true,
         },
         {
           status: 500,
@@ -445,8 +486,8 @@ export async function POST(request: Request) {
       } = await supabaseAdmin
         .from("therapists")
         .update({
-          full_name: fullName,
-          specialty,
+          full_name: trustedFullName,
+          specialty: trustedSpecialty,
         })
         .eq(
           "id",
@@ -471,8 +512,8 @@ export async function POST(request: Request) {
         .from("therapists")
         .insert({
           id: userId,
-          full_name: fullName,
-          specialty,
+          full_name: trustedFullName,
+          specialty: trustedSpecialty,
           bio: "",
           price: 0,
         });
@@ -500,6 +541,7 @@ export async function POST(request: Request) {
         "id",
         applicationId,
       )
+      .eq("status", "processing")
       .select(`
         id,
         email,
@@ -516,6 +558,8 @@ export async function POST(request: Request) {
         {
           error:
             "The application status was not updated.",
+            requiresManualReview: true,
+            invitationStarted: true,
         },
         {
           status: 500,
@@ -531,6 +575,8 @@ export async function POST(request: Request) {
         {
           error:
             "The application was not marked as approved.",
+            requiresManualReview: true,
+            invitationStarted: true,
         },
         {
           status: 500,
@@ -554,11 +600,14 @@ export async function POST(request: Request) {
             headers: {
               "Content-Type":
                 "application/json",
+              "x-aan-internal-secret":
+                process.env.AAN_INTERNAL_API_SECRET || "",
             },
 
             body: JSON.stringify({
+              applicationId,
               email,
-              fullName,
+              fullName: trustedFullName,
               loginUrl:
                 `${siteUrl}/clinician`,
             }),
@@ -605,6 +654,7 @@ export async function POST(request: Request) {
         updatedApplication.status,
     });
   } catch (error) {
+    console.error("Approval invitation started:", approvalInviteStarted);
     console.error(
       "Approve therapist error:",
       error,
@@ -616,6 +666,8 @@ export async function POST(request: Request) {
           error instanceof Error
             ? error.message
             : "Unable to approve therapist application.",
+        requiresManualReview: approvalClaimedSuccessfully,
+        invitationStarted: approvalInviteStarted,
       },
       {
         status: 500,

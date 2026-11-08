@@ -76,19 +76,29 @@ function AcceptAdminInviteContent() {
       setErrorMessage("");
 
       try {
-        const code = searchParams.get("code");
+        const currentUrl = new URL(window.location.href);
+        const code = currentUrl.searchParams.get("code");
+        const hashParams = new URLSearchParams(
+          currentUrl.hash.replace(/^#/, "")
+        );
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
 
         if (code) {
-          const { error: exchangeError } =
+          const { error } =
             await supabase.auth.exchangeCodeForSession(code);
-
-          if (exchangeError) {
-            console.error(
-              "Admin invitation code exchange error:",
-              exchangeError,
-            );
-          }
+          if (error) throw error;
+        } else if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) throw error;
+        } else {
+          throw new Error(copy.sessionError);
         }
+
+        window.history.replaceState({}, "", currentUrl.pathname);
 
         const {
           data: { session },
@@ -153,6 +163,35 @@ function AcceptAdminInviteContent() {
         return;
       }
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error(copy.sessionError);
+      }
+
+      const verificationResponse = await fetch(
+        "/api/admin/verify-invite",
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (!verificationResponse.ok) {
+        throw new Error(copy.sessionError);
+      }
+
+      const verification = await verificationResponse.json();
+
+      if (verification.valid !== true) {
+        throw new Error(copy.sessionError);
+      }
+
       const { error: passwordError } =
         await supabase.auth.updateUser({
           password,
@@ -162,16 +201,15 @@ function AcceptAdminInviteContent() {
         throw passwordError;
       }
 
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          role: "admin",
-          email: user.email ?? null,
-        })
-        .eq("id", user.id);
+      const { data: profile, error: profileError } =
+        await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
 
-      if (profileError) {
-        throw profileError;
+      if (profileError || profile?.role !== "admin") {
+        throw new Error(copy.sessionError);
       }
 
       setSuccessMessage(copy.success);
