@@ -757,7 +757,8 @@ if (
                 </div>
                 <div className="mt-6 grid gap-4">
                   {/* STRIPE - temporarily disabled */}
-                  <button
+                  {false && (
+<button
                     disabled
                     aria-disabled="true"
                     type="button"
@@ -806,6 +807,7 @@ if (
                       </div>
                     </div>
                   </button>
+)}
                   {/* WHISH */}
                   <button
                     type="button"
