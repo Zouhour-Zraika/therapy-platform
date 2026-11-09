@@ -828,9 +828,7 @@ if (
                           <p className="text-xl font-bold text-aan-navy">
                             Whish Money
                           </p>
-                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
-                            {text.soon}
-                          </span>
+
                         </div>
                         <p className="mt-2 text-sm leading-6 text-aan-secondary">
                           {
@@ -928,10 +926,10 @@ if (
                   return (
                     <div className="mt-6 space-y-4 rounded-2xl border border-aan-border bg-white p-5">
                       <p className="text-sm leading-6 text-aan-secondary">
-                        {isWhish ? text.unavailable : labels.instructions}
+                        {labels.instructions}
                         {!isWhish && isPatientPack && <span className="mt-2 block font-semibold text-aan-navy">{packOmtRecipient}</span>}
                       </p>
-                      {!isWhish && (
+                      {(
                         <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-aan-navy">
                           {labels.warning}
                         </p>
@@ -980,7 +978,7 @@ if (
                   }
                   disabled={
                     isProcessing ||
-                    selectedProvider === "whish" ||
+                    (selectedProvider === "whish" && whishSubmitted) ||
                     (selectedProvider === "omt" && omtSubmitted)
                   }
                   className="aan-cta mt-6 w-full rounded-2xl px-6 py-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-45 sm:text-xl"
@@ -989,7 +987,7 @@ if (
                     ? isProcessing ? text.redirectingStripe : text.payStripe
                     : selectedProvider === "omt"
                       ? omtSubmitted ? (isPatientPack ? packOmtText.submitted : omtText.submitted) : isProcessing ? omtText.sending : omtText.send
-                      : text.unavailable}
+                      : whishSubmitted ? whishText.submitted : isProcessing ? whishText.sending : whishText.send}
                 </button>
               </section>
             </div>
