@@ -72,8 +72,8 @@ function PaymentContent() {
     selectedProvider,
     setSelectedProvider,
   ] =
-    useState<PaymentProvider>(
-      "stripe",
+    useState<PaymentProvider | null>(
+      null,
     );
   const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [omtReference, setOmtReference] = useState("");
@@ -606,7 +606,7 @@ if (
   };
   const handlePayment = async () => {
     if (selectedProvider === "stripe") {
-      await handleStripePayment();
+      return; // Stripe temporarily disabled.
       return;
     }
     if (selectedProvider === "omt") {
@@ -756,8 +756,10 @@ if (
                   </div>
                 </div>
                 <div className="mt-6 grid gap-4">
-                  {/* STRIPE */}
+                  {/* STRIPE - temporarily disabled */}
                   <button
+                    disabled
+                    aria-disabled="true"
                     type="button"
                     onClick={() =>
                       setSelectedProvider(
@@ -776,11 +778,7 @@ if (
                           <p className="text-xl font-bold text-aan-navy">
                             Stripe
                           </p>
-                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                            {
-                              text.availableNow
-                            }
-                          </span>
+                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">Indisponible / Unavailable / غير متاح</span>
                         </div>
                         <p className="mt-2 text-sm font-bold text-aan-secondary">
                           {
@@ -978,6 +976,8 @@ if (
                   }
                   disabled={
                     isProcessing ||
+                    selectedProvider === null ||
+                    selectedProvider === "stripe" ||
                     (selectedProvider === "whish" && whishSubmitted) ||
                     (selectedProvider === "omt" && omtSubmitted)
                   }

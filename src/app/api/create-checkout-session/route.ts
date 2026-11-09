@@ -239,6 +239,15 @@ function createSupabaseClient(
 
 
 export async function POST(request: Request) {
+  // Stripe checkout is disabled until explicitly reactivated.
+  // Preserve existing Stripe code for historical payment operations.
+  if (process.env.AAN_STRIPE_CHECKOUT_ENABLED !== "true") {
+    return NextResponse.json(
+      { error: "Stripe payments are temporarily unavailable." },
+      { status: 503 },
+    );
+  }
+
 
   let createdPendingPackId: string | null = null;
 
